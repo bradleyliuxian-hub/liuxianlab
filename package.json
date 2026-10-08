@@ -1,0 +1,27 @@
+{
+  "name": "liuxianlab-auth",
+  "version": "4.2.0",
+  "private": true,
+  "description": "Liuxian Lab private tools workspace with Excel standardization jobs.",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "dev": "NODE_ENV=development node server.js",
+    "start": "NODE_ENV=production node server.js",
+    "user:create": "node create-user.js",
+    "user:list": "node list-users.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.5.0",
+    "express-session": "^1.18.1",
+    "helmet": "^8.0.0",
+    "multer": "^2.0.2",
+    "session-file-store": "^1.5.0"
+  }
+}

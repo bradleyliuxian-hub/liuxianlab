@@ -1,0 +1,271 @@
+'use strict';
+
+const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
+const express = require('express');
+const session = require('express-session');
+const FileStoreFactory = require('session-file-store');
+const bcrypt = require('bcryptjs');
+const helmet = require('helmet');
+const { rateLimit } = require('express-rate-limit');
+const { createExcelRouter } = require('./server/excel/routes');
+require('dotenv').config();
+
+const app = express();
+const FileStore = FileStoreFactory(session);
+
+const ROOT = __dirname;
+const PUBLIC_DIR = path.join(ROOT, 'public');
+const PRIVATE_DIR = path.join(ROOT, 'private');
+const DATA_DIR = path.join(ROOT, 'data');
+const USERS_FILE = path.join(DATA_DIR, 'users.json');
+const SESSIONS_DIR = path.join(ROOT, 'sessions');
+const TOOLS_FILE = path.join(ROOT, 'config', 'tools.json');
+
+const PORT = Number(process.env.PORT || 8080);
+const HOST = process.env.HOST || '127.0.0.1';
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+const SESSION_DAYS = Math.max(1, Number(process.env.SESSION_DAYS || 7));
+const SESSION_MAX_AGE = SESSION_DAYS * 24 * 60 * 60 * 1000;
+
+fs.mkdirSync(DATA_DIR, { recursive: true });
+fs.mkdirSync(SESSIONS_DIR, { recursive: true });
+if (!fs.existsSync(USERS_FILE)) {
+  fs.writeFileSync(USERS_FILE, '[]\n', { mode: 0o600 });
+}
+
+let sessionSecret = process.env.SESSION_SECRET;
+if (!sessionSecret) {
+  if (IS_PRODUCTION) {
+    console.error('ERROR: SESSION_SECRET is required in production.');
+    process.exit(1);
+  }
+  sessionSecret = crypto.randomBytes(48).toString('hex');
+  console.warn('WARN: SESSION_SECRET is not set. A temporary development secret was generated; sessions will reset after restart.');
+}
+
+if (IS_PRODUCTION) app.set('trust proxy', 1);
+
+app.disable('x-powered-by');
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", 'data:'],
+      fontSrc: ["'self'", 'data:'],
+      connectSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      baseUri: ["'self'"],
+      frameAncestors: ["'none'"],
+      formAction: ["'self'"]
+    }
+  },
+  crossOriginEmbedderPolicy: false
+}));
+app.use(express.json({ limit: '16kb' }));
+app.use(express.urlencoded({ extended: false, limit: '16kb' }));
+
+app.use(session({
+  name: 'liuxianlab.sid',
+  secret: sessionSecret,
+  store: new FileStore({
+    path: SESSIONS_DIR,
+    ttl: SESSION_DAYS * 24 * 60 * 60,
+    retries: 0,
+    logFn: () => {}
+  }),
+  resave: false,
+  saveUninitialized: false,
+  rolling: true,
+  cookie: {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: IS_PRODUCTION,
+    maxAge: SESSION_MAX_AGE
+  }
+}));
+
+function readUsers() {
+  try {
+    const raw = fs.readFileSync(USERS_FILE, 'utf8');
+    const users = JSON.parse(raw);
+    return Array.isArray(users) ? users : [];
+  } catch (error) {
+    console.error('Failed to read users.json:', error.message);
+    return [];
+  }
+}
+
+function readTools() {
+  try {
+    const raw = fs.readFileSync(TOOLS_FILE, 'utf8');
+    const tools = JSON.parse(raw);
+    return Array.isArray(tools) ? tools : [];
+  } catch (error) {
+    console.error('Failed to read tools.json:', error.message);
+    return [];
+  }
+}
+
+function normalizeUsername(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function safeToolSlug(value) {
+  const slug = String(value || '').trim().toLowerCase();
+  return /^[a-z0-9][a-z0-9-]{0,63}$/.test(slug) ? slug : '';
+}
+
+function requireAuth(req, res, next) {
+  if (req.session?.auth?.username) return next();
+  const wantsJson = req.path.startsWith('/api/') || req.accepts(['html', 'json']) === 'json';
+  if (wantsJson) return res.status(401).json({ ok: false, message: '请先登录。' });
+  return res.redirect('/login');
+}
+
+function sameOriginForStateChange(req, res, next) {
+  const origin = req.get('origin');
+  if (!origin) return next();
+  try {
+    const originUrl = new URL(origin);
+    if (originUrl.host === req.get('host')) return next();
+  } catch (_) {}
+  return res.status(403).json({ ok: false, message: '请求来源无效。' });
+}
+
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  message: { ok: false, code: 'TOO_MANY_ATTEMPTS', message: '登录尝试过多，请在 15 分钟后再试。' }
+});
+
+const DUMMY_HASH = bcrypt.hashSync('liuxianlab-dummy-password', 12);
+
+app.get('/health', (_req, res) => res.status(200).json({ ok: true }));
+
+app.get('/login', (req, res) => {
+  if (req.session?.auth?.username) return res.redirect('/');
+  res.set('Cache-Control', 'no-store');
+  return res.sendFile(path.join(PUBLIC_DIR, 'login.html'));
+});
+
+app.get('/login.html', (_req, res) => res.redirect('/login'));
+app.get('/login.css', (_req, res) => {
+  res.set('Cache-Control', 'no-store');
+  return res.sendFile(path.join(PUBLIC_DIR, 'login.css'));
+});
+app.get('/login.js', (_req, res) => {
+  res.set('Cache-Control', 'no-store');
+  return res.sendFile(path.join(PUBLIC_DIR, 'login.js'));
+});
+
+app.post('/api/login', sameOriginForStateChange, loginLimiter, async (req, res) => {
+  const username = normalizeUsername(req.body.username);
+  const password = String(req.body.password || '');
+  const rememberMe = Boolean(req.body.rememberMe);
+
+  if (!username || !password || username.length > 64 || password.length > 256) {
+    return res.status(400).json({ ok: false, code: 'INVALID_INPUT', message: '请输入有效的账号和密码。' });
+  }
+
+  const users = readUsers();
+  const user = users.find((item) => normalizeUsername(item.username) === username);
+  const hash = user?.passwordHash || DUMMY_HASH;
+  const passwordOk = await bcrypt.compare(password, hash);
+  const allowed = Boolean(user && !user.disabled && passwordOk);
+
+  if (!allowed) {
+    return res.status(401).json({ ok: false, code: 'INVALID_CREDENTIALS', message: '账号或密码错误，请重新输入。' });
+  }
+
+  req.session.regenerate((error) => {
+    if (error) return res.status(500).json({ ok: false, message: '登录失败，请稍后重试。' });
+    req.session.auth = { username: user.username, loginAt: new Date().toISOString() };
+    if (rememberMe) {
+      req.session.cookie.maxAge = SESSION_MAX_AGE;
+    } else {
+      req.session.cookie.expires = null;
+      req.session.cookie.maxAge = null;
+    }
+    req.session.save((saveError) => {
+      if (saveError) return res.status(500).json({ ok: false, message: '登录失败，请稍后重试。' });
+      return res.json({ ok: true, redirect: '/' });
+    });
+  });
+});
+
+app.get('/api/tools', requireAuth, (_req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const tools = readTools().map((tool) => ({
+    slug: tool.slug,
+    name: tool.name,
+    description: tool.description,
+    category: tool.category,
+    status: tool.status,
+    badge: tool.badge,
+    icon: tool.icon,
+    keywords: Array.isArray(tool.keywords) ? tool.keywords : []
+  }));
+  res.json({ ok: true, tools });
+});
+
+app.get('/api/session', requireAuth, (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json({ ok: true, user: { username: req.session.auth.username } });
+});
+
+app.post('/api/logout', sameOriginForStateChange, requireAuth, (req, res) => {
+  req.session.destroy((error) => {
+    if (error) return res.status(500).json({ ok: false, message: '退出失败，请重试。' });
+    res.clearCookie('liuxianlab.sid', { httpOnly: true, sameSite: 'lax', secure: IS_PRODUCTION });
+    return res.json({ ok: true });
+  });
+});
+
+app.use('/api/excel', createExcelRouter({ root: ROOT, requireAuth, sameOriginForStateChange }));
+
+app.use('/app', requireAuth, express.static(PRIVATE_DIR, {
+  index: false,
+  dotfiles: 'deny',
+  etag: true,
+  maxAge: IS_PRODUCTION ? '1h' : 0
+}));
+
+app.get('/', requireAuth, (_req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.sendFile(path.join(PRIVATE_DIR, 'index.html'));
+});
+
+app.get('/tools/:slug', requireAuth, (req, res) => {
+  const slug = safeToolSlug(req.params.slug);
+  if (!slug) return res.status(404).send('404 Not Found');
+  const tool = readTools().find((item) => item.slug === slug);
+  if (!tool) return res.status(404).send('404 Not Found');
+
+  const implementedPage = path.join(PRIVATE_DIR, 'tools', slug, 'index.html');
+  res.set('Cache-Control', 'no-store');
+  if (fs.existsSync(implementedPage)) return res.sendFile(implementedPage);
+  return res.sendFile(path.join(PRIVATE_DIR, 'tool.html'));
+});
+
+app.get('/index.html', requireAuth, (_req, res) => res.redirect('/'));
+
+app.use((_req, res) => res.status(404).send('404 Not Found'));
+
+app.use((error, _req, res, _next) => {
+  console.error(error);
+  if (res.headersSent) return;
+  res.status(500).send('500 Internal Server Error');
+});
+
+app.listen(PORT, HOST, () => {
+  console.log(`Liuxian Lab running at http://${HOST}:${PORT}`);
+  console.log(`Login: http://${HOST}:${PORT}/login`);
+  console.log(`Excel: http://${HOST}:${PORT}/tools/excel-standardizer`);
+});

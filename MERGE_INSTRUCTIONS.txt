@@ -1,0 +1,28 @@
+Liuxian Lab Docker merge update
+
+Copy the following four files into the ROOT of your existing liuxianlab-ui project:
+- Dockerfile
+- docker-compose.yml
+- .dockerignore
+- DOCKER_DEPLOY.md
+
+Do NOT replace or delete your existing:
+- .env
+- server.js
+- package.json / package-lock.json
+- data/users.json
+- private/ public/ server/ workers/
+- sessions/ storage/
+
+Optional maintenance updates:
+1. In .env.example, add HOST=127.0.0.1 after PORT=8080.
+2. Ensure .env.example documents PYTHON_BIN, MAX_CONCURRENT_EXCEL_JOBS, EXCEL_RETENTION_HOURS.
+3. Optionally add a Docker section to README.md pointing to DOCKER_DEPLOY.md.
+
+Then run from the existing project root:
+  docker compose build
+  docker compose up -d
+  docker compose ps
+
+Open:
+  http://127.0.0.1:8080/login

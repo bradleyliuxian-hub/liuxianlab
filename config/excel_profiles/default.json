@@ -1,0 +1,48 @@
+{
+  "name": "Liuxian Lab Standard v1",
+  "description": "第一版保守型 Excel 标准化方案。规则可随业务继续扩展。",
+  "rules": {
+    "trim_text": {
+      "enabled": true,
+      "label": "清理文本首尾空格"
+    },
+    "normalize_dates": {
+      "enabled": true,
+      "label": "统一真实日期单元格格式",
+      "format": "yyyy-mm-dd",
+      "include_datetime": true
+    },
+    "header_style": {
+      "enabled": true,
+      "label": "统一第一行表头样式",
+      "fill": "EAF8CC",
+      "font_color": "171915",
+      "bold": true,
+      "horizontal": "left",
+      "vertical": "center",
+      "row_height": 24
+    },
+    "autofit_columns": {
+      "enabled": true,
+      "label": "自动调整列宽",
+      "min_width": 8,
+      "max_width": 40,
+      "padding": 2,
+      "scan_rows": 5000
+    },
+    "sheet_settings": {
+      "enabled": true,
+      "label": "冻结表头并启用筛选",
+      "freeze_header": true,
+      "auto_filter": true
+    },
+    "remove_empty_rows": {
+      "enabled": false,
+      "label": "删除完全空白行"
+    }
+  },
+  "preview": {
+    "rows": 50,
+    "columns": 20
+  }
+}

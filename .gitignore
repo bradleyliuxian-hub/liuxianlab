@@ -1,0 +1,52 @@
+# dependencies
+node_modules/
+
+# secrets
+.env
+.env.*
+!.env.example
+
+# real user data
+data/users.json
+data/*.json
+
+# sessions
+sessions/*
+!sessions/.gitkeep
+
+# macOS
+.DS_Store
+
+# logs
+*.log
+npm-debug.log*
+pm2.log*
+
+#OS files
+.DS_Store
+Thumbs.db
+
+# old files
+_legacy/
+
+#python
+.venv/
+venv/
+
+#excel storage
+
+storage/excel/*
+!storage/excel/.gitkeep
+
+#editor
+.vscode/
+.idea/
+*.swp
+
+private/
+*.backup
+backup-before-excel/
+
+private-v2.1-backup/
+server.js.v2.1.backup
+server/

@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#f5f4ef">
+  <title>登录 · Liuxian Lab</title>
+  <meta name="description" content="Liuxian Lab 团队工作台登录入口。账号由管理员统一创建与分配。">
+  <link rel="stylesheet" href="/login.css?v=2.1.0">
+</head>
+<body>
+  <main class="login-shell">
+    <section class="brand-panel" aria-label="Liuxian Lab 介绍">
+      <a class="brand" href="/" aria-label="返回 Liuxian Lab 首页">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 44 44">
+            <path d="M22 4 36.5 12.4v19.2L22 40 7.5 31.6V12.4L22 4Z" fill="none" stroke="currentColor" stroke-width="2"/>
+            <path d="M14 27.5 22 12l8 15.5M17.2 22h9.6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </span>
+        <span class="brand-name"><strong>Liuxian</strong><small>LAB</small></span>
+      </a>
+
+      <div class="brand-copy">
+        <div class="eyebrow"><span></span> Private workspace</div>
+        <h1>只让被授权的人，<br>进入你的工作空间。</h1>
+        <p>Liuxian Lab 是面向团队成员的内部工作台。账号由管理员统一创建，不开放自助注册。</p>
+      </div>
+
+      <div class="security-card" aria-label="访问说明">
+        <div class="security-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M7 10V8a5 5 0 0 1 10 0v2"/><rect x="5" y="10" width="14" height="11" rx="3"/><path d="M12 14v3"/></svg>
+        </div>
+        <div>
+          <strong>受保护的团队空间</strong>
+          <p>账号密码由服务器端验证，密码只保存为哈希值，不会写入网页代码。</p>
+        </div>
+      </div>
+
+      <p class="brand-foot">© <span id="brandYear"></span> Liuxian Lab · Internal use only</p>
+    </section>
+
+    <section class="form-panel">
+      <div class="form-topbar">
+        <a href="/" class="back-link" aria-label="返回首页">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5M11 18l-6-6 6-6"/></svg>
+          返回首页
+        </a>
+        <button class="theme-button" id="themeToggle" type="button" aria-label="切换主题">
+          <svg class="sun-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.66 6.34l1.41-1.41"/></svg>
+          <svg class="moon-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/></svg>
+        </button>
+      </div>
+
+      <div class="form-wrap">
+        <div class="form-heading">
+          <span class="mini-mark">L</span>
+          <p class="kicker">MEMBER ACCESS</p>
+          <h2>欢迎回来</h2>
+          <p>请输入管理员提供给你的账号和密码。</p>
+        </div>
+
+        <form class="login-form" id="loginForm" novalidate>
+          <label class="field" for="username">
+            <span>账号</span>
+            <div class="input-wrap">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 20c.9-4 3.6-6 8-6s7.1 2 8 6"/></svg>
+              <input id="username" name="username" type="text" autocomplete="username" placeholder="请输入账号" required>
+            </div>
+            <small class="field-error" id="usernameError"></small>
+          </label>
+
+          <label class="field" for="password">
+            <span>密码</span>
+            <div class="input-wrap">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+              <input id="password" name="password" type="password" autocomplete="current-password" placeholder="请输入密码" required>
+              <button class="password-toggle" id="passwordToggle" type="button" aria-label="显示密码">
+                <svg class="eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.5"/></svg>
+                <svg class="eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="m3 3 18 18M10.6 6.1A10.3 10.3 0 0 1 12 6c6 0 9.5 6 9.5 6a17.7 17.7 0 0 1-3.2 3.8M6.2 6.2C3.8 8 2.5 12 2.5 12s3.5 6 9.5 6c1.2 0 2.3-.2 3.3-.6M9.9 9.9A3 3 0 0 0 14.1 14"/></svg>
+              </button>
+            </div>
+            <small class="field-error" id="passwordError"></small>
+          </label>
+
+          <div class="form-options">
+            <label class="check-row">
+              <input type="checkbox" id="rememberMe" name="rememberMe">
+              <span class="check-box" aria-hidden="true"><svg viewBox="0 0 12 10"><path d="m1 5 3 3 7-7"/></svg></span>
+              <span>在此设备保持登录</span>
+            </label>
+            <span class="admin-note">忘记密码？请联系管理员</span>
+          </div>
+
+          <button class="submit-button" type="submit">
+            <span>登录工作台</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </button>
+
+          <div class="status-message" id="statusMessage" role="alert" aria-live="assertive" hidden></div>
+        </form>
+
+        <div class="access-note">
+          <span aria-hidden="true">i</span>
+          <p><strong>没有账号？</strong> Liuxian Lab 不开放注册。请向管理员申请账号。</p>
+        </div>
+      </div>
+
+      <p class="mobile-foot">© <span id="mobileYear"></span> Liuxian Lab</p>
+    </section>
+  </main>
+
+  <script src="/login.js?v=2.1.0"></script>
+</body>
+</html>

@@ -1,0 +1,82 @@
+[
+  {
+    "slug": "excel-standardizer",
+    "name": "Excel 标准化",
+    "description": "上传 Excel，按后台规则自动标准化，并查看完整变更记录。",
+    "category": "数据",
+    "status": "ready",
+    "badge": "可用",
+    "icon": "XLS",
+    "keywords": ["excel", "xlsx", "表格", "标准化", "清洗", "格式", "变更记录"]
+  },
+  {
+    "slug": "ai-writer",
+    "name": "AI 文本助手",
+    "description": "用于润色、改写、总结和快速生成常用文本。",
+    "category": "AI",
+    "status": "planned",
+    "badge": "即将开放",
+    "icon": "AI",
+    "keywords": ["ai", "文本", "润色", "总结", "写作"]
+  },
+  {
+    "slug": "pdf-toolbox",
+    "name": "PDF 工具箱",
+    "description": "合并、拆分、压缩以及常用 PDF 文件处理入口。",
+    "category": "文件",
+    "status": "planned",
+    "badge": "规划中",
+    "icon": "PDF",
+    "keywords": ["pdf", "合并", "拆分", "压缩", "文件"]
+  },
+  {
+    "slug": "image-studio",
+    "name": "图片处理",
+    "description": "压缩、改尺寸、格式转换和基础图片处理。",
+    "category": "文件",
+    "status": "planned",
+    "badge": "规划中",
+    "icon": "IMG",
+    "keywords": ["图片", "压缩", "尺寸", "png", "jpg", "webp"]
+  },
+  {
+    "slug": "json-formatter",
+    "name": "JSON 格式化",
+    "description": "格式化、校验、压缩 JSON，并快速定位结构问题。",
+    "category": "开发",
+    "status": "planned",
+    "badge": "即将开放",
+    "icon": "{}",
+    "keywords": ["json", "格式化", "校验", "开发"]
+  },
+  {
+    "slug": "qr-generator",
+    "name": "二维码生成",
+    "description": "把链接或文本快速生成便于分享的二维码。",
+    "category": "效率",
+    "status": "planned",
+    "badge": "规划中",
+    "icon": "QR",
+    "keywords": ["二维码", "qr", "链接", "分享"]
+  },
+  {
+    "slug": "time-converter",
+    "name": "时间转换",
+    "description": "时间戳、日期与常用时区之间的快速转换。",
+    "category": "效率",
+    "status": "planned",
+    "badge": "规划中",
+    "icon": "TIME",
+    "keywords": ["时间", "时间戳", "日期", "时区"]
+  },
+  {
+    "slug": "text-encoder",
+    "name": "文本编码工具",
+    "description": "URL、Base64 与常见文本编码的转换入口。",
+    "category": "开发",
+    "status": "planned",
+    "badge": "规划中",
+    "icon": "ENC",
+    "keywords": ["url", "base64", "编码", "解码", "文本"]
+  }
+]
