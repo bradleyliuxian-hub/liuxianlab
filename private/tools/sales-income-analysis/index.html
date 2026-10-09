@@ -1,584 +1,200 @@
 <!doctype html>
 <html lang="zh-CN">
-
 <head>
-
-  <meta charset="utf-8">
-
-  <meta
-    name="viewport"
-    content="width=device-width, initial-scale=1"
-  >
-
-  <title>
-    销售 / 收入分析 · Liuxian Lab
-  </title>
-
-  <link
-    rel="stylesheet"
-    href="/app/tools/sales-income-analysis/styles.css?v=2.0.0"
-  >
-
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="销售与收入 Excel 分析工具" />
+  <title>销售 / 收入分析 · Liuxian Lab</title>
+  <link rel="stylesheet" href="/app/tools/sales-income-analysis/styles.css?v=3.1.0" />
 </head>
-
-
 <body>
-
-
-<div class="page-shell">
-
-
-  <header class="tool-header">
-
-    <a
-      class="back-link"
-      href="/"
-    >
-      ←
-    </a>
-
-
-    <div class="tool-brand">
-
-      <span class="tool-mark">
-        FIN
-      </span>
-
-      <div>
-
-        <strong>
-          销售 / 收入分析
-        </strong>
-
-        <small>
-          LIUXIAN LAB / FINANCE TOOL
-        </small>
-
+  <div class="tool-shell">
+    <header class="tool-header">
+      <div class="header-left">
+        <a class="back-link" href="/" aria-label="返回工作台" title="返回工作台">←</a>
+        <div class="tool-brand">
+          <span class="tool-mark">FIN</span>
+          <strong>财务分析</strong>
+        </div>
       </div>
 
-    </div>
+      <div class="header-actions">
+        <span class="private-badge">私有</span>
+        <button class="theme-button" id="toolThemeToggle" type="button" aria-label="切换主题" title="切换主题">◐</button>
+      </div>
+    </header>
 
-
-    <span class="private-badge">
-      私有处理
-    </span>
-
-  </header>
-
-
-
-  <main class="tool-main">
-
-
-    <section class="intro-section">
-
-      <p class="eyebrow">
-        SALES & INCOME ANALYSIS
-      </p>
-
-      <h1>
-        上传明细，
-        <br>
-        确认字段，
-        <br>
-        再执行分析。
-      </h1>
-
-      <p>
-        系统首先读取 Excel 的工作表和表头。
-        你确认每个字段的业务含义后，
-        再将字段配置传给分析程序。
-      </p>
-
-    </section>
-
-
-
-    <section class="workspace-card">
-
-      <div class="card-heading">
-
-        <span class="step-no">
-          01
-        </span>
-
+    <main class="tool-main">
+      <section class="intro-section">
         <div>
-
-          <h2>
-            选择分析类型
-          </h2>
-
-          <p>
-            请选择上传文件对应的业务类型。
-          </p>
-
+          <h1>销售 / 收入分析</h1>
+          <p>上传 Excel，确认字段后生成分析结果与抵消明细。</p>
         </div>
 
-      </div>
+        <ol class="flow-steps" aria-label="处理流程">
+          <li class="active" id="stepUpload"><span>01</span>文件</li>
+          <li id="stepMap"><span>02</span>字段</li>
+          <li id="stepRun"><span>03</span>分析</li>
+          <li id="stepDone"><span>04</span>完成</li>
+        </ol>
+      </section>
 
+      <section class="setup-grid">
+        <article class="workspace-card compact-card">
+          <div class="card-heading">
+            <span class="step-no">01</span>
+            <div>
+              <h2>分析类型</h2>
+            </div>
+          </div>
 
-      <div class="analysis-options">
+          <div class="analysis-options">
+            <button class="analysis-option active" data-analysis="sales" type="button">
+              <strong>销售</strong>
+            </button>
+            <button class="analysis-option" data-analysis="income" type="button">
+              <strong>收入</strong>
+            </button>
+          </div>
+        </article>
 
-        <button
-          class="analysis-option active"
-          data-analysis="sales"
-          type="button"
-        >
+        <article class="workspace-card compact-card upload-card">
+          <div class="card-heading">
+            <span class="step-no">02</span>
+            <div>
+              <h2>Excel 文件</h2>
+              <p>仅支持 XLSX，最大 25 MB。</p>
+            </div>
+          </div>
 
-          <strong>
-            销售分析
-          </strong>
+          <label class="drop-zone" id="dropZone" for="fileInput">
+            <input id="fileInput" type="file" accept=".xlsx" hidden />
+            <strong>选择或拖入 Excel</strong>
+            <small>XLSX</small>
+          </label>
 
-          <small>
-            SALES ANALYSIS
-          </small>
+          <div class="selected-file" id="selectedFile" hidden>
+            <span class="file-type">XLSX</span>
+            <div>
+              <strong id="fileName"></strong>
+              <small id="fileMeta"></small>
+            </div>
+            <button id="clearFileButton" type="button" aria-label="移除文件">×</button>
+          </div>
 
-          <p>
-            销售凭证、Reference、
-            金额、文本和 Trading Partner。
-          </p>
+          <button class="primary-button" id="inspectButton" type="button" disabled>读取文件结构</button>
+        </article>
+      </section>
 
-        </button>
-
-
-        <button
-          class="analysis-option"
-          data-analysis="income"
-          type="button"
-        >
-
-          <strong>
-            收入分析
-          </strong>
-
-          <small>
-            INCOME ANALYSIS
-          </small>
-
-          <p>
-            Document Number、金额、
-            Text 和 Trading Partner。
-          </p>
-
-        </button>
-
-      </div>
-
-    </section>
-
-
-
-    <section class="workspace-card">
-
-      <div class="card-heading">
-
-        <span class="step-no">
-          02
-        </span>
-
-        <div>
-
-          <h2>
-            上传 Excel
-          </h2>
-
-          <p>
-            上传后先读取文件结构，
-            不会立即执行分析。
-          </p>
-
+      <section class="workspace-card mapping-card" id="mappingPanel" hidden>
+        <div class="section-head">
+          <div>
+            <span class="section-index">03</span>
+            <h2>字段映射</h2>
+          </div>
+          <p>确认工作表、表头行与分析字段。</p>
         </div>
 
-      </div>
+        <div class="mapping-layout">
+          <div class="structure-pane">
+            <h3>Excel 结构</h3>
 
+            <div class="structure-grid">
+              <label class="control-field">
+                <span>工作表</span>
+                <select id="sheetSelect"></select>
+              </label>
 
-      <label
-        class="drop-zone"
-        id="dropZone"
-        for="fileInput"
-      >
+              <label class="control-field">
+                <span>表头行</span>
+                <select id="headerRowSelect"></select>
+              </label>
+            </div>
 
-        <input
-          id="fileInput"
-          type="file"
-          accept=".xlsx"
-          hidden
-        >
+            <div class="detected-block">
+              <span class="section-label">识别到的字段</span>
+              <div class="header-chips" id="headerChips"></div>
+            </div>
+          </div>
 
-        <strong>
-          拖入 Excel，或点击选择文件
-        </strong>
+          <div class="fields-pane">
+            <h3>字段用途</h3>
 
-        <small>
-          XLSX · 最大 25 MB
-        </small>
+            <div class="mapping-grid">
+              <label class="mapping-row">
+                <span>凭证</span>
+                <small id="documentHint">Sales Document</small>
+                <select id="documentSelect"></select>
+              </label>
 
-      </label>
+              <label class="mapping-row" id="referenceRow">
+                <span>Reference</span>
+                <small>匹配字段</small>
+                <select id="referenceSelect"></select>
+              </label>
 
+              <label class="mapping-row">
+                <span>金额</span>
+                <small>正负金额判断</small>
+                <select id="amountSelect"></select>
+              </label>
 
-      <div
-        class="selected-file"
-        id="selectedFile"
-        hidden
-      >
+              <label class="mapping-row">
+                <span>文本</span>
+                <small>关键词判断</small>
+                <select id="textSelect"></select>
+              </label>
 
-        <div>
-
-          <strong id="fileName">
-          </strong>
-
-          <small id="fileMeta">
-          </small>
-
+              <label class="mapping-row">
+                <span>Trading Partner</span>
+                <small>交易伙伴匹配</small>
+                <select id="partnerSelect"></select>
+              </label>
+            </div>
+          </div>
         </div>
 
-
-        <button
-          id="clearFileButton"
-          type="button"
-        >
-          ×
-        </button>
-
-      </div>
-
-
-      <button
-        class="primary-button"
-        id="inspectButton"
-        type="button"
-        disabled
-      >
-        读取工作表与表头 →
-      </button>
-
-    </section>
-
-
-
-    <section
-      class="workspace-card"
-      id="mappingPanel"
-      hidden
-    >
-
-      <div class="card-heading">
-
-        <span class="step-no">
-          03
-        </span>
-
-        <div>
-
-          <h2>
-            确认 Excel 结构
-          </h2>
-
-          <p>
-            系统已经读取文件，
-            你可以调整工作表和表头行。
-          </p>
-
+        <div class="mapping-actions">
+          <button class="primary-button" id="confirmMappingButton" type="button">确认字段</button>
         </div>
 
-      </div>
+        <div class="mapping-summary" id="mappingSummary" hidden>
+          <span class="status-dot"></span>
+          <strong>字段已确认</strong>
+          <pre id="mappingPreview" hidden></pre>
+        </div>
+      </section>
 
-
-      <div class="structure-grid">
-
-
-        <label class="control-field">
-
-          <span>
-            工作表
-          </span>
-
-          <select
-            id="sheetSelect"
-          >
-          </select>
-
-        </label>
-
-
-        <label class="control-field">
-
-          <span>
-            表头行
-          </span>
-
-          <select
-            id="headerRowSelect"
-          >
-          </select>
-
-        </label>
-
-
-      </div>
-
-
-      <div class="detected-block">
-
-        <span class="section-label">
-          当前识别到的表头
-        </span>
-
-        <div
-          class="header-chips"
-          id="headerChips"
-        >
+      <section class="workspace-card run-card" id="runPanel" hidden>
+        <div class="section-head">
+          <div>
+            <span class="section-index">04</span>
+            <h2>执行分析</h2>
+          </div>
+          <p id="runStatus">可以开始分析。</p>
         </div>
 
-      </div>
-
-
-
-      <div class="mapping-divider">
-      </div>
-
-
-
-      <div class="mapping-title">
-
-        <div>
-
-          <span class="step-no">
-            04
-          </span>
-
+        <div class="progress-row">
+          <div class="progress-track"><span id="analysisProgress"></span></div>
+          <strong id="analysisProgressValue">0%</strong>
         </div>
 
-        <div>
+        <div class="run-actions">
+          <button class="primary-button" id="runAnalysisButton" type="button">开始分析</button>
 
-          <h2>
-            定义字段用途
-          </h2>
-
-          <p>
-            告诉系统每一列在分析规则中扮演什么角色。
-          </p>
-
+          <div class="result-box" id="resultBox" hidden>
+            <div>
+              <strong>分析完成</strong>
+              <small>结果文件包含“分析结果”和“抵消明细”两个工作表。</small>
+            </div>
+            <a class="primary-button" id="downloadButton" href="#" hidden>下载 Excel</a>
+          </div>
         </div>
-
-      </div>
-
-
-      <div class="mapping-grid">
-
-
-        <label class="mapping-row">
-
-          <span>
-            凭证字段
-          </span>
-
-          <small id="documentHint">
-            Sales Document
-          </small>
-
-          <select
-            id="documentSelect"
-          >
-          </select>
-
-        </label>
-
-
-
-        <label
-          class="mapping-row"
-          id="referenceRow"
-        >
-
-          <span>
-            Reference 字段
-          </span>
-
-          <small>
-            Rule 1 匹配字段
-          </small>
-
-          <select
-            id="referenceSelect"
-          >
-          </select>
-
-        </label>
-
-
-
-        <label class="mapping-row">
-
-          <span>
-            金额字段
-          </span>
-
-          <small>
-            正负金额及抵消判断
-          </small>
-
-          <select
-            id="amountSelect"
-          >
-          </select>
-
-        </label>
-
-
-
-        <label class="mapping-row">
-
-          <span>
-            文本字段
-          </span>
-
-          <small>
-            关键词识别
-          </small>
-
-          <select
-            id="textSelect"
-          >
-          </select>
-
-        </label>
-
-
-
-        <label class="mapping-row">
-
-          <span>
-            Trading Partner
-          </span>
-
-          <small>
-            交易伙伴匹配
-          </small>
-
-          <select
-            id="partnerSelect"
-          >
-          </select>
-
-        </label>
-
-
-      </div>
-
-
-      <button
-        class="primary-button"
-        id="confirmMappingButton"
-        type="button"
-      >
-        确认字段配置 →
-      </button>
-
-
-      <div
-        class="mapping-summary"
-        id="mappingSummary"
-        hidden
-      >
-
-        <strong>
-          字段配置已准备好
-        </strong>
-
-        <p>
-          下一阶段将把这个配置传入 Python 分析程序。
-        </p>
-
-        <pre id="mappingPreview"></pre>
-
-      </div>
-
-    </section>
-
-
-    <section
-      class="workspace-card"
-      id="runPanel"
-      hidden
-    >
-
-      <div class="card-heading">
-
-        <span class="step-no">
-          05
-        </span>
-
-        <div>
-
-          <h2>
-            执行分析
-          </h2>
-
-          <p id="runStatus">
-            字段配置已确认，可以开始分析。
-          </p>
-
-        </div>
-
-      </div>
-
-
-      <div class="progress-track">
-
-        <span
-          id="analysisProgress"
-        >
-        </span>
-
-      </div>
-
-
-      <strong
-        id="analysisProgressValue"
-      >
-        0%
-      </strong>
-
-
-      <button
-        class="primary-button"
-        id="runAnalysisButton"
-        type="button"
-      >
-        按当前字段开始分析 →
-      </button>
-
-
-      <a
-        class="primary-button"
-        id="downloadButton"
-        href="#"
-        hidden
-      >
-        下载分析结果 Excel ↓
-      </a>
-
-    </section>
-
-
-  </main>
-
-
-</div>
-
-
-<div
-  class="toast"
-  id="toast"
->
-</div>
-
-
-<script
-  src="/app/tools/sales-income-analysis/script.js?v=2.0.0"
-></script>
-
-
+      </section>
+    </main>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="/app/tools/sales-income-analysis/script.js?v=3.1.0"></script>
 </body>
 </html>

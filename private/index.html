@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Liuxian Lab 私有工具工作台" />
+  <title>工作台 · Liuxian Lab</title>
+  <link rel="stylesheet" href="/app/styles.css?v=5.1.0" />
+</head>
+<body>
+  <div class="workspace-frame" id="workspaceFrame">
+    <aside class="sidebar-zone" id="sidebar" aria-label="主导航">
+      <div class="rail">
+        <a class="rail-logo" href="/" aria-label="Liuxian Lab 首页"><span>L</span></a>
+
+        <nav class="rail-nav" aria-label="快捷导航">
+          <button class="rail-button active" type="button" data-view="all" aria-label="工作台" title="工作台">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11.2 12 4l9 7.2v8.3a.5.5 0 0 1-.5.5H15v-6H9v6H3.5a.5.5 0 0 1-.5-.5z"/></svg>
+          </button>
+          <button class="rail-button" type="button" data-view="all-tools" aria-label="全部工具" title="全部工具">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="6" height="6" rx="1.5"/><rect x="14" y="4" width="6" height="6" rx="1.5"/><rect x="4" y="14" width="6" height="6" rx="1.5"/><rect x="14" y="14" width="6" height="6" rx="1.5"/></svg>
+          </button>
+          <button class="rail-button" type="button" data-view="favorites" aria-label="收藏" title="收藏">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.65 5.37 5.93.86-4.29 4.18 1.01 5.9L12 16.52l-5.3 2.79 1.01-5.9-4.29-4.18 5.93-.86z"/></svg>
+            <span class="rail-count" id="railFavoriteCount">0</span>
+          </button>
+          <button class="rail-button" type="button" data-view="recent" aria-label="最近使用" title="最近使用">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 6v6l4 2"/><path d="M4.8 5.8A9 9 0 1 1 3 12"/><path d="M3 5v5h5"/></svg>
+          </button>
+        </nav>
+
+        <div class="rail-bottom">
+          <button class="rail-button" id="railThemeToggle" type="button" aria-label="切换主题" title="切换主题">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 15.3A8.5 8.5 0 0 1 8.7 4 8.5 8.5 0 1 0 20 15.3Z"/></svg>
+          </button>
+          <span class="rail-status" aria-label="服务在线"></span>
+        </div>
+      </div>
+
+      <div class="nav-panel" id="navPanel">
+        <div class="panel-head">
+          <a class="brand" href="/">
+            <span class="brand-title">Liuxian Lab</span>
+            <span class="brand-subtitle">WORKSPACE</span>
+          </a>
+          <button class="panel-collapse" id="navCollapseButton" type="button" aria-label="折叠侧边栏" title="折叠侧边栏">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 7-5 5 5 5"/></svg>
+          </button>
+        </div>
+
+        <div class="panel-scroll">
+          <section class="nav-group" aria-labelledby="navPrimaryLabel">
+            <h2 id="navPrimaryLabel">导航</h2>
+            <nav class="panel-nav">
+              <button class="panel-nav-item active" type="button" data-view="all">
+                <span class="mini-icon">⌂</span><span>工作台</span>
+              </button>
+              <button class="panel-nav-item" type="button" data-view="all-tools">
+                <span class="mini-icon">▦</span><span>全部工具</span>
+              </button>
+              <button class="panel-nav-item" type="button" data-view="favorites">
+                <span class="mini-icon">☆</span><span>收藏</span><span class="nav-count" id="favoriteCount">0</span>
+              </button>
+              <button class="panel-nav-item" type="button" data-view="recent">
+                <span class="mini-icon">◷</span><span>最近使用</span>
+              </button>
+            </nav>
+          </section>
+
+          <section class="nav-group" aria-labelledby="navCategoryLabel">
+            <h2 id="navCategoryLabel">分类</h2>
+            <div class="category-nav" id="categoryNav"></div>
+          </section>
+        </div>
+
+        <div class="panel-footer">
+          <button class="account-card" id="accountButton" type="button" aria-haspopup="true" aria-expanded="false">
+            <span class="avatar" id="userAvatar">L</span>
+            <span class="account-copy"><strong id="sidebarUsername">已登录</strong></span>
+            <span class="account-more" aria-hidden="true">•••</span>
+          </button>
+
+          <div class="account-menu" id="accountMenu" hidden>
+            <button id="themeToggle" type="button"><span aria-hidden="true">◐</span>切换主题</button>
+            <button id="logoutButton" type="button"><span aria-hidden="true">↪</span>退出登录</button>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <div class="main-shell">
+      <header class="topbar">
+        <div class="topbar-left">
+          <button class="mobile-menu-button" id="mobileMenuButton" type="button" aria-label="打开导航" aria-controls="sidebar" aria-expanded="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+          </button>
+          <strong class="current-view" id="currentViewLabel">工作台</strong>
+        </div>
+
+        <label class="global-search" for="toolSearch">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="m16 16 4 4"/></svg>
+          <input id="toolSearch" type="search" placeholder="搜索工具…" autocomplete="off" />
+          <kbd>⌘ K</kbd>
+        </label>
+
+        <div class="topbar-actions">
+          <button class="icon-button" id="topThemeToggle" type="button" aria-label="切换主题" title="切换主题">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 15.3A8.5 8.5 0 0 1 8.7 4 8.5 8.5 0 1 0 20 15.3Z"/></svg>
+          </button>
+        </div>
+      </header>
+
+      <main class="main-content">
+        <section class="page-intro">
+          <p class="page-greeting"><span id="greetingText">欢迎回来</span>，<span id="greetingUsername">成员</span></p>
+          <h1>工作台</h1>
+          <p>选择一个工具开始。</p>
+        </section>
+
+        <section class="content-section" aria-labelledby="toolsHeading">
+          <div class="section-heading-row">
+            <div>
+              <h2 id="toolsHeading">工具</h2>
+            </div>
+            <span class="result-meta"><b id="resultCount">0</b> 个</span>
+          </div>
+
+          <div class="toolbar" aria-label="工具筛选">
+            <div class="category-tabs" id="categoryTabs"></div>
+          </div>
+
+          <div class="tool-grid" id="toolGrid" aria-live="polite"></div>
+
+          <div class="empty-state" id="emptyState" hidden>
+            <span aria-hidden="true">⌕</span>
+            <h3>没有匹配的工具</h3>
+            <p>调整搜索或筛选条件。</p>
+            <button class="secondary-button" id="clearFilters" type="button">清除筛选</button>
+          </div>
+        </section>
+      </main>
+
+      <footer class="app-footer">
+        <p>© <span id="year"></span> Liuxian Lab</p>
+      </footer>
+    </div>
+  </div>
+
+  <div class="sidebar-backdrop" id="sidebarBackdrop" hidden></div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <template id="toolCardTemplate">
+    <article class="tool-card">
+      <div class="tool-card-top">
+        <span class="tool-glyph"></span>
+        <div class="card-actions">
+          <span class="status-badge"></span>
+          <button class="favorite-button" type="button" aria-label="收藏工具">☆</button>
+        </div>
+      </div>
+      <div class="tool-card-body">
+        <h3></h3>
+        <p class="tool-description"></p>
+      </div>
+      <div class="tool-card-footer">
+        <span class="category-label"></span>
+        <span class="tool-arrow" aria-hidden="true">↗</span>
+      </div>
+      <a class="tool-link" href="#"><span class="sr-only">打开工具</span></a>
+    </article>
+  </template>
+
+  <script src="/app/script.js?v=5.1.0"></script>
+</body>
+</html>
