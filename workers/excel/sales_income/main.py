@@ -1,192 +1,184 @@
-import sys
+import json
 import os
+import sys
 
 from sales import analyze_sales
 from income import analyze_income
 from exporter import export_excel
 
 
+def load_config(config_file):
+    if not os.path.isfile(
+        config_file
+    ):
+        raise FileNotFoundError(
+            f"配置文件不存在: {config_file}"
+        )
+
+    with open(
+        config_file,
+        "r",
+        encoding="utf-8",
+    ) as file:
+        config = json.load(
+            file
+        )
+
+    if not isinstance(
+        config,
+        dict,
+    ):
+        raise ValueError(
+            "配置文件格式无效"
+        )
+
+    return config
+
 
 def run_analysis(
     analysis_type,
     input_file,
-    output_dir
+    output_dir,
+    config_file,
 ):
-    """
-    统一Excel分析入口
+    config = load_config(
+        config_file
+    )
 
-    参数：
+    config_type = str(
+        config.get(
+            "analysisType",
+            analysis_type,
+        )
+    ).lower()
 
-    analysis_type:
-        sales
-        income
-
-    input_file:
-        用户上传Excel文件路径
-
-    output_dir:
-        输出目录
-
-    返回：
-        输出文件路径
-    """
-
-
-    # =========================
-    # 销售收入分析
-    # =========================
+    if (
+        config_type !=
+        analysis_type
+    ):
+        raise ValueError(
+            "analysisType 与配置文件不一致"
+        )
 
     if analysis_type == "sales":
 
-        print("开始销售收入分析...")
-
-
-        result = analyze_sales(
+        (
+            clean_result,
+            offset_detail,
+        ) = analyze_sales(
             input_file,
-            None
+            config,
         )
 
-
-        filename = "sales_result.xlsx"
-
-
-
-    # =========================
-    # 收入分析
-    # =========================
+        filename = (
+            "sales_result.xlsx"
+        )
 
     elif analysis_type == "income":
 
-        print("开始收入分析...")
-
-
-        result = analyze_income(
+        (
+            clean_result,
+            offset_detail,
+        ) = analyze_income(
             input_file,
-            None
+            config,
         )
 
-
-        filename = "income_result.xlsx"
-
-
+        filename = (
+            "income_result.xlsx"
+        )
 
     else:
-
         raise ValueError(
-            f"不支持的分析类型: {analysis_type}"
+            f"不支持的分析类型: "
+            f"{analysis_type}"
         )
 
-
-
-    # =========================
-    # 输出Excel
-    # =========================
-
     output_file = export_excel(
-        result,
+        clean_result,
+        offset_detail,
         output_dir,
-        filename
+        filename,
     )
-
 
     return output_file
 
 
-
-
 def main():
-
-
-    if len(sys.argv) < 4:
+    if len(sys.argv) != 5:
 
         print(
-            """
-================================
-
-Liuxian Lab Excel Analysis
-
-使用方式:
-
-python main.py 类型 输入文件 输出目录
-
-
-示例:
-
-销售分析:
-
-python main.py sales sales.xlsx output
-
-
-收入分析:
-
-python main.py income income.xlsx output
-
-
-================================
-"""
+            "Usage:\n"
+            "python main.py "
+            "<sales|income> "
+            "<input.xlsx> "
+            "<output_dir> "
+            "<config.json>",
+            file=sys.stderr,
         )
 
-        sys.exit(1)
+        sys.exit(2)
 
+    analysis_type = (
+        sys.argv[1]
+        .strip()
+        .lower()
+    )
 
+    input_file = (
+        sys.argv[2]
+    )
 
-    analysis_type = sys.argv[1]
+    output_dir = (
+        sys.argv[3]
+    )
 
-    input_file = sys.argv[2]
+    config_file = (
+        sys.argv[4]
+    )
 
-    output_dir = sys.argv[3]
-
-
-
-    # 检查输入文件
-
-    if not os.path.exists(input_file):
-
+    if not os.path.isfile(
+        input_file
+    ):
         print(
-            "错误: 文件不存在",
-            input_file
+            f"输入文件不存在: "
+            f"{input_file}",
+            file=sys.stderr,
         )
 
-        sys.exit(1)
-
-
+        sys.exit(2)
 
     try:
 
-
-        result = run_analysis(
+        output_file = run_analysis(
             analysis_type,
             input_file,
-            output_dir
-        )
-
-
-        print(
-            "\n分析完成:"
-        )
-
-
-        print(
-            result
-        )
-
-
-    except Exception as e:
-
-
-        print(
-            "分析失败:"
+            output_dir,
+            config_file,
         )
 
         print(
-            str(e)
+            "分析完成:"
+        )
+
+        print(
+            output_file
+        )
+
+    except Exception as error:
+
+        print(
+            "分析失败:",
+            file=sys.stderr,
+        )
+
+        print(
+            str(error),
+            file=sys.stderr,
         )
 
         sys.exit(1)
 
 
-
-
 if __name__ == "__main__":
-
     main()

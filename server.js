@@ -10,6 +10,9 @@ const bcrypt = require('bcryptjs');
 const helmet = require('helmet');
 const { rateLimit } = require('express-rate-limit');
 const { createExcelRouter } = require('./server/excel/routes');
+const { createSalesIncomeRouter } = require('./server/sales-income/routes');
+const { createSalesIncomeInspectRouter } = require('./server/sales-income/inspect-routes');
+const { createSalesIncomeRunRouter } = require('./server/sales-income/run-routes');
 require('dotenv').config();
 
 const app = express();
@@ -229,6 +232,9 @@ app.post('/api/logout', sameOriginForStateChange, requireAuth, (req, res) => {
 });
 
 app.use('/api/excel', createExcelRouter({ root: ROOT, requireAuth, sameOriginForStateChange }));
+app.use('/api/sales-income', requireAuth, sameOriginForStateChange, createSalesIncomeInspectRouter({ projectRoot: ROOT }));
+app.use('/api/sales-income', requireAuth, sameOriginForStateChange, createSalesIncomeRunRouter({ projectRoot: ROOT }));
+app.use('/api/sales-income', requireAuth, sameOriginForStateChange, createSalesIncomeRouter({ projectRoot: ROOT }));
 
 app.use('/app', requireAuth, express.static(PRIVATE_DIR, {
   index: false,

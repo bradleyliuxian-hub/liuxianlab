@@ -1,0 +1,1013 @@
+:root {
+  --bg: #f4f4f0;
+  --surface: #ffffff;
+  --surface-soft: #f8f8f5;
+  --text: #151515;
+  --text-soft: #6d6d67;
+  --line: #deded7;
+  --line-dark: #c9c9c0;
+
+  --accent: #c8ff00;
+  --accent-hover: #b4e800;
+  --accent-soft: #efffc1;
+
+  --danger: #b42318;
+  --danger-soft: #fff2f0;
+
+  --radius: 18px;
+  --radius-small: 11px;
+
+  --shadow:
+    0 1px 2px rgba(0, 0, 0, 0.03),
+    0 10px 30px rgba(0, 0, 0, 0.035);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-height: 100%;
+  background: var(--bg);
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+
+  color: var(--text);
+  background:
+    radial-gradient(
+      circle at top right,
+      rgba(200, 255, 0, 0.08),
+      transparent 30%
+    ),
+    var(--bg);
+
+  font-family:
+    Inter,
+    -apple-system,
+    BlinkMacSystemFont,
+    "SF Pro Display",
+    "SF Pro Text",
+    "PingFang SC",
+    "Microsoft YaHei",
+    sans-serif;
+
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input,
+a {
+  font: inherit;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button {
+  border: 0;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+
+/* ==============================
+   Shell
+============================== */
+
+.page-shell {
+  min-height: 100vh;
+}
+
+
+/* ==============================
+   Header
+============================== */
+
+.tool-header {
+  width: min(1180px, calc(100% - 40px));
+  min-height: 82px;
+  margin: 0 auto;
+
+  display: flex;
+  align-items: center;
+  gap: 18px;
+
+  border-bottom: 1px solid var(--line);
+}
+
+.back-link {
+  width: 42px;
+  height: 42px;
+
+  display: grid;
+  place-items: center;
+
+  flex-shrink: 0;
+
+  border: 1px solid var(--line);
+  border-radius: 50%;
+
+  background: var(--surface);
+
+  font-size: 20px;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    transform 160ms ease;
+}
+
+.back-link:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  transform: translateX(-2px);
+}
+
+.tool-brand {
+  min-width: 0;
+
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.tool-mark {
+  width: 44px;
+  height: 44px;
+
+  display: grid;
+  place-items: center;
+
+  flex-shrink: 0;
+
+  border-radius: 12px;
+
+  color: #111;
+  background: var(--accent);
+
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+}
+
+.tool-brand > div {
+  min-width: 0;
+}
+
+.tool-brand strong {
+  display: block;
+
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1.3;
+}
+
+.tool-brand small {
+  display: block;
+  margin-top: 3px;
+
+  color: var(--text-soft);
+
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.11em;
+}
+
+.private-badge {
+  margin-left: auto;
+
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+
+  padding: 7px 11px;
+
+  border: 1px solid var(--line);
+  border-radius: 999px;
+
+  background: var(--surface);
+
+  color: var(--text-soft);
+
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.private-badge::before {
+  content: "";
+
+  width: 7px;
+  height: 7px;
+
+  border-radius: 50%;
+
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+
+/* ==============================
+   Main
+============================== */
+
+.tool-main {
+  width: min(920px, calc(100% - 40px));
+  margin: 0 auto;
+  padding: 74px 0 90px;
+}
+
+
+/* ==============================
+   Intro
+============================== */
+
+.intro-section {
+  max-width: 760px;
+  margin-bottom: 42px;
+}
+
+.eyebrow {
+  margin: 0 0 14px;
+
+  color: #6f7d00;
+
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.15em;
+}
+
+.intro-section h1 {
+  max-width: 780px;
+  margin: 0;
+
+  font-size: clamp(38px, 7vw, 72px);
+  font-weight: 850;
+  line-height: 0.98;
+  letter-spacing: -0.055em;
+}
+
+.intro-section > p:last-child {
+  max-width: 620px;
+  margin: 24px 0 0;
+
+  color: var(--text-soft);
+
+  font-size: 15px;
+  line-height: 1.75;
+}
+
+
+/* ==============================
+   Workspace card
+============================== */
+
+.workspace-card {
+  margin-top: 18px;
+  padding: 28px;
+
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+
+  background: rgba(255, 255, 255, 0.93);
+  box-shadow: var(--shadow);
+}
+
+.card-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+
+  margin-bottom: 24px;
+}
+
+.step-no {
+  width: 38px;
+  height: 38px;
+
+  display: grid;
+  place-items: center;
+
+  flex-shrink: 0;
+
+  border-radius: 10px;
+
+  color: #111;
+  background: var(--accent);
+
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.card-heading h2 {
+  margin: 1px 0 5px;
+
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.card-heading p {
+  margin: 0;
+
+  color: var(--text-soft);
+
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+
+/* ==============================
+   Analysis options
+============================== */
+
+.analysis-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.analysis-option {
+  min-height: 148px;
+  padding: 20px;
+
+  position: relative;
+
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+
+  text-align: left;
+
+  border: 1px solid var(--line);
+  border-radius: 14px;
+
+  color: var(--text);
+  background: var(--surface-soft);
+
+  cursor: pointer;
+
+  transition:
+    background 150ms ease,
+    border-color 150ms ease,
+    transform 150ms ease,
+    box-shadow 150ms ease;
+}
+
+.analysis-option:hover {
+  border-color: var(--line-dark);
+  transform: translateY(-1px);
+}
+
+.analysis-option.active {
+  border-color: #a9d900;
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px rgba(169, 217, 0, 0.2);
+}
+
+.analysis-option::after {
+  content: "";
+
+  width: 14px;
+  height: 14px;
+
+  position: absolute;
+  top: 18px;
+  right: 18px;
+
+  border: 1px solid var(--line-dark);
+  border-radius: 50%;
+
+  background: #fff;
+}
+
+.analysis-option.active::after {
+  border: 4px solid #151515;
+  background: var(--accent);
+}
+
+.analysis-option strong {
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.analysis-option small {
+  margin-top: 4px;
+
+  color: var(--text-soft);
+
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.analysis-option p {
+  max-width: 280px;
+  margin: auto 0 0;
+  padding-top: 20px;
+
+  color: var(--text-soft);
+
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+
+/* ==============================
+   Upload dropzone
+============================== */
+
+.drop-zone {
+  min-height: 210px;
+  padding: 34px 20px;
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+
+  border: 1.5px dashed var(--line-dark);
+  border-radius: 14px;
+
+  background:
+    linear-gradient(
+      135deg,
+      rgba(200, 255, 0, 0.055),
+      transparent 55%
+    ),
+    var(--surface-soft);
+
+  cursor: pointer;
+
+  transition:
+    border-color 150ms ease,
+    background 150ms ease,
+    transform 150ms ease;
+}
+
+.drop-zone:hover,
+.drop-zone.dragging {
+  border-color: #99c400;
+  background: var(--accent-soft);
+}
+
+.drop-zone.dragging {
+  transform: scale(0.997);
+}
+
+.drop-zone::before {
+  content: "↑";
+
+  width: 48px;
+  height: 48px;
+  margin-bottom: 16px;
+
+  display: grid;
+  place-items: center;
+
+  border-radius: 50%;
+
+  color: #111;
+  background: var(--accent);
+
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.drop-zone strong {
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.drop-zone small {
+  margin-top: 7px;
+
+  color: var(--text-soft);
+
+  font-size: 11px;
+}
+
+
+/* ==============================
+   Selected file
+============================== */
+
+.selected-file {
+  margin-top: 12px;
+  padding: 14px 15px;
+
+  display: flex;
+  align-items: center;
+  gap: 12px;
+
+  border: 1px solid var(--line);
+  border-radius: 12px;
+
+  background: var(--surface-soft);
+}
+
+.selected-file::before {
+  content: "XLSX";
+
+  width: 46px;
+  height: 46px;
+
+  display: grid;
+  place-items: center;
+
+  flex-shrink: 0;
+
+  border-radius: 10px;
+
+  color: #111;
+  background: var(--accent);
+
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+}
+
+.selected-file > div {
+  min-width: 0;
+  flex: 1;
+}
+
+.selected-file strong {
+  display: block;
+
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+  font-size: 13px;
+}
+
+.selected-file small {
+  display: block;
+  margin-top: 5px;
+
+  color: var(--text-soft);
+
+  font-size: 11px;
+}
+
+#clearFileButton {
+  width: 34px;
+  height: 34px;
+
+  display: grid;
+  place-items: center;
+
+  flex-shrink: 0;
+
+  border-radius: 50%;
+
+  color: var(--text-soft);
+  background: transparent;
+
+  font-size: 21px;
+  cursor: pointer;
+}
+
+#clearFileButton:hover {
+  color: var(--text);
+  background: #ededE7;
+}
+
+
+/* ==============================
+   Buttons
+============================== */
+
+.primary-button {
+  min-height: 48px;
+  margin-top: 18px;
+  padding: 0 20px;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+
+  border-radius: 12px;
+
+  color: #111;
+  background: var(--accent);
+
+  font-size: 13px;
+  font-weight: 850;
+
+  cursor: pointer;
+
+  transition:
+    background 150ms ease,
+    transform 150ms ease,
+    opacity 150ms ease;
+}
+
+.primary-button:hover:not(:disabled) {
+  background: var(--accent-hover);
+  transform: translateY(-1px);
+}
+
+.primary-button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+
+/* ==============================
+   Progress
+============================== */
+
+.progress-track {
+  width: 100%;
+  height: 9px;
+
+  overflow: hidden;
+
+  border-radius: 999px;
+
+  background: #e9e9e3;
+}
+
+.progress-track > span {
+  width: 0%;
+  height: 100%;
+
+  display: block;
+
+  border-radius: inherit;
+
+  background: var(--accent);
+
+  transition: width 350ms ease;
+}
+
+#progressValue {
+  display: block;
+  margin-top: 10px;
+
+  font-size: 12px;
+  font-weight: 850;
+}
+
+
+/* ==============================
+   Result
+============================== */
+
+#resultsPanel {
+  border-color: #b9da43;
+  background:
+    linear-gradient(
+      135deg,
+      rgba(200, 255, 0, 0.11),
+      transparent 50%
+    ),
+    #fff;
+}
+
+#downloadButton {
+  width: fit-content;
+}
+
+
+/* ==============================
+   Toast
+============================== */
+
+.toast {
+  max-width: min(420px, calc(100% - 32px));
+  padding: 12px 16px;
+
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+
+  z-index: 100;
+
+  transform:
+    translate(-50%, 20px);
+
+  border: 1px solid #2d2d2d;
+  border-radius: 11px;
+
+  color: #fff;
+  background: #191919;
+
+  opacity: 0;
+  pointer-events: none;
+
+  font-size: 12px;
+  line-height: 1.5;
+
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease;
+}
+
+.toast.show {
+  opacity: 1;
+
+  transform:
+    translate(-50%, 0);
+}
+
+.toast.error {
+  border-color: #8f261d;
+  background: #8f261d;
+}
+
+
+/* ==============================
+   Mobile
+============================== */
+
+@media (max-width: 720px) {
+
+  .tool-header {
+    width: min(100% - 24px, 1180px);
+    min-height: 72px;
+  }
+
+  .tool-brand small {
+    display: none;
+  }
+
+  .private-badge {
+    padding: 6px 9px;
+  }
+
+  .tool-main {
+    width: min(100% - 24px, 920px);
+    padding-top: 46px;
+  }
+
+  .intro-section h1 {
+    font-size: clamp(38px, 13vw, 58px);
+  }
+
+  .workspace-card {
+    padding: 20px;
+  }
+
+  .analysis-options {
+    grid-template-columns: 1fr;
+  }
+
+  .analysis-option {
+    min-height: 130px;
+  }
+
+  .drop-zone {
+    min-height: 180px;
+  }
+
+  .primary-button {
+    width: 100%;
+  }
+
+}
+
+
+@media (max-width: 420px) {
+
+  .tool-header {
+    gap: 10px;
+  }
+
+  .tool-mark {
+    display: none;
+  }
+
+  .private-badge {
+    font-size: 10px;
+  }
+
+  .workspace-card {
+    border-radius: 14px;
+  }
+
+  .intro-section > p:last-child {
+    font-size: 14px;
+  }
+
+}
+
+
+/* =========================================
+   Excel structure + field mapping
+========================================= */
+
+.structure-grid {
+  display: grid;
+  grid-template-columns:
+    repeat(2, minmax(0, 1fr));
+
+  gap: 12px;
+}
+
+
+.control-field,
+.mapping-row {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+
+.control-field > span,
+.mapping-row > span,
+.section-label {
+  color: var(--text);
+
+  font-size: 12px;
+  font-weight: 800;
+}
+
+
+.control-field select,
+.mapping-row select {
+  width: 100%;
+  min-height: 46px;
+
+  padding: 0 40px 0 13px;
+
+  border: 1px solid var(--line);
+  border-radius: 11px;
+
+  color: var(--text);
+  background: var(--surface);
+
+  outline: none;
+
+  font-size: 13px;
+}
+
+
+.control-field select:focus,
+.mapping-row select:focus {
+  border-color: #98c400;
+
+  box-shadow:
+    0 0 0 3px
+    rgba(200, 255, 0, 0.18);
+}
+
+
+.detected-block {
+  margin-top: 24px;
+}
+
+
+.header-chips {
+  margin-top: 10px;
+
+  display: flex;
+  flex-wrap: wrap;
+
+  gap: 7px;
+}
+
+
+.header-chip {
+  padding: 7px 10px;
+
+  border: 1px solid var(--line);
+  border-radius: 999px;
+
+  color: var(--text-soft);
+  background: var(--surface-soft);
+
+  font-size: 11px;
+  font-weight: 700;
+}
+
+
+.mapping-divider {
+  height: 1px;
+
+  margin:
+    30px 0;
+
+  background: var(--line);
+}
+
+
+.mapping-title {
+  display: flex;
+  align-items: flex-start;
+
+  gap: 14px;
+
+  margin-bottom: 20px;
+}
+
+
+.mapping-title h2 {
+  margin:
+    1px 0 5px;
+
+  font-size: 18px;
+}
+
+
+.mapping-title p {
+  margin: 0;
+
+  color: var(--text-soft);
+
+  font-size: 13px;
+}
+
+
+.mapping-grid {
+  display: grid;
+  grid-template-columns:
+    repeat(2, minmax(0, 1fr));
+
+  gap: 16px 12px;
+}
+
+
+.mapping-row {
+  padding: 16px;
+
+  border: 1px solid var(--line);
+  border-radius: 12px;
+
+  background:
+    var(--surface-soft);
+}
+
+
+.mapping-row small {
+  min-height: 16px;
+
+  color: var(--text-soft);
+
+  font-size: 10px;
+}
+
+
+.mapping-summary {
+  margin-top: 18px;
+  padding: 18px;
+
+  border: 1px solid #b4d940;
+  border-radius: 12px;
+
+  background:
+    var(--accent-soft);
+}
+
+
+.mapping-summary strong {
+  font-size: 13px;
+}
+
+
+.mapping-summary p {
+  margin:
+    6px 0 14px;
+
+  color: var(--text-soft);
+
+  font-size: 12px;
+}
+
+
+.mapping-summary pre {
+  margin: 0;
+  padding: 14px;
+
+  overflow-x: auto;
+
+  border-radius: 10px;
+
+  color: #efefef;
+  background: #191919;
+
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+
+@media (max-width: 720px) {
+
+  .structure-grid,
+  .mapping-grid {
+    grid-template-columns: 1fr;
+  }
+
+}
