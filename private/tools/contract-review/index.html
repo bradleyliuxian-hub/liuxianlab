@@ -1,0 +1,340 @@
+<!doctype html>
+
+<html lang="zh-CN">
+
+<head>
+
+  <meta charset="utf-8">
+
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1"
+  >
+
+  <title>
+    合同审阅 · Liuxian Lab
+  </title>
+
+  <link
+    rel="stylesheet"
+    href="/app/tools/contract-review/styles.css?v=4.1.0"
+  >
+
+</head>
+
+
+<body>
+
+  <div class="tool-shell">
+
+
+    <header class="tool-header">
+
+      <a
+        class="back-button"
+        href="/"
+        aria-label="返回工作台"
+      >
+        ←
+      </a>
+
+
+      <div class="tool-brand">
+
+        <span class="tool-mark">
+          LAW
+        </span>
+
+        <strong>
+          合同审阅
+        </strong>
+
+      </div>
+
+
+      <div class="header-actions">
+
+        <span class="private-badge">
+          <i></i>
+          私有
+        </span>
+
+        <button
+          class="theme-button"
+          id="themeToggle"
+          type="button"
+          aria-label="切换主题"
+        >
+          ◐
+        </button>
+
+      </div>
+
+    </header>
+
+
+
+    <main class="tool-main">
+
+
+      <section class="intro-section">
+
+        <div>
+
+          <h1>
+            合同 PDF 解析
+          </h1>
+
+          <p>
+            上传扫描版 PDF，自动 OCR 并生成 Markdown。
+          </p>
+
+        </div>
+
+
+        <ol
+          class="flow-steps"
+          aria-label="审阅流程"
+        >
+
+          <li class="active">
+            <span>01</span>
+            文件
+          </li>
+
+          <li>
+            <span>02</span>
+            解析
+          </li>
+
+          <li>
+            <span>03</span>
+            审阅
+          </li>
+
+          <li>
+            <span>04</span>
+            完成
+          </li>
+
+        </ol>
+
+      </section>
+
+
+
+      <section class="workspace-card">
+
+        <div class="card-heading">
+
+          <span class="step-number">
+            01
+          </span>
+
+          <div>
+
+            <h2>
+              合同文件
+            </h2>
+
+            <p>
+              PDF · 最大 25 MB
+            </p>
+
+          </div>
+
+        </div>
+
+
+        <label
+          class="drop-zone"
+          id="dropZone"
+          for="fileInput"
+        >
+
+          <input
+            id="fileInput"
+            type="file"
+            accept=".pdf,application/pdf"
+            hidden
+          >
+
+          <span class="upload-icon">
+            ↑
+          </span>
+
+          <strong>
+            选择或拖入 PDF
+          </strong>
+
+          <small>
+            PDF
+          </small>
+
+        </label>
+
+
+
+        <div
+          class="selected-file"
+          id="selectedFile"
+          hidden
+        >
+
+          <span class="file-mark">
+            PDF
+          </span>
+
+          <div class="file-info">
+
+            <strong
+              id="fileName"
+            >
+            </strong>
+
+            <small
+              id="fileMeta"
+            >
+            </small>
+
+          </div>
+
+
+          <button
+            id="clearFileButton"
+            type="button"
+            aria-label="移除文件"
+          >
+            ×
+          </button>
+
+        </div>
+
+
+
+        <button
+          class="primary-button"
+          id="uploadButton"
+          type="button"
+          disabled
+        >
+          开始解析 →
+        </button>
+
+      </section>
+
+
+
+      <section
+        class="workspace-card status-card"
+        id="statusPanel"
+        hidden
+      >
+
+        <div class="card-heading">
+
+          <span class="step-number">
+            02
+          </span>
+
+          <div>
+
+            <h2>
+              解析任务
+            </h2>
+
+            <p
+              id="statusText"
+            >
+              等待处理
+            </p>
+
+          </div>
+
+        </div>
+
+
+        <div class="status-file">
+
+          <div>
+
+            <small>
+              文件
+            </small>
+
+            <strong
+              id="statusFileName"
+            >
+            </strong>
+
+          </div>
+
+
+          <span
+            class="status-badge"
+            id="statusBadge"
+          >
+            QUEUED
+          </span>
+
+        </div>
+
+
+        <div class="progress-track">
+
+          <span
+            id="progressBar"
+          >
+          </span>
+
+        </div>
+
+
+        <div class="progress-meta">
+
+          <span
+            id="stageText"
+          >
+            等待解析
+          </span>
+
+          <strong
+            id="progressValue"
+          >
+            0%
+          </strong>
+
+        </div>
+
+
+        <small class="phase-note">
+          解析将在后台自动运行，完成后可直接下载 Markdown。
+        </small>
+
+      </section>
+
+
+    </main>
+
+
+  </div>
+
+
+  <div
+    class="toast"
+    id="toast"
+  >
+  </div>
+
+
+  <script src="/app/tools/contract-review/workflow.js?v=3.0.0"></script>
+<script
+    src="/app/tools/contract-review/script.js?v=1.1.0"
+  ></script>
+  <script
+    src="/app/tools/contract-review/contract-history.js?v=1.1.0"
+  ></script>
+
+</body>
+
+</html>

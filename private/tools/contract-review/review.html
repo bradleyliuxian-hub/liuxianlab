@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="utf-8">
+
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1"
+  >
+
+  <title>合同人工校对</title>
+
+  <link
+    rel="stylesheet"
+    href="/app/tools/contract-review/review.css?v=1.8.0"
+  >
+</head>
+
+<body>
+
+  <div class="review-app">
+
+    <header class="review-header">
+
+      <div class="review-title-group">
+
+        <div class="review-eyebrow">
+          CONTRACT DIGITIZATION
+        </div>
+
+        <h1>
+          合同人工校对
+        </h1>
+
+        <div
+          id="fileName"
+          class="file-name"
+        >
+          正在加载合同…
+        </div>
+
+      </div>
+
+
+      <div class="header-actions">
+
+        <button
+          id="reviewGuideButton"
+          class="button button-guide"
+          type="button"
+        >
+          使用说明
+        </button>
+
+        <span
+          id="saveState"
+          class="save-state"
+        >
+          正在加载
+        </span>
+
+        <button
+          id="saveButton"
+          class="button button-secondary"
+          type="button"
+        >
+          保存草稿
+        </button>
+
+        <button
+          id="finalizeButton"
+          class="button button-primary"
+          type="button"
+        >
+          确认并生成最终 Markdown
+        </button>
+
+      </div>
+
+    </header>
+
+
+    <main class="review-workspace">
+
+      <section class="review-pane">
+
+        <div class="pane-header">
+
+          <div class="pane-title">
+
+            <span class="pane-number">
+              01
+            </span>
+
+            <strong>
+              原合同
+            </strong>
+
+          </div>
+
+          <a
+            id="openPdfLink"
+            class="open-link"
+            href="#"
+            target="_blank"
+            rel="noopener"
+          >
+            单独打开 PDF
+          </a>
+
+        </div>
+
+
+        <div class="pdf-container">
+
+          <div class="pdf-toolbar">
+
+            <button
+              id="pdfPrev"
+              class="pdf-tool-button"
+              type="button"
+              title="上一页"
+            >
+              ←
+            </button>
+
+            <div class="pdf-page-info">
+
+              第
+
+              <input
+                id="pdfPageInput"
+                class="pdf-page-input"
+                type="number"
+                min="1"
+                value="1"
+              >
+
+              / <span id="pdfPageCount">-</span> 页
+
+            </div>
+
+            <button
+              id="pdfNext"
+              class="pdf-tool-button"
+              type="button"
+              title="下一页"
+            >
+              →
+            </button>
+
+            <span class="pdf-toolbar-separator"></span>
+
+            <button
+              id="pdfZoomOut"
+              class="pdf-tool-button"
+              type="button"
+              title="缩小"
+            >
+              −
+            </button>
+
+            <span
+              id="pdfZoomLabel"
+              class="pdf-zoom-label"
+            >
+              100%
+            </span>
+
+            <button
+              id="pdfZoomIn"
+              class="pdf-tool-button"
+              type="button"
+              title="放大"
+            >
+              +
+            </button>
+
+          </div>
+
+
+          <div
+            id="pdfViewport"
+            class="pdf-viewport"
+          >
+
+            <div
+              id="pdfLoading"
+              class="pdf-loading"
+            >
+              正在加载 PDF…
+            </div>
+
+            <canvas
+              id="pdfCanvas"
+              class="pdf-canvas"
+            ></canvas>
+
+          </div>
+
+        </div>
+
+      </section>
+
+
+      <section class="review-pane">
+
+        <div class="pane-header">
+
+          <div class="pane-title">
+
+            <span class="pane-number">
+              02
+            </span>
+
+            <strong>
+              Markdown 校对稿
+            </strong>
+
+          </div>
+
+          <span
+            id="wordCount"
+            class="word-count"
+          >
+            -
+          </span>
+
+        </div>
+
+
+        <div class="review-tip">
+
+          请对照左侧原合同检查右侧内容。
+          此处修改只影响校对稿，不会修改 MinerU 原始解析文件。
+
+        </div>
+
+
+        <textarea
+          id="draftEditor"
+          class="draft-editor"
+          spellcheck="false"
+        ></textarea>
+
+      </section>
+
+    </main>
+
+
+    <footer class="review-footer">
+
+      <div class="footer-status">
+
+        <span
+          id="taskBadge"
+          class="task-badge"
+        >
+          REVIEWING
+        </span>
+
+        <span id="footerMessage">
+          等待人工校对
+        </span>
+
+      </div>
+
+
+      <div class="footer-actions">
+
+        <button
+          id="saveButtonBottom"
+          class="button button-secondary"
+          type="button"
+        >
+          保存草稿
+        </button>
+
+        <button
+          id="finalizeButtonBottom"
+          class="button button-primary"
+          type="button"
+        >
+          确认最终版本
+        </button>
+
+      </div>
+
+    </footer>
+
+  </div>
+
+
+  <script
+    src="/app/tools/contract-review/review.js?v=1.5.1"
+  ></script>
+
+  <script
+    src="/app/tools/contract-review/review-fields.js?v=1.0.0"
+  ></script>
+
+  <script
+    src="/app/tools/contract-review/review-issues.js?v=1.4.0"
+  ></script>
+
+  <script
+    src="/app/tools/contract-review/review-guide.js?v=1.0.0"
+  ></script>
+
+</body>
+
+</html>

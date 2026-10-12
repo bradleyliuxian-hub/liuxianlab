@@ -1,0 +1,1590 @@
+(() => {
+  "use strict";
+
+
+  const params =
+    new URLSearchParams(
+      window.location.search
+    );
+
+
+  const contractId =
+    params.get("id");
+
+
+  const fileName =
+    document.getElementById(
+      "fileName"
+    );
+
+
+  const pdfCanvas =
+    document.getElementById(
+      "pdfCanvas"
+    );
+
+
+  const pdfViewport =
+    document.getElementById(
+      "pdfViewport"
+    );
+
+
+  const pdfLoading =
+    document.getElementById(
+      "pdfLoading"
+    );
+
+
+  const pdfPrev =
+    document.getElementById(
+      "pdfPrev"
+    );
+
+
+  const pdfNext =
+    document.getElementById(
+      "pdfNext"
+    );
+
+
+  const pdfPageInput =
+    document.getElementById(
+      "pdfPageInput"
+    );
+
+
+  const pdfPageCount =
+    document.getElementById(
+      "pdfPageCount"
+    );
+
+
+  const pdfZoomOut =
+    document.getElementById(
+      "pdfZoomOut"
+    );
+
+
+  const pdfZoomIn =
+    document.getElementById(
+      "pdfZoomIn"
+    );
+
+
+  const pdfZoomLabel =
+    document.getElementById(
+      "pdfZoomLabel"
+    );
+
+
+  const pdfHighlightBox =
+    document.createElement(
+      "div"
+    );
+
+
+  pdfHighlightBox.id =
+    "pdfHighlightBox";
+
+
+  pdfHighlightBox.className =
+    "pdf-highlight-box";
+
+
+  if (pdfViewport) {
+
+    pdfViewport.appendChild(
+      pdfHighlightBox
+    );
+
+  }
+
+
+  const openPdfLink =
+    document.getElementById(
+      "openPdfLink"
+    );
+
+
+  const editor =
+    document.getElementById(
+      "draftEditor"
+    );
+
+
+  const wordCount =
+    document.getElementById(
+      "wordCount"
+    );
+
+
+  const saveState =
+    document.getElementById(
+      "saveState"
+    );
+
+
+  const footerMessage =
+    document.getElementById(
+      "footerMessage"
+    );
+
+
+  const taskBadge =
+    document.getElementById(
+      "taskBadge"
+    );
+
+
+  const saveButtons = [
+    document.getElementById(
+      "saveButton"
+    ),
+
+    document.getElementById(
+      "saveButtonBottom"
+    )
+  ].filter(Boolean);
+
+
+  const finalizeButtons = [
+    document.getElementById(
+      "finalizeButton"
+    ),
+
+    document.getElementById(
+      "finalizeButtonBottom"
+    )
+  ].filter(Boolean);
+
+
+  let dirty = false;
+  let saving = false;
+
+
+  function setButtonsDisabled(
+    disabled
+  ) {
+
+    for (
+      const button
+      of [
+        ...saveButtons,
+        ...finalizeButtons
+      ]
+    ) {
+
+      button.disabled =
+        Boolean(
+          disabled
+        );
+
+    }
+
+  }
+
+
+  function updateCount() {
+
+    const text =
+      editor?.value || "";
+
+
+    const chars =
+      text.length;
+
+
+    const lines =
+      text
+        ? text.split("\n").length
+        : 0;
+
+
+    if (wordCount) {
+
+      wordCount.textContent =
+        `${chars.toLocaleString()} 字符 · ${lines.toLocaleString()} 行`;
+
+    }
+
+  }
+
+
+  function markDirty() {
+
+    dirty = true;
+
+
+    if (saveState) {
+
+      saveState.textContent =
+        "有未保存修改";
+
+    }
+
+  }
+
+
+  function markSaved(
+    updatedAt
+  ) {
+
+    dirty = false;
+
+
+    if (!saveState) {
+      return;
+    }
+
+
+    if (updatedAt) {
+
+      const date =
+        new Date(
+          updatedAt
+        );
+
+
+      saveState.textContent =
+        `已保存 ${date.toLocaleTimeString()}`;
+
+    } else {
+
+      saveState.textContent =
+        "已保存";
+
+    }
+
+  }
+
+
+  async function requestJson(
+    url,
+    options = {}
+  ) {
+
+    const headers = {
+      Accept:
+        "application/json",
+
+      ...(options.headers || {})
+    };
+
+
+    if (
+      options.body
+      &&
+      !headers["Content-Type"]
+    ) {
+
+      headers["Content-Type"] =
+        "application/json";
+
+    }
+
+
+    const response =
+      await fetch(
+        url,
+        {
+          credentials:
+            "same-origin",
+
+          ...options,
+
+          headers
+        }
+      );
+
+
+    let payload =
+      null;
+
+
+    try {
+
+      payload =
+        await response.json();
+
+    } catch (_) {
+      // Ignore.
+    }
+
+
+    if (
+      !response.ok
+      ||
+      !payload?.ok
+    ) {
+
+      throw new Error(
+        payload?.error
+        ||
+        `请求失败：${response.status}`
+      );
+
+    }
+
+
+    return payload;
+
+  }
+
+
+  let pdfDocument = null;
+  let pdfCurrentPage = 1;
+  let pdfScale = 1.15;
+  let pdfRenderTask = null;
+
+
+  function updatePdfControls() {
+
+    if (!pdfDocument) {
+      return;
+    }
+
+
+    if (pdfPageInput) {
+
+      pdfPageInput.value =
+        String(
+          pdfCurrentPage
+        );
+
+      pdfPageInput.max =
+        String(
+          pdfDocument.numPages
+        );
+
+    }
+
+
+    if (pdfPageCount) {
+
+      pdfPageCount.textContent =
+        String(
+          pdfDocument.numPages
+        );
+
+    }
+
+
+    if (pdfPrev) {
+
+      pdfPrev.disabled =
+        pdfCurrentPage <= 1;
+
+    }
+
+
+    if (pdfNext) {
+
+      pdfNext.disabled =
+        pdfCurrentPage >=
+        pdfDocument.numPages;
+
+    }
+
+
+    if (pdfZoomLabel) {
+
+      pdfZoomLabel.textContent =
+        `${Math.round(
+          pdfScale * 100
+        )}%`;
+
+    }
+
+  }
+
+
+  let activePdfLocation =
+    null;
+
+
+  function hidePdfHighlight() {
+
+    activePdfLocation =
+      null;
+
+
+    if (pdfHighlightBox) {
+
+      pdfHighlightBox.style.display =
+        "none";
+
+    }
+
+  }
+
+
+  function positionPdfHighlight() {
+
+    if (
+      !activePdfLocation
+      ||
+      !pdfCanvas
+      ||
+      !pdfViewport
+      ||
+      !pdfHighlightBox
+    ) {
+
+      return;
+
+    }
+
+
+    const bbox =
+      activePdfLocation.bbox;
+
+
+    if (
+      !Array.isArray(
+        bbox
+      )
+      ||
+      bbox.length !== 4
+    ) {
+
+      pdfHighlightBox.style.display =
+        "none";
+
+      return;
+
+    }
+
+
+    const [
+      x1,
+      y1,
+      x2,
+      y2
+    ] = bbox.map(
+      Number
+    );
+
+
+    if (
+      ![
+        x1,
+        y1,
+        x2,
+        y2
+      ].every(
+        Number.isFinite
+      )
+    ) {
+
+      pdfHighlightBox.style.display =
+        "none";
+
+      return;
+
+    }
+
+
+    /*
+     * MinerU bbox is normalized:
+     *
+     * [0,0] ---------------- [1,0]
+     *   |                      |
+     *   |                      |
+     * [0,1] ---------------- [1,1]
+     */
+
+    const canvasWidth =
+      pdfCanvas.clientWidth;
+
+
+    const canvasHeight =
+      pdfCanvas.clientHeight;
+
+
+    const left =
+      pdfCanvas.offsetLeft
+      +
+      x1 * canvasWidth;
+
+
+    const top =
+      pdfCanvas.offsetTop
+      +
+      y1 * canvasHeight;
+
+
+    const width =
+      (x2 - x1)
+      * canvasWidth;
+
+
+    const height =
+      (y2 - y1)
+      * canvasHeight;
+
+
+    pdfHighlightBox.style.left =
+      `${left}px`;
+
+
+    pdfHighlightBox.style.top =
+      `${top}px`;
+
+
+    pdfHighlightBox.style.width =
+      `${Math.max(
+        8,
+        width
+      )}px`;
+
+
+    pdfHighlightBox.style.height =
+      `${Math.max(
+        8,
+        height
+      )}px`;
+
+
+    pdfHighlightBox.style.display =
+      "block";
+
+
+    /*
+     * Scroll the marked area near the
+     * center of the PDF viewport.
+     */
+    const targetTop =
+      top
+      -
+      pdfViewport.clientHeight
+      * 0.35;
+
+
+    const targetLeft =
+      left
+      -
+      pdfViewport.clientWidth
+      * 0.35;
+
+
+    pdfViewport.scrollTo({
+      top:
+        Math.max(
+          0,
+          targetTop
+        ),
+
+      left:
+        Math.max(
+          0,
+          targetLeft
+        ),
+
+      behavior:
+        "smooth"
+    });
+
+  }
+
+
+  async function locatePdfIssue(
+    issue
+  ) {
+
+    if (
+      !issue
+    ) {
+      return false;
+    }
+
+
+    const page =
+      Number(
+        issue.page
+      );
+
+
+    const bbox =
+      issue.bbox;
+
+
+    if (
+      !Number.isInteger(
+        page
+      )
+      ||
+      page < 1
+      ||
+      !Array.isArray(
+        bbox
+      )
+      ||
+      bbox.length !== 4
+    ) {
+
+      hidePdfHighlight();
+
+      return false;
+
+    }
+
+
+    activePdfLocation = {
+      page,
+      bbox
+    };
+
+
+    await renderPdfPage(
+      page
+    );
+
+
+    /*
+     * renderPdfPage has now set the actual
+     * canvas dimensions, so bbox can be mapped
+     * accurately to display pixels.
+     */
+    requestAnimationFrame(
+      () => {
+
+        positionPdfHighlight();
+
+      }
+    );
+
+
+    return true;
+
+  }
+
+
+  async function renderPdfPage(
+    pageNumber
+  ) {
+
+    if (
+      !pdfDocument
+      ||
+      !pdfCanvas
+    ) {
+      return;
+    }
+
+
+    const safePage =
+      Math.max(
+        1,
+        Math.min(
+          pdfDocument.numPages,
+          Number(
+            pageNumber
+          ) || 1
+        )
+      );
+
+
+    pdfCurrentPage =
+      safePage;
+
+
+    if (pdfRenderTask) {
+
+      try {
+
+        pdfRenderTask.cancel();
+
+      } catch (_) {
+        // Ignore.
+      }
+
+      pdfRenderTask =
+        null;
+
+    }
+
+
+    const page =
+      await pdfDocument.getPage(
+        safePage
+      );
+
+
+    const viewport =
+      page.getViewport({
+        scale:
+          pdfScale
+      });
+
+
+    const ratio =
+      window.devicePixelRatio
+      || 1;
+
+
+    const context =
+      pdfCanvas.getContext(
+        "2d"
+      );
+
+
+    pdfCanvas.width =
+      Math.floor(
+        viewport.width
+        * ratio
+      );
+
+
+    pdfCanvas.height =
+      Math.floor(
+        viewport.height
+        * ratio
+      );
+
+
+    pdfCanvas.style.width =
+      `${Math.floor(
+        viewport.width
+      )}px`;
+
+
+    pdfCanvas.style.height =
+      `${Math.floor(
+        viewport.height
+      )}px`;
+
+
+    pdfCanvas.style.display =
+      "block";
+
+
+    const transform =
+      ratio !== 1
+        ? [
+            ratio,
+            0,
+            0,
+            ratio,
+            0,
+            0
+          ]
+        : null;
+
+
+    pdfRenderTask =
+      page.render({
+        canvasContext:
+          context,
+
+        viewport,
+
+        transform
+      });
+
+
+    try {
+
+      await pdfRenderTask.promise;
+
+    } catch (error) {
+
+      if (
+        error?.name !==
+        "RenderingCancelledException"
+      ) {
+
+        throw error;
+
+      }
+
+    } finally {
+
+      pdfRenderTask =
+        null;
+
+    }
+
+
+    updatePdfControls();
+
+
+    if (
+      activePdfLocation
+      &&
+      Number(
+        activePdfLocation.page
+      ) ===
+        Number(
+          pdfCurrentPage
+        )
+    ) {
+
+      requestAnimationFrame(
+        () => {
+
+          positionPdfHighlight();
+
+        }
+      );
+
+    } else if (
+      pdfHighlightBox
+    ) {
+
+      pdfHighlightBox.style.display =
+        "none";
+
+    }
+
+
+    if (pdfViewport) {
+
+      pdfViewport.scrollTop =
+        0;
+
+      pdfViewport.scrollLeft =
+        0;
+
+    }
+
+  }
+
+
+  async function loadPdfViewer(
+    previewUrl
+  ) {
+
+    if (!pdfCanvas) {
+
+      throw new Error(
+        "找不到 PDF Canvas"
+      );
+
+    }
+
+
+    if (pdfLoading) {
+
+      pdfLoading.style.display =
+        "flex";
+
+      pdfLoading.textContent =
+        "正在加载 PDF…";
+
+    }
+
+
+    try {
+
+      const pdfjsLib =
+        await import(
+          "/vendor/pdfjs/pdf.mjs"
+        );
+
+
+      pdfjsLib
+        .GlobalWorkerOptions
+        .workerSrc =
+          "/vendor/pdfjs/pdf.worker.mjs";
+
+
+      const loadingTask =
+        pdfjsLib.getDocument({
+          url:
+            previewUrl,
+
+          withCredentials:
+            true
+        });
+
+
+      pdfDocument =
+        await loadingTask.promise;
+
+
+      if (pdfLoading) {
+
+        pdfLoading.style.display =
+          "none";
+
+      }
+
+
+      await renderPdfPage(
+        1
+      );
+
+
+    } catch (error) {
+
+      console.error(
+        "[contract PDF viewer]",
+        error
+      );
+
+
+      if (pdfLoading) {
+
+        pdfLoading.style.display =
+          "flex";
+
+        pdfLoading.textContent =
+          `PDF 加载失败：${
+            error.message
+          }`;
+
+      }
+
+
+      throw error;
+
+    }
+
+  }
+
+
+  if (pdfPrev) {
+
+    pdfPrev.addEventListener(
+      "click",
+      () => {
+
+        renderPdfPage(
+          pdfCurrentPage - 1
+        );
+
+      }
+    );
+
+  }
+
+
+  if (pdfNext) {
+
+    pdfNext.addEventListener(
+      "click",
+      () => {
+
+        renderPdfPage(
+          pdfCurrentPage + 1
+        );
+
+      }
+    );
+
+  }
+
+
+  if (pdfPageInput) {
+
+    pdfPageInput.addEventListener(
+      "change",
+      () => {
+
+        renderPdfPage(
+          pdfPageInput.value
+        );
+
+      }
+    );
+
+  }
+
+
+  if (pdfZoomOut) {
+
+    pdfZoomOut.addEventListener(
+      "click",
+      () => {
+
+        pdfScale =
+          Math.max(
+            0.5,
+            pdfScale - 0.15
+          );
+
+
+        renderPdfPage(
+          pdfCurrentPage
+        );
+
+      }
+    );
+
+  }
+
+
+  if (pdfZoomIn) {
+
+    pdfZoomIn.addEventListener(
+      "click",
+      () => {
+
+        pdfScale =
+          Math.min(
+            3,
+            pdfScale + 0.15
+          );
+
+
+        renderPdfPage(
+          pdfCurrentPage
+        );
+
+      }
+    );
+
+  }
+
+
+  window.ContractPdfViewer = {
+
+    locateIssue:
+      locatePdfIssue,
+
+    hideHighlight:
+      hidePdfHighlight,
+
+    getCurrentPage:
+      () => pdfCurrentPage
+
+  };
+
+
+  async function loadStatus() {
+
+    return requestJson(
+      `/api/contracts/${
+        encodeURIComponent(
+          contractId
+        )
+      }/status`
+    );
+
+  }
+
+
+  async function loadDraft() {
+
+    return requestJson(
+      `/api/contracts/${
+        encodeURIComponent(
+          contractId
+        )
+      }/draft`
+    );
+
+  }
+
+
+  async function saveDraft() {
+
+    if (
+      saving
+      ||
+      !editor
+    ) {
+      return false;
+    }
+
+
+    saving = true;
+
+    setButtonsDisabled(
+      true
+    );
+
+
+    if (saveState) {
+
+      saveState.textContent =
+        "正在保存…";
+
+    }
+
+
+    try {
+
+      const payload =
+        await requestJson(
+          `/api/contracts/${
+            encodeURIComponent(
+              contractId
+            )
+          }/draft`,
+          {
+            method:
+              "PUT",
+
+            body:
+              JSON.stringify({
+                content:
+                  editor.value
+              })
+          }
+        );
+
+
+      markSaved(
+        payload.updatedAt
+      );
+
+
+      if (footerMessage) {
+
+        footerMessage.textContent =
+          "草稿已保存";
+
+      }
+
+
+      return true;
+
+
+    } catch (error) {
+
+      if (saveState) {
+
+        saveState.textContent =
+          "保存失败";
+
+      }
+
+
+      if (footerMessage) {
+
+        footerMessage.textContent =
+          error.message;
+
+      }
+
+
+      window.alert(
+        `保存失败：${error.message}`
+      );
+
+
+      return false;
+
+
+    } finally {
+
+      saving = false;
+
+      setButtonsDisabled(
+        false
+      );
+
+    }
+
+  }
+
+
+  function activateCompletedState() {
+
+    dirty = false;
+
+
+    if (taskBadge) {
+
+      taskBadge.textContent =
+        "COMPLETED";
+
+    }
+
+
+    if (footerMessage) {
+
+      footerMessage.textContent =
+        "最终 Markdown 已生成";
+
+    }
+
+
+    if (saveState) {
+
+      saveState.textContent =
+        "校对已完成";
+
+    }
+
+
+    if (editor) {
+
+      editor.readOnly = true;
+
+    }
+
+
+    for (
+      const button
+      of saveButtons
+    ) {
+
+      button.disabled = true;
+
+    }
+
+
+    for (
+      const button
+      of finalizeButtons
+    ) {
+
+      button.disabled = false;
+
+      button.textContent =
+        "下载最终 Markdown";
+
+
+      button.onclick =
+        () => {
+
+          window.location.href =
+            `/api/contracts/${
+              encodeURIComponent(
+                contractId
+              )
+            }/result.md`;
+
+        };
+
+    }
+
+  }
+
+
+  async function finalize() {
+
+    const issueApi =
+      window.ContractReviewIssues;
+
+
+    if (
+      issueApi
+      &&
+      issueApi.getOpenCount() > 0
+    ) {
+
+      window.alert(
+        `还有 ${
+          issueApi.getOpenCount()
+        } 个 OCR 待核对项。\n\n请先逐项核对后再生成最终 Markdown。`
+      );
+
+      return;
+
+    }
+
+
+    if (dirty) {
+
+      const saved =
+        await saveDraft();
+
+
+      if (!saved) {
+        return;
+      }
+
+    }
+
+
+    const confirmed =
+      window.confirm(
+        "确认当前 Markdown 已完成人工校对？\n\n确认后将生成最终版本。"
+      );
+
+
+    if (!confirmed) {
+      return;
+    }
+
+
+    setButtonsDisabled(
+      true
+    );
+
+
+    if (footerMessage) {
+
+      footerMessage.textContent =
+        "正在生成最终 Markdown…";
+
+    }
+
+
+    try {
+
+      await requestJson(
+        `/api/contracts/${
+          encodeURIComponent(
+            contractId
+          )
+        }/finalize`,
+        {
+          method:
+            "POST"
+        }
+      );
+
+
+      activateCompletedState();
+
+
+    } catch (error) {
+
+      setButtonsDisabled(
+        false
+      );
+
+
+      if (footerMessage) {
+
+        footerMessage.textContent =
+          error.message;
+
+      }
+
+
+      window.alert(
+        `生成最终版本失败：${error.message}`
+      );
+
+    }
+
+  }
+
+
+  async function init() {
+
+    if (!contractId) {
+
+      document.body.innerHTML =
+        '<div style="padding:32px">缺少合同任务编号。</div>';
+
+      return;
+
+    }
+
+
+    if (
+      !editor
+      ||
+      !pdfCanvas
+    ) {
+
+      document.body.innerHTML =
+        '<div style="padding:32px">校对页面结构不完整。</div>';
+
+      return;
+
+    }
+
+
+    const previewUrl =
+      `/api/contracts/${
+        encodeURIComponent(
+          contractId
+        )
+      }/preview`;
+
+
+    if (openPdfLink) {
+
+      openPdfLink.href =
+        previewUrl;
+
+    }
+
+
+    setButtonsDisabled(
+      true
+    );
+
+
+    try {
+
+      const [
+        status,
+        draft
+      ] =
+        await Promise.all([
+          loadStatus(),
+          loadDraft(),
+          loadPdfViewer(
+            previewUrl
+          )
+        ]);
+
+
+      if (fileName) {
+
+        fileName.textContent =
+          status.originalName
+          || contractId;
+
+      }
+
+
+      editor.value =
+        draft.content || "";
+
+
+      updateCount();
+
+
+      markSaved(
+        draft.updatedAt
+      );
+
+
+      if (taskBadge) {
+
+        taskBadge.textContent =
+          String(
+            status.stage
+            || status.status
+            || "reviewing"
+          ).toUpperCase();
+
+      }
+
+
+      if (
+        status.status ===
+        "completed"
+      ) {
+
+        activateCompletedState();
+
+      } else {
+
+        setButtonsDisabled(
+          false
+        );
+
+
+        if (footerMessage) {
+
+          footerMessage.textContent =
+            "请对照左侧原合同完成校对";
+
+        }
+
+      }
+
+
+    } catch (error) {
+
+      if (footerMessage) {
+
+        footerMessage.textContent =
+          error.message;
+
+      }
+
+
+      window.alert(
+        `无法打开校对页面：${error.message}`
+      );
+
+    }
+
+  }
+
+
+  if (editor) {
+
+    editor.addEventListener(
+      "input",
+      () => {
+
+        markDirty();
+        updateCount();
+
+      }
+    );
+
+  }
+
+
+  for (
+    const button
+    of saveButtons
+  ) {
+
+    button.addEventListener(
+      "click",
+      saveDraft
+    );
+
+  }
+
+
+  for (
+    const button
+    of finalizeButtons
+  ) {
+
+    /*
+     * Use one replaceable click handler.
+     *
+     * Before completion:
+     *   onclick -> finalize
+     *
+     * After completion:
+     *   setCompletedState() replaces onclick
+     *   with the Markdown download action.
+     *
+     * This prevents one click from triggering
+     * both finalize and download.
+     */
+    button.onclick =
+      finalize;
+
+  }
+
+
+  /*
+   * Public draft API for the OCR issue workflow.
+   *
+   * review-issues.js must never mark an issue
+   * resolved while the current Markdown changes
+   * still exist only inside the browser.
+   */
+  window.ContractReviewDraft = {
+
+    save:
+      saveDraft,
+
+    isDirty:
+      () => dirty,
+
+    isSaving:
+      () => saving
+
+  };
+
+
+  window.addEventListener(
+    "beforeunload",
+    event => {
+
+      if (!dirty) {
+        return;
+      }
+
+
+      event.preventDefault();
+
+      event.returnValue = "";
+
+    }
+  );
+
+
+  init();
+
+})();

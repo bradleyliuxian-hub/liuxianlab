@@ -13,6 +13,7 @@ const { createExcelRouter } = require('./server/excel/routes');
 const { createSalesIncomeRouter } = require('./server/sales-income/routes');
 const { createSalesIncomeInspectRouter } = require('./server/sales-income/inspect-routes');
 const { createSalesIncomeRunRouter } = require('./server/sales-income/run-routes');
+const { createContractRouter } = require('./server/contracts/routes');
 require('dotenv').config();
 
 const app = express();
@@ -68,8 +69,62 @@ app.use(helmet({
   },
   crossOriginEmbedderPolicy: false
 }));
-app.use(express.json({ limit: '16kb' }));
-app.use(express.urlencoded({ extended: false, limit: '16kb' }));
+/*
+ * Default JSON requests stay deliberately small.
+ *
+ * Contract Markdown drafts are different:
+ * they may contain tens or hundreds of KB of text.
+ *
+ * Skip the global 16 KB parser only for the
+ * authenticated contract draft PUT route.
+ * server/contracts/routes.js applies its own
+ * 5 MB JSON parser to that endpoint.
+ */
+const defaultJsonParser =
+  express.json({
+    limit: '16kb'
+  });
+
+
+app.use(
+  (req, res, next) => {
+
+    const isContractDraftSave =
+      (
+        req.method === 'PUT'
+        &&
+        /^\/api\/contracts\/[0-9a-f-]{36}\/draft\/?$/i
+          .test(
+            req.path
+          )
+      );
+
+
+    if (
+      isContractDraftSave
+    ) {
+
+      return next();
+
+    }
+
+
+    return defaultJsonParser(
+      req,
+      res,
+      next
+    );
+
+  }
+);
+
+
+app.use(
+  express.urlencoded({
+    extended: false,
+    limit: '16kb'
+  })
+);
 
 app.use(session({
   name: 'liuxianlab.sid',
@@ -234,6 +289,46 @@ app.post('/api/logout', sameOriginForStateChange, requireAuth, (req, res) => {
 app.use('/api/excel', createExcelRouter({ root: ROOT, requireAuth, sameOriginForStateChange }));
 app.use('/api/sales-income', requireAuth, sameOriginForStateChange, createSalesIncomeInspectRouter({ projectRoot: ROOT }));
 app.use('/api/sales-income', requireAuth, sameOriginForStateChange, createSalesIncomeRunRouter({ projectRoot: ROOT }));
+
+/*
+ * Contract review workspace.
+ *
+ * Authenticated page for comparing the
+ * original contract with the Markdown draft.
+ */
+
+/*
+ * PDFJS_STATIC_ROUTE
+ *
+ * Browser-side PDF renderer used by the
+ * contract review workspace.
+ */
+app.use(
+  "/vendor/pdfjs",
+  express.static(
+    `${ROOT}/node_modules/pdfjs-dist/build`,
+    {
+      fallthrough: false,
+      maxAge: "1d"
+    }
+  )
+);
+
+
+app.get(
+  "/tools/contract-review/review",
+  requireAuth,
+  (req, res) => {
+
+    return res.sendFile(
+      `${ROOT}/private/tools/contract-review/review.html`
+    );
+
+  }
+);
+
+
+app.use('/api/contracts', requireAuth, sameOriginForStateChange, createContractRouter({ root: ROOT }));
 app.use('/api/sales-income', requireAuth, sameOriginForStateChange, createSalesIncomeRouter({ projectRoot: ROOT }));
 
 app.use('/app', requireAuth, express.static(PRIVATE_DIR, {
@@ -264,10 +359,117 @@ app.get('/index.html', requireAuth, (_req, res) => res.redirect('/'));
 
 app.use((_req, res) => res.status(404).send('404 Not Found'));
 
-app.use((error, _req, res, _next) => {
+app.use((error, req, res, _next) => {
+
   console.error(error);
-  if (res.headersSent) return;
-  res.status(500).send('500 Internal Server Error');
+
+
+  if (
+    res.headersSent
+  ) {
+
+    return;
+
+  }
+
+
+  const wantsJson =
+    req.path.startsWith(
+      '/api/'
+    );
+
+
+  if (
+    error?.status === 413
+    ||
+    error?.type ===
+      'entity.too.large'
+  ) {
+
+    if (
+      wantsJson
+    ) {
+
+      return res
+        .status(413)
+        .json({
+
+          ok: false,
+
+          error:
+            '请求内容过大'
+
+        });
+
+    }
+
+
+    return res
+      .status(413)
+      .send(
+        '413 Payload Too Large'
+      );
+
+  }
+
+
+  if (
+    error?.status === 400
+    &&
+    error instanceof SyntaxError
+  ) {
+
+    if (
+      wantsJson
+    ) {
+
+      return res
+        .status(400)
+        .json({
+
+          ok: false,
+
+          error:
+            '请求 JSON 格式无效'
+
+        });
+
+    }
+
+
+    return res
+      .status(400)
+      .send(
+        '400 Bad Request'
+      );
+
+  }
+
+
+  if (
+    wantsJson
+  ) {
+
+    return res
+      .status(500)
+      .json({
+
+        ok: false,
+
+        error:
+          '服务器处理请求失败'
+
+      });
+
+  }
+
+
+  return res
+    .status(500)
+    .send(
+      '500 Internal Server Error'
+    );
+
 });
 
 app.listen(PORT, HOST, () => {

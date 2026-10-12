@@ -7,7 +7,15 @@
     "status": "ready",
     "badge": "可用",
     "icon": "XLS",
-    "keywords": ["excel", "xlsx", "表格", "标准化", "清洗", "格式", "变更记录"]
+    "keywords": [
+      "excel",
+      "xlsx",
+      "表格",
+      "标准化",
+      "清洗",
+      "格式",
+      "变更记录"
+    ]
   },
   {
     "slug": "ai-writer",
@@ -17,7 +25,13 @@
     "status": "planned",
     "badge": "即将开放",
     "icon": "AI",
-    "keywords": ["ai", "文本", "润色", "总结", "写作"]
+    "keywords": [
+      "ai",
+      "文本",
+      "润色",
+      "总结",
+      "写作"
+    ]
   },
   {
     "slug": "pdf-toolbox",
@@ -27,7 +41,13 @@
     "status": "planned",
     "badge": "规划中",
     "icon": "PDF",
-    "keywords": ["pdf", "合并", "拆分", "压缩", "文件"]
+    "keywords": [
+      "pdf",
+      "合并",
+      "拆分",
+      "压缩",
+      "文件"
+    ]
   },
   {
     "slug": "image-studio",
@@ -37,7 +57,14 @@
     "status": "planned",
     "badge": "规划中",
     "icon": "IMG",
-    "keywords": ["图片", "压缩", "尺寸", "png", "jpg", "webp"]
+    "keywords": [
+      "图片",
+      "压缩",
+      "尺寸",
+      "png",
+      "jpg",
+      "webp"
+    ]
   },
   {
     "slug": "json-formatter",
@@ -47,7 +74,12 @@
     "status": "planned",
     "badge": "即将开放",
     "icon": "{}",
-    "keywords": ["json", "格式化", "校验", "开发"]
+    "keywords": [
+      "json",
+      "格式化",
+      "校验",
+      "开发"
+    ]
   },
   {
     "slug": "qr-generator",
@@ -57,7 +89,12 @@
     "status": "planned",
     "badge": "规划中",
     "icon": "QR",
-    "keywords": ["二维码", "qr", "链接", "分享"]
+    "keywords": [
+      "二维码",
+      "qr",
+      "链接",
+      "分享"
+    ]
   },
   {
     "slug": "time-converter",
@@ -67,7 +104,12 @@
     "status": "planned",
     "badge": "规划中",
     "icon": "TIME",
-    "keywords": ["时间", "时间戳", "日期", "时区"]
+    "keywords": [
+      "时间",
+      "时间戳",
+      "日期",
+      "时区"
+    ]
   },
   {
     "slug": "text-encoder",
@@ -77,7 +119,13 @@
     "status": "planned",
     "badge": "规划中",
     "icon": "ENC",
-    "keywords": ["url", "base64", "编码", "解码", "文本"]
+    "keywords": [
+      "url",
+      "base64",
+      "编码",
+      "解码",
+      "文本"
+    ]
   },
   {
     "slug": "sales-income-analysis",
@@ -87,6 +135,33 @@
     "status": "ready",
     "badge": "可用",
     "icon": "FIN",
-    "keywords": ["excel", "销售", "收入", "财务", "分析", "抵消", "sales", "income"]
+    "keywords": [
+      "excel",
+      "销售",
+      "收入",
+      "财务",
+      "分析",
+      "抵消",
+      "sales",
+      "income"
+    ]
+  },
+  {
+    "slug": "contract-review",
+    "name": "合同 PDF 解析",
+    "description": "上传扫描版 PDF，自动 OCR 并生成 Markdown 文档。",
+    "category": "AI",
+    "status": "ready",
+    "badge": "Beta",
+    "icon": "LAW",
+    "keywords": [
+      "合同",
+      "PDF",
+      "审阅",
+      "法律",
+      "风险",
+      "contract",
+      "legal"
+    ]
   }
 ]

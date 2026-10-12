@@ -1,0 +1,438 @@
+import shutil
+import argparse
+
+from .database import (
+    PROJECT_ROOT,
+    claim_contract,
+    claim_next_contract,
+    contract_worker_lock,
+    delete_contract_row,
+    is_contract_deleted,
+    update_contract_state,
+)
+
+from .mineru_service import (
+    parse_contract,
+)
+
+from .consistency_artifacts import (
+    build_consistency_artifacts,
+)
+from .review_artifacts import (
+    prepare_review_artifacts,
+)
+
+
+
+def cleanup_deleted_contract(
+    contract
+):
+
+    contract_id = (
+        contract["id"]
+    )
+
+
+    contract_dir = (
+        PROJECT_ROOT
+        / "storage"
+        / "contracts"
+        / str(
+            contract_id
+        )
+    )
+
+
+    shutil.rmtree(
+        contract_dir,
+        ignore_errors=True,
+    )
+
+
+    delete_contract_row(
+        contract_id
+    )
+
+
+    print(
+        "[contract-worker] "
+        "deleted contract cleaned:",
+        contract_id,
+        flush=True,
+    )
+
+
+
+def process_contract(
+    contract
+):
+
+    contract_id = (
+        contract["id"]
+    )
+
+    file_path = (
+        PROJECT_ROOT
+        / contract["file_path"]
+    ).resolve()
+
+
+    print(
+        "[contract-worker] claimed contract",
+        flush=True,
+    )
+
+    print(
+        "id:",
+        contract_id,
+        flush=True,
+    )
+
+    print(
+        "file:",
+        contract["original_name"],
+        flush=True,
+    )
+
+    print(
+        "status:",
+        contract["status"],
+        flush=True,
+    )
+
+    print(
+        "stage:",
+        contract["stage"],
+        flush=True,
+    )
+
+    print(
+        "progress:",
+        contract["progress"],
+        flush=True,
+    )
+
+    print(
+        "source:",
+        file_path,
+        flush=True,
+    )
+
+    print(
+        "source exists:",
+        file_path.is_file(),
+        flush=True,
+    )
+
+
+    try:
+
+        if is_contract_deleted(
+            contract_id
+        ):
+
+            print(
+                "[contract-worker] "
+                "deleted before parsing",
+                flush=True,
+            )
+
+            cleanup_deleted_contract(
+                contract
+            )
+
+            return True
+
+
+        print(
+            "[contract-worker] starting MinerU...",
+            flush=True,
+        )
+
+
+        result = parse_contract(
+            contract
+        )
+
+
+        if is_contract_deleted(
+            contract_id
+        ):
+
+            print(
+                "[contract-worker] "
+                "deleted after parsing",
+                flush=True,
+            )
+
+            cleanup_deleted_contract(
+                contract
+            )
+
+            return True
+
+
+        review = (
+            prepare_review_artifacts(
+                result["output_path"],
+
+                original_name=
+                    contract["original_name"],
+
+                middle_json_path=
+                    result.get(
+                        "middle_json_path"
+                    ),
+            )
+        )
+
+
+        consistency_result = (
+            build_consistency_artifacts(
+                raw_markdown_path=
+                    result["output_path"],
+
+                original_name=
+                    contract["original_name"],
+
+                middle_json_path=
+                    result.get(
+                        "middle_json_path"
+                    ),
+            )
+        )
+
+
+        print(
+            "[contract-worker] fields:",
+            consistency_result[
+                "fields_path"
+            ],
+            flush=True,
+        )
+
+
+        print(
+            "[contract-worker] consistency issues:",
+            consistency_result[
+                "consistency_issue_count"
+            ],
+            flush=True,
+        )
+        )
+
+
+        updated = (
+            update_contract_state(
+                contract_id,
+                status="processing",
+                stage="reviewing",
+                progress=90,
+                error_message=None,
+            )
+        )
+
+
+        print(
+            "[contract-worker] review artifacts ready",
+            flush=True,
+        )
+
+        print(
+            "raw:",
+            review["raw_path"],
+            flush=True,
+        )
+
+        print(
+            "draft:",
+            review["draft_path"],
+            flush=True,
+        )
+
+        print(
+            "issues:",
+            review["issues_path"],
+            flush=True,
+        )
+
+
+        print(
+            "[contract-worker] MinerU completed",
+            flush=True,
+        )
+
+        print(
+            "document:",
+            result["output_path"],
+            flush=True,
+        )
+
+        print(
+            "document bytes:",
+            result["output_size"],
+            flush=True,
+        )
+
+        print(
+            "status:",
+            updated["status"],
+            flush=True,
+        )
+
+        print(
+            "stage:",
+            updated["stage"],
+            flush=True,
+        )
+
+        print(
+            "progress:",
+            updated["progress"],
+            flush=True,
+        )
+
+
+        return True
+
+
+    except Exception as error:
+
+        message = str(
+            error
+        )
+
+        if len(message) > 4000:
+
+            message = (
+                message[-4000:]
+            )
+
+
+        try:
+
+            update_contract_state(
+                contract_id,
+                status="failed",
+                stage="failed",
+                progress=10,
+                error_message=message,
+            )
+
+        except Exception as database_error:
+
+            print(
+                "[contract-worker] "
+                "failed to save failure state:",
+                database_error,
+                flush=True,
+            )
+
+
+        print(
+            "[contract-worker] FAILED",
+            flush=True,
+        )
+
+        print(
+            message,
+            flush=True,
+        )
+
+
+        return False
+
+
+def parse_args():
+
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument(
+        "--contract-id",
+        default=None,
+    )
+
+    return parser.parse_args()
+
+
+def main():
+
+    args = parse_args()
+
+
+    print(
+        "[contract-worker] starting",
+        flush=True,
+    )
+
+
+    with contract_worker_lock() as locked:
+
+        if not locked:
+
+            print(
+                "[contract-worker] "
+                "another worker is already active",
+                flush=True,
+            )
+
+            return 0
+
+
+        had_failure = False
+
+
+        if args.contract_id:
+
+            contract = (
+                claim_contract(
+                    args.contract_id
+                )
+            )
+
+
+            if contract is not None:
+
+                if not process_contract(
+                    contract
+                ):
+
+                    had_failure = True
+
+
+        while True:
+
+            contract = (
+                claim_next_contract()
+            )
+
+
+            if contract is None:
+                break
+
+
+            if not process_contract(
+                contract
+            ):
+
+                had_failure = True
+
+
+        print(
+            "[contract-worker] queue empty",
+            flush=True,
+        )
+
+
+        return (
+            1
+            if had_failure
+            else 0
+        )
+
+
+if __name__ == "__main__":
+
+    raise SystemExit(
+        main()
+    )

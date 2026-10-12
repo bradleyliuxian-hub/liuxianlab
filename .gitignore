@@ -43,10 +43,22 @@ storage/excel/*
 .idea/
 *.swp
 
-private/
+
 *.backup
 backup-before-excel/
 
 private-v2.1-backup/
 server.js.v2.1.backup
-server/
+
+.venv/
+
+# Contract review runtime files
+storage/contracts/*
+!storage/contracts/.gitkeep
+
+# MinerU runtime
+.mineru/
+
+# Python cache
+__pycache__/
+*.py[cod]
