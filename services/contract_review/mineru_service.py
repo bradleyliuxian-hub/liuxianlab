@@ -22,6 +22,18 @@ CONTRACT_STORAGE_ROOT = (
 ).resolve()
 
 
+
+# LIUXIANLAB_MINERU_PRODUCTION_ENV_V1
+#
+# Production contract parsing must stay on the
+# CPU-friendly ONNX + llama.cpp path.
+#
+# Do not rely on PM2 / Node / interactive shell
+# environment propagation for these critical values.
+os.environ["MINERU_MODEL_SOURCE"] = "local"
+os.environ["MINERU_MODEL_SMALL_BACKEND"] = "onnx"
+os.environ["MINERU_MODEL_VLM_ENGINE"] = "llama-cpp"
+
 def _find_export_file(
     root: Path,
     filename: str,
