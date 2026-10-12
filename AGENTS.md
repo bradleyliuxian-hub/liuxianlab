@@ -516,3 +516,105 @@ Guess
 → Claim success
 
 Never claim a feature works unless relevant verification was actually performed.
+
+# 14. Checkpoint / Resume (Context Recovery)
+
+The project must survive a shutdown, a closed editor, or a lost OpenCode session.
+`PROJECT_STATUS.md` at the repository root is the persistent state snapshot that makes this possible.
+
+## 14.1 The status file
+
+Maintain `PROJECT_STATUS.md` as a short **current-state snapshot**, not a log or chat history. Overwrite it; do not append conversation.
+
+It must always contain:
+
+- Current Goal
+- Current Task
+- Completed
+- Pending
+- Changed Files
+- Verification
+- Known Issues
+- Git State (branch, dirty/clean, uncommitted files)
+- Deployment Impact (dependencies, env, migrations, restart required)
+- Next Action
+- Last Updated (timestamp)
+
+Never write into it:
+
+- `.env` contents or any values
+- passwords
+- API keys / tokens
+- SSH keys
+- database credentials
+- sessions
+- user private data
+- production-sensitive data
+
+Only refer to secrets by **name** (e.g. "env: `DATABASE_URL` unchanged"), never by value.
+
+## 14.2 When to update it
+
+Update `PROJECT_STATUS.md` automatically after every meaningful recovery point:
+
+- completing a feature sub-step
+- fixing a bug
+- completing a verification
+- completing a review
+- finishing a stage of work
+- just before deployment preparation
+
+Also update it whenever the user signals a pause. Pause signals include:
+
+- “先到这里”
+- “暂停”
+- “我先关机”
+- “保存进度”
+- “下次继续”
+- “今天先这样”
+
+On a pause signal:
+
+1. Check `git status`.
+2. Check `git diff`.
+3. Summarize the current task.
+4. Update `PROJECT_STATUS.md`.
+5. Confirm the checkpoint is saved.
+6. Do **not** deploy, commit, or push.
+
+## 14.3 Resume flow
+
+When the user says “继续之前的工作” / “恢复工作” / “接着做” / “从上次继续”, or says “继续” at the start of a fresh session, run the resume flow below.
+
+In an already-active session, plain “继续” keeps its section 13.H meaning (continue the current workflow) and does not force a full context reload.
+
+1. Read `AGENTS.md`, `PROJECT_STATUS.md`, current `git status`, current `git diff`, and the last 5 commits.
+2. Compare `PROJECT_STATUS.md` with the real Git/files state and decide:
+   - is the recorded state still valid?
+   - was code modified since the checkpoint?
+   - are there uncommitted changes?
+   - are there new commits?
+   - does anything need re-verification?
+3. If `PROJECT_STATUS.md` is missing, infer state from `git status`, `git diff`, recent commits, and code structure, then create it and say this is a first-time recovery.
+4. If the file conflicts with reality, **real Git and file state win**. Explain the conflict briefly, then continue from reality.
+5. Give a very short recovery summary: where we stopped / what remains / whether it is currently safe / the next planned action.
+6. If the next action is clear and safe, just do it. Do not ask “continue?” again.
+   If the recorded next action is a git write (commit, push, rebase, force action) or any production action, stop after the summary and require explicit user approval instead of executing it.
+
+After any commit that changes what the snapshot records, refresh `PROJECT_STATUS.md` so its Git State and Pending sections are not stale.
+
+## 14.4 Commands
+
+- `/resume` — run the resume flow above.
+- `/recover` — identical to `/resume`. Provided as a non-colliding alias because `/resume` shadows OpenCode's built-in “switch session” alias.
+- `/checkpoint` — save/update `PROJECT_STATUS.md` without committing, pushing, or deploying.
+
+Natural-language triggers invoke the same behavior; the user is not required to type the commands.
+
+## 14.5 Constraints
+
+- Checkpoint and resume never deploy, commit, or push.
+- `/checkpoint` never commits and never pushes.
+- Resume may continue implementation work, but any git write (commit/push/rebase/restore) or production action needs explicit user approval in the current conversation.
+- Keep the status file short and factual.
+- Do not weaken any rule in sections 1–13 to make recovery work.
