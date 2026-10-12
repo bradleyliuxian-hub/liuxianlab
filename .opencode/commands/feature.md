@@ -1,28 +1,20 @@
 ---
-description: Plan and implement a feature with verification
+description: Plan and implement a feature with cost-aware verification
 agent: build
 ---
 Implement this feature request:
 
 $ARGUMENTS
 
-Required workflow:
-1. Read AGENTS.md.
-2. Inspect the relevant existing code.
-3. Use the architect subagent for non-trivial changes.
-4. Explain the intended implementation briefly before editing.
-5. Make the smallest coherent implementation.
-6. Do not touch protected secrets/runtime-user-data paths.
-7. Run relevant syntax/static/local checks.
-8. Use the verifier subagent.
-9. Use the reviewer subagent.
-10. Fix material review findings if they are within scope, then re-verify.
-11. Finish with:
-   - files changed
-   - behavior implemented
-   - verification performed
-   - unverified items
-   - dependency/env/migration impact
-   - deployment notes
+Choose the workflow by complexity (AGENTS §3.1):
+- SIMPLE (copy/CSS/one condition/single-file small fix): understand -> edit -> minimal check -> 1–3 line report. No architect, no reviewer.
+- MEDIUM (ordinary API/page/frontend-backend/ordinary bug): read only relevant files -> edit -> verifier -> short report.
+- COMPLEX (DB schema/auth/multi-module/contract-review core/worker/large refactor): architect -> builder -> verifier -> reviewer.
+
+Rules:
+- Read AGENTS.md and only the relevant files; narrow-first (§3.3). Do not scan ignored dirs; do not re-read unchanged files.
+- Make the smallest coherent change. Do not touch protected secrets/runtime data.
+- Add architect only for COMPLEX/ambiguous; add reviewer only for high-risk or large diffs.
+- Report as 完成 / 修改 / 验证 / 未验证 / 下一步.
 
 Do not deploy.

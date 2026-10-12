@@ -1,620 +1,112 @@
-# Liuxian Lab — Vibe Coding Agent Guide
+# Liuxian Lab — Agent Guide
 
-## 1. Product and source of truth
+Authoritative working agreement for AI agents in this repository. Keep it lean.
+Detailed module docs live in `docs/agent/` and are read only when a task needs them (see §7).
 
-This repository is the single source of truth for Liuxian Lab.
+## 1. Project & architecture (core)
 
-Normal workflow:
+- Private, authenticated tools workspace. Node.js >= 20, CommonJS, Express (`server.js`).
+- Local: `npm run dev` -> `http://127.0.0.1:8080`. Health: `GET /health` -> `{"ok":true}`.
+- Auth is server-side Express sessions (`requireAuth`). `public/` = login only; `private/` = authenticated dashboard + tools.
+- `config/tools.json` is the source of truth for dashboard tool cards.
+- Tools live at `private/tools/<slug>/`.
+- Excel = Node routes + Python workers. Contract review = Node routes + PostgreSQL + Python service/worker.
+- Runtime data (gitignored): `sessions/`, `storage/`, `logs/`, `data/`.
+- Production direction: Nginx + HTTPS -> Node on `127.0.0.1:8080` (PM2 via `ecosystem.config.js`). Never expose the Node port.
 
-1. Develop in this repository locally.
-2. Verify locally.
-3. Review the diff.
-4. Commit and push only after verification.
-5. Deploy the same Git commit to production.
-6. Verify `/health` and the affected feature after deployment.
+## 2. Security boundaries (never weaken)
 
-Do not maintain a separate "local codebase" and "production codebase" by manually copying files between directories.
+Protected — do not read, print, copy, overwrite, commit, or expose unless explicitly and narrowly required:
 
-## 2. Current architecture
+- `.env`, `data/users.json`, `data/*.json`, `sessions/`, `storage/`, `.mineru/`, runtime logs
+- SSH keys, cloud/DB credentials, API keys, tokens
 
-- Runtime: Node.js >= 20, CommonJS.
-- Main server: `server.js`.
-- Local development: `npm run dev`.
-- Production start: `npm run start`.
-- Default local URL: `http://127.0.0.1:8080`.
-- Health endpoint: `GET /health`.
-- Authentication: Express server-side auth.
-- `public/`: login assets only.
-- `private/`: authenticated dashboard and authenticated tool assets.
-- `config/tools.json`: source of truth for dashboard tool cards.
-- Individual browser tools normally live under `private/tools/<slug>/`.
-- Excel processing combines Node.js routes with Python workers.
-- Contract review combines Node.js routes, PostgreSQL-backed persistence, and Python services/workers.
-- Production process manager currently uses PM2 through `ecosystem.config.js`.
-- Production direction: Nginx + HTTPS -> Node.js bound to `127.0.0.1:8080`.
+Rules:
 
-## 3. Critical security boundaries
+- Never add a public signup route unless explicitly requested.
+- All dashboard/tool/download/private APIs stay behind authentication.
+- Do not weaken `requireAuth`, same-origin checks, rate limiting, Helmet, or session protections.
+- Never hardcode secrets, credentials, domains, absolute local paths, or production-only values.
 
-Never read, print, copy, overwrite, commit, or expose secrets or runtime user data unless the user explicitly asks for a narrowly scoped operation.
+## 3. Cost & context discipline (token optimization)
 
-Treat these paths as protected:
+Use DeepSeek V4.1 Flash and default to the lowest-cost mode that preserves quality.
 
-- `.env`
-- `data/users.json`
-- `data/*.json`
-- `sessions/`
-- `storage/`
-- `.mineru/`
-- logs containing user/runtime data
-- SSH keys
-- cloud credentials
-- database credentials
-- API keys and tokens
+### 3.1 Complexity routing
 
-Never add a public signup route unless explicitly requested.
+- SIMPLE (copy tweak, button, small CSS, one clear condition, single-file small fix)
+  -> understand -> edit -> minimal check -> 1–3 line report. No architect, no reviewer.
+- MEDIUM (ordinary API, a page feature, frontend/backend interaction, ordinary bug)
+  -> understand -> read only relevant files -> edit -> verifier -> short report.
+- COMPLEX (DB schema, auth, multi-module, contract-review core, background worker, large refactor, production deployment)
+  -> architect -> builder -> verifier -> reviewer.
 
-All dashboard pages, tool pages, downloads, generated artifacts, and private APIs must remain behind authentication unless explicitly designed otherwise.
+### 3.2 Never call agents unconditionally
 
-Do not weaken `requireAuth`, same-origin checks, rate limiting, Helmet configuration, or session protections merely to make a feature work.
+Do not "to be safe" run every agent. Triggers:
 
-Never expose the Node.js application port directly to the public internet as part of a normal deployment.
+- architect: only COMPLEX work or genuinely ambiguous design.
+- reviewer: only high-risk or large/risky diffs.
+- debugger: only non-obvious failures, or after a fix already failed.
+- verifier: minimal, scoped checks for MEDIUM/COMPLEX only.
 
-## 4. Change discipline
+### 3.3 Read strategy — narrow first
 
-Before editing:
+1. Search names first (file / function / route).
+2. Read only relevant snippets; do not open a large file whole as a first step.
+3. Widen to references, then related modules, only if still unclear.
+4. Do not re-read files already read this session if unchanged.
+5. Do not scan unless task-related: `node_modules/`, `.git/`, `.venv/`, `venv/`, `.mineru/`, `sessions/`, `storage/`, `logs/`, `backups/`, `__pycache__/`, `dist/`, `build/`.
 
-1. Identify the user-visible goal.
-2. Find the relevant entry points, routes, frontend files, worker/service files, and data flow.
-3. Read existing code before inventing a parallel implementation.
-4. Prefer the smallest coherent change.
-5. State any schema migration, environment-variable, dependency, or deployment impact.
+### 3.4 Thinking (reasoning) policy
 
-While editing:
+Non-thinking by default for SIMPLE/MEDIUM. Enable extended thinking only for: complex architecture, hard-to-locate bugs, multi-module data-flow, DB migration design, security-sensitive changes, repeated failed fixes, or production incidents.
 
-- Reuse existing conventions and modules.
-- Avoid unnecessary dependencies.
-- Avoid broad refactors unless required by the feature.
-- Do not silently change unrelated behavior.
-- Do not hardcode secrets, credentials, domains, absolute local paths, or production-only values.
-- Keep production and local behavior compatible wherever practical.
+### 3.5 Avoid duplicate agent work
 
-After editing:
+- architect identifies files -> builder starts there; no full re-scan.
+- debugger finds root cause -> builder fixes directly from it.
+- verifier does not re-analyze architecture.
+- reviewer inspects only the current diff + necessary context.
 
-1. Run syntax/static checks that exist for the touched languages.
-2. Start the application locally when appropriate.
-3. Check `/health`.
-4. Exercise the affected route or workflow.
-5. Inspect `git diff`.
-6. Run the reviewer agent before calling the work finished.
-7. Report what was verified and what was not verified.
+### 3.6 Default output (concise)
 
-## 5. JavaScript / Node verification
+完成 / 修改 / 验证 / 未验证 / 下一步. Short bullets.
+Do not narrate tool calls, repeat the request, paste whole files, re-list passing checks, or write long summaries.
 
-At minimum for changed JavaScript files, use an appropriate syntax check when possible:
+## 4. Natural-language intent routing
 
-```bash
-node --check path/to/file.js
-```
+- Feature (新增/实现/改成/create/add/support...): read relevant code, make the smallest coherent change, scoped verify. Add architect only if COMPLEX; reviewer only if high-risk/large.
+- Bug (报错/坏了/卡住/failing...): do not guess-patch; trace the real path; smallest safe fix; verify. Use debugger only for non-obvious failures.
+- Verify (检查/验证/能不能跑/test...): inspect diff, run narrow checks, `/health` when app-level, exercise the affected route; return PASS/FAIL/NOT RUN.
+- Review (review/有没有风险...): read-only; findings by severity; no edits.
+- Deploy (上线/部署/deploy...): preflight only; never execute production actions without explicit approval after the preflight.
+- Explain (为什么/解释...): answer or analyze without editing.
+- Shortcuts: 开始做=implement agreed plan; 继续=continue current workflow (§5 for fresh-session resume); 修掉=fix just-identified issue; 再检查一下=re-verify latest change; 可以上线了吗=deployment preflight.
+- Ambiguous: prefer inspect/explain; ask a short question only if it materially changes the implementation.
 
-For application-level changes, prefer:
+## 5. Checkpoint / Resume
 
-```bash
-npm install
-npm run dev
-```
+`PROJECT_STATUS.md` is a short current-state snapshot (<= 60 lines). Overwrite it; never append chat history, full diffs, or secrets (names only).
 
-Then verify:
+Fields: Current Goal, Current Task, Completed, Pending, Changed Files, Verification, Known Issues, Git State (branch / dirty / uncommitted), Deployment Impact (deps / env / migrations / restart), Next Action, Last Updated.
 
-```bash
-curl -fsS http://127.0.0.1:8080/health
-```
+Update after: feature sub-step, bug fix, verification, review, stage end, before deploy prep; and on pause phrases (先到这里 / 暂停 / 我先关机 / 保存进度 / 下次继续 / 今天先这样). On pause: check `git status` + `git diff`, summarize, update snapshot, confirm saved; do not commit/push/deploy.
 
-Do not start multiple duplicate server processes. If port 8080 is already in use, inspect the existing process before killing anything.
+Resume (继续 before work / 继续之前的工作 / 恢复工作 / 接着做 / 从上次继续): read `PROJECT_STATUS.md`, `git status --short`, `git diff --stat`, recent commits (full `git diff` only if needed); reconcile with reality (real Git wins); give a 2–4 line summary; if the next action is safe, do it. Any git write or production action needs explicit approval.
 
-## 6. Python verification
+Commands: `/checkpoint` (save; no commit/push/deploy), `/resume` and `/recover` (resume flow).
 
-Use the project-local Python environment when one exists.
+## 6. Git & deploy safety
 
-For standalone syntax checks:
+- Before staging: inspect `git status`, `git diff --check`, `git diff`. Stage only intended files; never `git add .`.
+- Never commit secrets or runtime data. Never force-push, `reset --hard`, rewrite history, delete branches, or push without explicit approval.
+- Deployment is a separate phase: preflight (branch, candidate commit, deps, env names, migrations, PM2/Nginx, health check, rollback). Do not push / SSH / restart PM2 / modify Nginx / run migrations unless explicitly told.
 
-```bash
-python3 -m py_compile path/to/file.py
-```
+## 7. Module docs (read on demand)
 
-For Excel worker dependencies, follow `workers/excel/requirements.txt`.
-
-Do not modify or recreate `.mineru/` casually. Treat it as runtime/tooling infrastructure.
-
-## 7. Database and migrations
-
-Contract review uses PostgreSQL-related code under `server/contracts/` and migrations under `server/contracts/migrations/`.
-
-For any database change:
-
-1. Inspect existing schema and migration conventions first.
-2. Prefer additive, reversible migrations.
-3. Never drop production data as part of an automated fix.
-4. Never run destructive SQL automatically.
-5. Call out required migration order explicitly.
-6. If a local database is unavailable, verify code paths statically and clearly report that database integration was not executed.
-
-## 8. Tool development convention
-
-For dashboard tools:
-
-1. Inspect `config/tools.json`.
-2. Reuse existing layout and authenticated routing.
-3. A typical browser tool lives at:
-
-```text
-private/tools/<slug>/
-├── index.html
-├── styles.css or tool.css
-└── script.js or tool.js
-```
-
-4. Keep a clear path back to the workspace.
-5. Preserve mobile behavior.
-6. Keep Chinese UI copy concise and natural.
-
-Existing tools may use richer structures; follow the nearest existing tool rather than forcing the minimal template.
-
-## 9. UI direction
-
-The established product direction is:
-
-- calm
-- capable
-- modern
-- productivity-oriented
-- warm off-white base
-- fluorescent lime accent
-- strong typography
-- restrained borders
-- generous whitespace
-- good mobile behavior
-- dark mode support where existing UI supports it
-
-Avoid generic gradient-heavy SaaS styling.
-
-Do not copy third-party designs verbatim.
-
-## 10. Git safety
-
-This repository should be the deployable source of truth.
-
-Before any commit:
-
-```bash
-git status --short
-git diff --check
-git diff
-```
-
-Never run `git add .` blindly.
-
-Stage only files that belong to the requested change.
-
-Never commit:
-
-- `.env`
-- session files
-- runtime storage
-- real user data
-- generated secrets
-- local virtual environments
-- editor/system junk
-
-Never force-push, reset hard, rewrite history, delete branches, or push to remote without explicit user approval.
-
-## 11. Deployment safety
-
-Deployment is a separate phase from implementation.
-
-Before deployment, verify:
-
-- working tree state
-- target branch and commit
-- required environment-variable names (never values)
-- dependency changes
-- database migration requirements
-- service/process restart requirements
-- health-check plan
-- rollback point
-
-Do not SSH into production, push, pull, restart PM2, alter Nginx, change firewall rules, or run migrations unless the user explicitly requests deployment actions.
-
-A successful local test is not proof of successful production deployment.
-
-## 12. Definition of done
-
-A feature is only "done" when the agent can report:
-
-- files changed
-- behavior implemented
-- local checks executed
-- health check result when applicable
-- affected route/workflow verification
-- security implications
-- migration/dependency/env impact
-- remaining unverified items
-- deployment notes
-
-If something could not be verified, say so instead of claiming success.
-
-# 13. Natural-Language Intent Routing
-
-The user should normally be able to speak naturally without remembering slash commands.
-
-Interpret the user's intent automatically and choose the appropriate workflow.
-
-## A. Feature / modification intent
-
-Treat the request as a feature workflow when the user asks to:
-
-- 新增
-- 添加
-- 增加
-- 实现
-- 开发
-- 做一个
-- 改成
-- 支持
-- 优化某个功能
-- 调整现有交互
-- create
-- add
-- implement
-- build
-- modify
-- improve
-- support
-
-Examples:
-
-- “给合同审查增加一个导出 Excel 的功能”
-- “把结果页增加一个返回按钮”
-- “帮我做一个批量上传”
-- “这个页面优化一下手机端体验”
-
-For feature intent:
-
-1. Read relevant existing code before editing.
-2. For non-trivial changes, use the architect subagent first.
-3. Identify the smallest coherent implementation.
-4. Explain the intended approach briefly.
-5. Implement the change.
-6. Run relevant local verification.
-7. Use the verifier subagent.
-8. Use the reviewer subagent.
-9. Fix material review findings that are within scope.
-10. Re-verify after meaningful fixes.
-11. Report:
-   - files changed
-   - behavior implemented
-   - verification performed
-   - remaining unverified items
-   - dependency/env/migration impact
-   - deployment notes
-
-Do not deploy automatically.
-
-## B. Bug / failure intent
-
-Treat the request as a debugging workflow when the user says something is:
-
-- 报错
-- 坏了
-- 不工作
-- 卡住
-- 没反应
-- 失败
-- 不对
-- 异常
-- 显示错误
-- 数据不正确
-- broken
-- failing
-- stuck
-- incorrect
-- error
-- crash
-- not working
-
-Examples:
-
-- “上传合同以后一直卡在解析中”
-- “这个按钮点了没反应”
-- “为什么导出的 Excel 数据少了一行”
-- “登录之后跳转失败”
-
-For bug intent:
-
-1. Do not immediately patch based on guesses.
-2. Use the debugger subagent for non-obvious failures.
-3. Reproduce or inspect the failure where safe.
-4. Trace the real code/data path.
-5. Identify root cause.
-6. Apply the smallest safe fix.
-7. Run relevant verification.
-8. Use the reviewer subagent.
-9. Report:
-   - root cause
-   - changed files
-   - fix applied
-   - verification performed
-   - remaining risk
-
-Do not deploy automatically.
-
-## C. Verification intent
-
-Treat the request as verification when the user asks things like:
-
-- 检查一下
-- 验证一下
-- 能不能跑
-- 跑一下看看
-- 确认有没有问题
-- 测一下
-- verify
-- test this
-- check this
-
-Examples:
-
-- “检查一下刚才改的代码能不能跑”
-- “验证一下这个功能”
-- “帮我看看有没有明显问题”
-
-For verification intent:
-
-1. Avoid unrelated edits.
-2. Inspect current Git diff.
-3. Use relevant syntax/static checks.
-4. Start the app locally when appropriate.
-5. Check `http://127.0.0.1:8080/health`.
-6. Exercise the affected route/workflow when feasible.
-7. Use the verifier subagent.
-8. Return PASS / FAIL / NOT RUN with evidence.
-
-## D. Review intent
-
-Treat the request as code review when the user asks:
-
-- review 一下
-- 看看代码有没有问题
-- 有没有风险
-- 有没有安全问题
-- 帮我审一下
-- 检查 diff
-- code review
-
-For review intent:
-
-1. Do not edit files.
-2. Use the reviewer subagent.
-3. Review current diff and relevant surrounding code.
-4. Focus on:
-   - correctness
-   - regression risk
-   - authentication/authorization
-   - secret/runtime-data exposure
-   - file upload safety
-   - database safety
-   - frontend/backend mismatch
-   - deployment impact
-5. Report findings by severity.
-
-## E. Deployment intent
-
-Treat the request as deployment intent when the user says:
-
-- 上线
-- 发布
-- 部署
-- 推到服务器
-- 发到线上
-- production
-- deploy
-- release
-- publish
-
-Examples:
-
-- “准备上线”
-- “这个版本可以部署了吗”
-- “把这个功能发到服务器”
-
-For deployment intent:
-
-1. First run deployment preflight.
-2. Use the deployer subagent.
-3. Check:
-   - Git branch
-   - Git status
-   - candidate commit
-   - dependency changes
-   - environment variable names
-   - database migrations
-   - PM2 impact
-   - Nginx impact
-   - health-check plan
-   - rollback plan
-4. Do not execute production actions unless the user explicitly approves execution after seeing the preflight.
-
-Do not automatically:
-- push
-- SSH
-- pull on production
-- restart PM2
-- modify Nginx
-- run production migrations
-
-## F. Explanation / question intent
-
-If the user is only asking:
-
-- 这个代码是什么意思
-- 为什么这样设计
-- 这个模块做什么
-- 帮我解释一下
-- 分析一下但不要改
-
-then answer or analyze without editing files.
-
-Do not assume every technical question requires a code change.
-
-## G. Ambiguous intent
-
-If the user's intent is ambiguous:
-
-1. Prefer inspection and explanation over editing.
-2. Ask a short clarifying question only when the difference would materially change the implementation.
-3. If a safe interpretation is obvious, proceed with that interpretation and state it briefly.
-
-## H. Conversational shortcuts
-
-Interpret common natural-language follow-ups using the current context.
-
-Examples:
-
-“开始做”
-→ implement the previously agreed plan.
-
-“继续”
-→ continue the current workflow from the last incomplete step.
-
-“修掉”
-→ fix the issue just identified.
-
-“再检查一下”
-→ re-run verification/review relevant to the latest changes.
-
-“可以上线了吗”
-→ run deployment preflight.
-
-“上线吧”
-→ if preflight has already been shown in the current conversation, ask for or confirm explicit production-action approval before executing production commands.
-
-## I. Default Vibe Coding behavior
-
-The default behavior for implementation work is:
-
-Understand
-→ Inspect
-→ Plan when needed
-→ Implement
-→ Verify
-→ Review
-→ Report
-
-The default behavior is NOT:
-
-Guess
-→ Rewrite many files
-→ Claim success
-
-Never claim a feature works unless relevant verification was actually performed.
-
-# 14. Checkpoint / Resume (Context Recovery)
-
-The project must survive a shutdown, a closed editor, or a lost OpenCode session.
-`PROJECT_STATUS.md` at the repository root is the persistent state snapshot that makes this possible.
-
-## 14.1 The status file
-
-Maintain `PROJECT_STATUS.md` as a short **current-state snapshot**, not a log or chat history. Overwrite it; do not append conversation.
-
-It must always contain:
-
-- Current Goal
-- Current Task
-- Completed
-- Pending
-- Changed Files
-- Verification
-- Known Issues
-- Git State (branch, dirty/clean, uncommitted files)
-- Deployment Impact (dependencies, env, migrations, restart required)
-- Next Action
-- Last Updated (timestamp)
-
-Never write into it:
-
-- `.env` contents or any values
-- passwords
-- API keys / tokens
-- SSH keys
-- database credentials
-- sessions
-- user private data
-- production-sensitive data
-
-Only refer to secrets by **name** (e.g. "env: `DATABASE_URL` unchanged"), never by value.
-
-## 14.2 When to update it
-
-Update `PROJECT_STATUS.md` automatically after every meaningful recovery point:
-
-- completing a feature sub-step
-- fixing a bug
-- completing a verification
-- completing a review
-- finishing a stage of work
-- just before deployment preparation
-
-Also update it whenever the user signals a pause. Pause signals include:
-
-- “先到这里”
-- “暂停”
-- “我先关机”
-- “保存进度”
-- “下次继续”
-- “今天先这样”
-
-On a pause signal:
-
-1. Check `git status`.
-2. Check `git diff`.
-3. Summarize the current task.
-4. Update `PROJECT_STATUS.md`.
-5. Confirm the checkpoint is saved.
-6. Do **not** deploy, commit, or push.
-
-## 14.3 Resume flow
-
-When the user says “继续之前的工作” / “恢复工作” / “接着做” / “从上次继续”, or says “继续” at the start of a fresh session, run the resume flow below.
-
-In an already-active session, plain “继续” keeps its section 13.H meaning (continue the current workflow) and does not force a full context reload.
-
-1. Read `AGENTS.md`, `PROJECT_STATUS.md`, current `git status`, current `git diff`, and the last 5 commits.
-2. Compare `PROJECT_STATUS.md` with the real Git/files state and decide:
-   - is the recorded state still valid?
-   - was code modified since the checkpoint?
-   - are there uncommitted changes?
-   - are there new commits?
-   - does anything need re-verification?
-3. If `PROJECT_STATUS.md` is missing, infer state from `git status`, `git diff`, recent commits, and code structure, then create it and say this is a first-time recovery.
-4. If the file conflicts with reality, **real Git and file state win**. Explain the conflict briefly, then continue from reality.
-5. Give a very short recovery summary: where we stopped / what remains / whether it is currently safe / the next planned action.
-6. If the next action is clear and safe, just do it. Do not ask “continue?” again.
-   If the recorded next action is a git write (commit, push, rebase, force action) or any production action, stop after the summary and require explicit user approval instead of executing it.
-
-After any commit that changes what the snapshot records, refresh `PROJECT_STATUS.md` so its Git State and Pending sections are not stale.
-
-## 14.4 Commands
-
-- `/resume` — run the resume flow above.
-- `/recover` — identical to `/resume`. Provided as a non-colliding alias because `/resume` shadows OpenCode's built-in “switch session” alias.
-- `/checkpoint` — save/update `PROJECT_STATUS.md` without committing, pushing, or deploying.
-
-Natural-language triggers invoke the same behavior; the user is not required to type the commands.
-
-## 14.5 Constraints
-
-- Checkpoint and resume never deploy, commit, or push.
-- `/checkpoint` never commits and never pushes.
-- Resume may continue implementation work, but any git write (commit/push/rebase/restore) or production action needs explicit user approval in the current conversation.
-- Keep the status file short and factual.
-- Do not weaken any rule in sections 1–13 to make recovery work.
+- `docs/agent/architecture.md` — runtime topology and module map
+- `docs/agent/contract-review.md` — contract review core flow
+- `docs/agent/excel-and-sales.md` — excel-standardizer and sales-income analysis
+- `docs/agent/deployment.md` — production deployment details
+- `docs/agent/tools.md` — adding a dashboard tool + UI direction
