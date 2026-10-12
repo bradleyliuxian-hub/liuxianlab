@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Liuxian Lab Excel 标准化工具" />
+  <title>Excel 标准化 · Liuxian Lab</title>
+  <link rel="stylesheet" href="/app/tools/excel-standardizer/styles.css?v=1.0.0" />
+</head>
+<body>
+  <div class="page-shell">
+    <header class="tool-header">
+      <a class="back-link" href="/" aria-label="返回工作台">←</a>
+      <div class="tool-brand">
+        <span class="tool-mark">XLS</span>
+        <div><strong>Excel 标准化</strong><small>Liuxian Lab / Data Tool</small></div>
+      </div>
+      <div class="header-actions">
+        <span class="private-badge"><i></i>私有处理</span>
+        <button class="ghost-button" id="newJobButton" type="button">新建任务</button>
+      </div>
+    </header>
+
+    <main class="tool-main">
+      <section class="intro-section">
+        <p class="eyebrow">EXCEL STANDARDIZER</p>
+        <h1>上传、标准化、核对，再下载。</h1>
+        <p>原文件保持不变。后台按照标准化规则生成新文件，同时记录每一项可审计的修改。</p>
+      </section>
+
+      <section class="workspace-card" id="uploadPanel">
+        <div class="card-heading">
+          <div><span class="step-no">01</span><div><h2>上传工作簿</h2><p>当前版本支持单个 <code>.xlsx</code> 文件；应用层不设置文件大小上限。</p></div></div>
+          <span class="profile-chip">Standard v1</span>
+        </div>
+
+        <label class="drop-zone" id="dropZone" for="fileInput">
+          <input id="fileInput" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden />
+          <span class="drop-icon">↥</span>
+          <strong>拖入 Excel，或点击选择文件</strong>
+          <small>.xlsx · 单文件上传 · 原文件不会被覆盖</small>
+        </label>
+
+        <div class="selected-file" id="selectedFile" hidden>
+          <span class="file-icon">XLSX</span>
+          <div class="file-copy"><strong id="fileName"></strong><small id="fileMeta"></small></div>
+          <button class="icon-button" id="clearFileButton" type="button" aria-label="移除文件">×</button>
+        </div>
+
+        <div class="upload-actions">
+          <p>文件仅保存在受保护的服务器存储目录，并按照服务器保留策略自动清理。</p>
+          <button class="primary-button" id="startButton" type="button" disabled>开始标准化 <span>→</span></button>
+        </div>
+      </section>
+
+      <section class="workspace-card process-card" id="processPanel" hidden>
+        <div class="card-heading">
+          <div><span class="step-no">02</span><div><h2>后台处理</h2><p id="processMessage">正在准备任务…</p></div></div>
+          <span class="job-status" id="jobStatus">QUEUED</span>
+        </div>
+        <div class="progress-track"><span id="progressBar"></span></div>
+        <div class="progress-meta"><strong id="progressValue">0%</strong><span id="jobIdLabel"></span></div>
+        <div class="stage-grid" id="stageGrid">
+          <div data-stage="validating"><i></i><span>文件检查</span></div>
+          <div data-stage="trim_text"><i></i><span>文本清理</span></div>
+          <div data-stage="normalize_dates"><i></i><span>日期格式</span></div>
+          <div data-stage="header_style"><i></i><span>表头标准</span></div>
+          <div data-stage="autofit_columns"><i></i><span>列宽调整</span></div>
+          <div data-stage="sheet_settings"><i></i><span>工作表设置</span></div>
+          <div data-stage="checking"><i></i><span>输出校验</span></div>
+          <div data-stage="reporting"><i></i><span>生成报告</span></div>
+        </div>
+        <div class="error-box" id="errorBox" hidden></div>
+      </section>
+
+      <section class="results-shell" id="resultsPanel" hidden>
+        <div class="results-head">
+          <div><p class="eyebrow">RESULT</p><h2>处理完成</h2><p id="resultSubtitle">已生成新的 Excel 文件和变更记录。</p></div>
+          <a class="primary-button download-button" id="downloadButton" href="#">下载处理后的 Excel <span>↓</span></a>
+        </div>
+
+        <div class="summary-grid">
+          <article><span>总修改项</span><strong id="totalChanges">0</strong><small>可审计变更</small></article>
+          <article><span>内容</span><strong id="valueChanges">0</strong><small>文本 / 值</small></article>
+          <article><span>格式</span><strong id="formatChanges">0</strong><small>样式 / 格式</small></article>
+          <article><span>结构</span><strong id="structureChanges">0</strong><small>行列 / 工作表</small></article>
+        </div>
+
+        <nav class="result-tabs" aria-label="结果视图">
+          <button class="active" type="button" data-tab="changes">详细变更</button>
+          <button type="button" data-tab="preview">工作表预览</button>
+          <button type="button" data-tab="summary">处理摘要</button>
+        </nav>
+
+        <section class="result-view" id="changesView">
+          <div class="filter-row">
+            <select id="sheetFilter"><option value="">全部工作表</option></select>
+            <select id="typeFilter">
+              <option value="">全部类型</option>
+              <option value="value">内容</option>
+              <option value="format">格式</option>
+              <option value="style">样式</option>
+              <option value="dimension">行列尺寸</option>
+              <option value="sheet">工作表设置</option>
+              <option value="structure">结构</option>
+            </select>
+            <span id="changeCountLabel">0 条记录</span>
+          </div>
+          <div class="change-list" id="changeList"></div>
+          <div class="pagination" id="pagination" hidden>
+            <button id="prevPage" type="button">上一页</button>
+            <span id="pageLabel"></span>
+            <button id="nextPage" type="button">下一页</button>
+          </div>
+        </section>
+
+        <section class="result-view" id="previewView" hidden>
+          <div class="preview-toolbar"><select id="previewSheetSelect"></select><span>仅展示网页预览范围；下载文件包含完整工作簿。</span></div>
+          <div class="sheet-preview" id="sheetPreview"></div>
+        </section>
+
+        <section class="result-view" id="summaryView" hidden>
+          <div class="summary-detail-grid">
+            <article><h3>工作表</h3><div id="sheetSummary"></div></article>
+            <article><h3>已执行规则</h3><div id="ruleSummary"></div></article>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <footer class="tool-footer"><span>Liuxian Lab</span><span>Excel Standardizer v1</span></footer>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="/app/tools/excel-standardizer/script.js?v=1.0.0"></script>
+</body>
+</html>

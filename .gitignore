@@ -62,3 +62,12 @@ storage/contracts/*
 # Python cache
 __pycache__/
 *.py[cod]
+
+# Local development backups
+*.before-*
+*.save
+
+# Runtime contract data
+storage/
+
+# Python runtime cache

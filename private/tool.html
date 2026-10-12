@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Liuxian Lab 工具页面" />
+  <title>工具 · Liuxian Lab</title>
+  <link rel="stylesheet" href="/app/tool.css?v=3.0.0" />
+</head>
+<body>
+  <main class="tool-page">
+    <header class="tool-header">
+      <a class="brand" href="/" aria-label="返回 Liuxian Lab 工作台"><span>L</span><strong>Liuxian Lab</strong></a>
+      <div class="tool-actions">
+        <button id="themeToggle" type="button" aria-label="切换主题">◐</button>
+        <a href="/">返回工作台</a>
+      </div>
+    </header>
+
+    <section class="tool-stage">
+      <div class="tool-breadcrumb"><a href="/">工具中心</a><span>›</span><span id="toolCategory">工具</span></div>
+      <div class="tool-icon" id="toolIcon">TOOL</div>
+      <p class="kicker">LIUXIAN LAB / TOOL</p>
+      <h1 id="toolName">正在加载…</h1>
+      <p class="tool-description" id="toolDescription">正在获取工具信息。</p>
+      <span class="status" id="toolStatus">规划中</span>
+
+      <div class="placeholder-card">
+        <div>
+          <span class="placeholder-index">01</span>
+          <h2>这个工具的入口已经准备好了。</h2>
+          <p>后续只需要在 <code>private/tools/&lt;slug&gt;/</code> 目录里实现自己的 HTML、CSS 和 JavaScript，登录与权限体系无需重复开发。</p>
+        </div>
+        <div class="structure">
+          <span>private/tools/<b id="toolSlug">tool</b>/</span>
+          <code>index.html</code>
+          <code>tool.css</code>
+          <code>tool.js</code>
+        </div>
+      </div>
+    </section>
+  </main>
+  <script src="/app/tool.js?v=3.0.0"></script>
+</body>
+</html>
