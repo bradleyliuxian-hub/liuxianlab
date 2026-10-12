@@ -2,12 +2,50 @@
   "$schema": "https://opencode.ai/config.json",
   "default_agent": "build",
   "subagent_depth": 1,
+
   "instructions": [
     "AGENTS.md"
   ],
+
   "permission": {
-    "edit": "allow",
-    "bash": "ask",
-    "webfetch": "ask"
+    "*": "allow",
+
+    "bash": {
+      "*": "allow",
+
+      "git push *": "ask",
+      "git push": "ask",
+
+      "git commit *": "ask",
+      "git commit": "ask",
+
+      "git reset --hard *": "deny",
+      "git reset --hard": "deny",
+
+      "git clean *": "deny",
+
+      "git rebase *": "ask",
+
+      "git checkout -- *": "ask",
+      "git restore *": "ask",
+
+      "rm -rf *": "ask",
+      "sudo *": "ask",
+
+      "ssh *": "ask",
+      "scp *": "ask",
+      "rsync *": "ask",
+
+      "pm2 restart *": "ask",
+      "pm2 reload *": "ask",
+      "pm2 delete *": "ask",
+      "pm2 stop *": "ask",
+
+      "nginx *": "ask",
+      "systemctl *": "ask",
+
+      "docker system prune *": "ask",
+      "docker volume rm *": "ask"
+    }
   }
 }
