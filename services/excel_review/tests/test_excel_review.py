@@ -367,5 +367,148 @@ class TestEveryRowHasExcelAddress(Base):
                 self.assertTrue(address.startswith("'"))
 
 
+class TestFormulaInjectionLiteral(Base):
+    """External strings must be stored as literal text, never as formulas."""
+
+    FILENAME = '=HYPERLINK("https://evil.invalid","file")'
+    COMMENT = '=HYPERLINK("https://evil.invalid","click")'
+    AUTHOR = "=1+1"
+    SHEET = "=SUM(1,2)"
+
+    def _item(self):
+        return {
+            "itemId": "id-1",
+            "reviewId": "C001",
+            "commentType": parser.COMMENT_TYPE_LEGACY,
+            "sheetName": self.SHEET,
+            "cellAddress": "A1",
+            "cellValue": '=HYPERLINK("https://evil.invalid","value")',
+            "commentText": self.COMMENT,
+            "author": self.AUTHOR,
+            "commentDatetime": "=2+2",
+            "threadId": "=3+3",
+            "parentThreadId": "",
+            "rootThreadId": "",
+            "personId": "=4+4",
+            "resolved": False,
+            "status": "pending",
+            "originalTextHash": "hash-1",
+            "legacyCommentHash": "hash-1",
+            "sourceFilename": self.FILENAME,
+            "sourceReference": '=HYPERLINK("https://evil.invalid","ref")',
+            "excelAddress": '=HYPERLINK("https://evil.invalid","addr")',
+        }
+
+    def _build_review(self):
+        path = self.tmp / "review.xlsx"
+        statistics = {"authors": [{"author": "=9+9"}]}
+        review_workbook.build_review_workbook(
+            path, [self._item()], "job-1", "sha-1", self.FILENAME, statistics
+        )
+        return load_workbook(path, data_only=False)
+
+    @staticmethod
+    def _assert_literal(cell, expected):
+        assert cell.value == expected, (cell.coordinate, cell.value)
+        assert cell.data_type == "s", (cell.coordinate, cell.data_type)
+
+    def test_set_literal_cell_helper(self):
+        workbook = Workbook()
+        sheet = workbook.active
+        cell = review_workbook.set_literal_cell(sheet, 1, 1, '=HYPERLINK("x","y")')
+        assert cell.value == '=HYPERLINK("x","y")'
+        assert cell.data_type == "s"
+        number = review_workbook.set_literal_cell(sheet, 1, 2, 12.5)
+        assert number.value == 12.5
+        assert number.data_type != "s"
+
+    def test_visible_sheet_is_all_literal_text(self):
+        workbook = self._build_review()
+        sheet = workbook[review_workbook.LEGACY_SHEET]
+        header = [c.value for c in sheet[1]]
+        row = {name: sheet.cell(row=2, column=index + 1)
+               for index, name in enumerate(header)}
+        self._assert_literal(row["原文件"], self.FILENAME)
+        self._assert_literal(row["Sheet"], self.SHEET)
+        self._assert_literal(row["Cell"], "A1")
+        self._assert_literal(row["原始值"], '=HYPERLINK("https://evil.invalid","value")')
+        self._assert_literal(row["批注内容"], self.COMMENT)
+        self._assert_literal(row["Excel Address"], '=HYPERLINK("https://evil.invalid","addr")')
+        self._assert_literal(row["作者"], self.AUTHOR)
+        self._assert_literal(row["Source Reference"], '=HYPERLINK("https://evil.invalid","ref")')
+        for row_cells in sheet.iter_rows(min_row=2):
+            for cell in row_cells:
+                assert cell.data_type != "f", cell.coordinate
+
+    def test_dashboard_source_and_authors_literal_but_formulas_trusted(self):
+        workbook = self._build_review()
+        dashboard = workbook[review_workbook.DASHBOARD_SHEET]
+        self._assert_literal(dashboard["B2"], self.FILENAME)
+        self._assert_literal(dashboard["A18"], "=9+9")
+        for ref in ("B5", "B6", "B7", "B8", "B11", "B12", "B14"):
+            cell = dashboard[ref]
+            assert cell.data_type == "f", (ref, cell.data_type)
+            assert str(cell.value).startswith("="), (ref, cell.value)
+        for ref in ("B18", "C18", "D18", "E18"):
+            assert dashboard[ref].data_type == "f", (ref, dashboard[ref].data_type)
+
+    def test_mapping_sheet_external_strings_literal(self):
+        workbook = self._build_review()
+        mapping = workbook[review_workbook.MAPPING_SHEET]
+        header = [c.value for c in mapping[1]]
+        index = {name: position + 1 for position, name in enumerate(header)}
+        external = {
+            "source_filename": self.FILENAME,
+            "sheet_name": self.SHEET,
+            "cell_address": "A1",
+            "excel_address": '=HYPERLINK("https://evil.invalid","addr")',
+            "original_value": '=HYPERLINK("https://evil.invalid","value")',
+            "original_text": self.COMMENT,
+            "author": self.AUTHOR,
+            "comment_datetime": "=2+2",
+            "thread_id": "=3+3",
+            "person_id": "=4+4",
+            "source_reference": '=HYPERLINK("https://evil.invalid","ref")',
+        }
+        for name, expected in external.items():
+            cell = mapping.cell(row=2, column=index[name])
+            self._assert_literal(cell, expected)
+
+    def test_end_to_end_worker_filename_and_comment_literal(self):
+        job_dir = self.tmp / "evil-job"
+        job_dir.mkdir(parents=True, exist_ok=True)
+        (job_dir / "meta.json").write_text(
+            json.dumps({"originalFilename": self.FILENAME}), encoding="utf-8"
+        )
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.title = "S"
+        sheet["A1"] = 1
+        sheet["A1"].comment = Comment(self.COMMENT, self.AUTHOR)
+        workbook.save(job_dir / "source.xlsx")
+
+        run(job_dir, reporter(job_dir))
+        review = load_workbook(job_dir / "review.xlsx", data_only=False)
+
+        dashboard = review[review_workbook.DASHBOARD_SHEET]
+        self._assert_literal(dashboard["B2"], self.FILENAME)
+        assert dashboard["B5"].data_type == "f"
+
+        legacy = review[review_workbook.LEGACY_SHEET]
+        header = [c.value for c in legacy[1]]
+        row = {name: legacy.cell(row=2, column=index + 1)
+               for index, name in enumerate(header)}
+        self._assert_literal(row["原文件"], self.FILENAME)
+        self._assert_literal(row["批注内容"], self.COMMENT)
+        self._assert_literal(row["作者"], self.AUTHOR)
+
+        mapping = review[review_workbook.MAPPING_SHEET]
+        mapping_header = [c.value for c in mapping[1]]
+        self._assert_literal(
+            mapping.cell(row=2, column=mapping_header.index("source_filename") + 1),
+            self.FILENAME,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -167,6 +167,24 @@ def _base_mapping_row(item, job_id, source_sha256, source_filename,
     }
 
 
+def set_literal_cell(worksheet, row, column, value):
+    """Write ``value`` as literal text when it is a string.
+
+    External content (filenames, sheet names, comments, authors, cell text,
+    mapping identity values ...) must never be interpreted by Excel as a
+    formula. OpenPyXL marks any string starting with ``=`` as ``data_type
+    "f"``; forcing ``data_type "s"`` keeps the original text intact while
+    storing it as a literal string. Trusted Dashboard formulas are written
+    with the plain ``worksheet[...] = "=..."`` path instead, so they stay
+    formulas.
+    """
+    cell = worksheet.cell(row=row, column=column)
+    cell.value = value
+    if isinstance(value, str):
+        cell.data_type = "s"
+    return cell
+
+
 def _write_visible_sheet(worksheet, items, header_fill, reply_text=None):
     """Write one visible sheet; return {item_id: row_number}.
 
@@ -203,11 +221,11 @@ def _write_visible_sheet(worksheet, items, header_fill, reply_text=None):
             item["sourceReference"],
         ]
         for column, value in enumerate(values, start=1):
-            target = worksheet.cell(row=row, column=column, value=value)
+            target = set_literal_cell(worksheet, row, column, value)
             target.protection = Protection(locked=False)
             if column in _WRAP_COLUMNS:
                 target.alignment = Alignment(wrap_text=True, vertical="top")
-        id_cell = worksheet.cell(row=row, column=id_column, value=item["itemId"])
+        id_cell = set_literal_cell(worksheet, row, id_column, item["itemId"])
         id_cell.protection = Protection(locked=False)
         row_numbers[item["itemId"]] = row
 
@@ -254,7 +272,7 @@ def _build_dashboard(worksheet, statistics, source_filename):
     worksheet["A1"].font = Font(bold=True, size=14)
     worksheet["A2"] = "Source File"
     worksheet["A2"].font = bold
-    worksheet["B2"] = source_filename or "source.xlsx"
+    set_literal_cell(worksheet, 2, 2, source_filename or "source.xlsx")
     worksheet["A3"] = "Generated At"
     worksheet["A3"].font = bold
     worksheet["B3"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -292,7 +310,7 @@ def _build_dashboard(worksheet, statistics, source_filename):
         cell.font = bold
 
     for index, entry in enumerate(statistics.get("authors", []), start=18):
-        worksheet.cell(row=index, column=1, value=entry["author"])
+        set_literal_cell(worksheet, index, 1, entry["author"])
         worksheet.cell(
             row=index,
             column=2,
@@ -399,7 +417,7 @@ def build_review_workbook(path, items, job_id, source_sha256, source_filename,
         cell.protection = Protection(locked=False)
     for row_index, row in enumerate(rows, start=2):
         for column, name in enumerate(MAPPING_HEADERS, start=1):
-            cell = mapping.cell(row=row_index, column=column, value=row[name])
+            cell = set_literal_cell(mapping, row_index, column, row[name])
             cell.protection = Protection(locked=False)
     mapping.sheet_state = "hidden"
 
