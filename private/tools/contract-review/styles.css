@@ -1246,3 +1246,133 @@ button.contract-history-action {
 
   opacity: 0.62;
 }
+
+
+/* Contract Digitization v1.1: parse mode + progress message */
+
+.parse-mode {
+  margin: 1.25rem 0 0.25rem;
+}
+
+.parse-mode-label {
+  display: block;
+
+  margin-bottom: 0.6rem;
+
+  font-size: 0.8rem;
+
+  letter-spacing: 0.08em;
+
+  text-transform: uppercase;
+
+  opacity: 0.62;
+}
+
+.parse-mode-options {
+  display: grid;
+
+  gap: 0.5rem;
+
+  grid-template-columns: repeat(
+    3,
+    minmax(0, 1fr)
+  );
+}
+
+.parse-mode-option {
+  display: flex;
+
+  flex-direction: column;
+
+  gap: 0.25rem;
+
+  padding: 0.7rem 0.8rem;
+
+  border: 1px solid var(--line, #e4e0d6);
+
+  border-radius: 0.7rem;
+
+  cursor: pointer;
+
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.parse-mode-option input {
+  position: absolute;
+
+  opacity: 0;
+
+  pointer-events: none;
+}
+
+.parse-mode-option:has(input:checked) {
+  border-color: var(--accent, #b6e300);
+
+  background: color-mix(
+    in srgb,
+    var(--accent, #b6e300) 12%,
+    transparent
+  );
+}
+
+.parse-mode-title {
+  display: flex;
+
+  align-items: center;
+
+  gap: 0.35rem;
+
+  font-weight: 600;
+}
+
+.parse-mode-title em {
+  font-style: normal;
+
+  font-size: 0.68rem;
+
+  padding: 0.05rem 0.35rem;
+
+  border-radius: 999px;
+
+  background: var(--accent, #b6e300);
+
+  color: #1b1b1b;
+}
+
+.parse-mode-desc {
+  font-size: 0.74rem;
+
+  line-height: 1.35;
+
+  opacity: 0.7;
+}
+
+.progress-message {
+  margin: 0.5rem 0 0;
+
+  font-size: 0.82rem;
+
+  opacity: 0.82;
+}
+
+.parse-badge {
+  margin-left: 0.4rem;
+
+  padding: 0.15rem 0.5rem;
+
+  border-radius: 999px;
+
+  font-size: 0.7rem;
+
+  font-weight: 600;
+
+  background: rgba(0, 0, 0, 0.06);
+
+  color: inherit;
+}
+
+.parse-badge.fallback {
+  background: rgba(182, 227, 0, 0.22);
+}

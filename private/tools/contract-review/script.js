@@ -76,6 +76,16 @@
       "stageText"
     );
 
+  const progressMessage =
+    document.getElementById(
+      "progressMessage"
+    );
+
+  const parseModeBadge =
+    document.getElementById(
+      "parseModeBadge"
+    );
+
   const themeToggle =
     document.getElementById(
       "themeToggle"
@@ -182,6 +192,145 @@
 
     progressValue.textContent =
       "0%";
+
+
+    if (progressMessage) {
+
+      progressMessage.hidden =
+        true;
+
+      progressMessage.textContent =
+        "";
+
+    }
+
+
+    if (parseModeBadge) {
+
+      parseModeBadge.hidden =
+        true;
+
+      parseModeBadge.textContent =
+        "";
+
+      parseModeBadge.classList.remove(
+        "fallback"
+      );
+
+    }
+
+  }
+
+
+  function selectedParseMode() {
+
+    const checked =
+      document.querySelector(
+        'input[name="parseMode"]:checked'
+      );
+
+
+    const value =
+      checked?.value;
+
+
+    return (
+      value === "fast" ||
+      value === "accurate"
+    )
+      ? value
+      : "auto";
+
+  }
+
+
+  function parseBadgeText(payload) {
+
+    const requested =
+      payload.requestedMode;
+
+    const tier =
+      payload.actualTier;
+
+
+    if (payload.fallbackUsed) {
+      return "自动 · 高精度";
+    }
+
+
+    if (
+      requested === "fast" ||
+      tier === "basic"
+    ) {
+
+      return "快速解析";
+
+    }
+
+
+    if (
+      requested === "accurate" ||
+      tier === "standard"
+    ) {
+
+      return "高精度解析";
+
+    }
+
+
+    return "";
+
+  }
+
+
+  function updateParseBadge(payload) {
+
+    if (!parseModeBadge) {
+      return;
+    }
+
+
+    let text =
+      parseBadgeText(payload);
+
+
+    if (payload.cacheHit) {
+
+      text = text
+        ? `${text} · 已复用`
+        : "已复用已有解析结果";
+
+    }
+
+
+    if (text) {
+
+      parseModeBadge.textContent =
+        text;
+
+      parseModeBadge.hidden =
+        false;
+
+      parseModeBadge.classList.toggle(
+        "fallback",
+        Boolean(
+          payload.fallbackUsed
+        )
+      );
+
+    } else {
+
+      parseModeBadge.hidden =
+        true;
+
+      parseModeBadge.textContent =
+        "";
+
+      parseModeBadge.classList.remove(
+        "fallback"
+      );
+
+    }
 
   }
 
@@ -455,6 +604,31 @@
         : stageText.textContent;
 
 
+    if (progressMessage) {
+
+      if (payload.progressMessage) {
+
+        progressMessage.textContent =
+          payload.progressMessage;
+
+        progressMessage.hidden =
+          false;
+
+      } else {
+
+        progressMessage.hidden =
+          true;
+
+      }
+
+    }
+
+
+    updateParseBadge(
+      payload
+    );
+
+
     if (
       payload.status ===
         "completed" ||
@@ -500,6 +674,12 @@
       formData.append(
         "file",
         currentFile
+      );
+
+
+      formData.append(
+        "parseMode",
+        selectedParseMode()
       );
 
 

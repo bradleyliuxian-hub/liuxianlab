@@ -17,7 +17,7 @@
 
   <link
     rel="stylesheet"
-    href="/app/tools/contract-review/styles.css?v=4.1.0"
+    href="/app/tools/contract-review/styles.css?v=4.2.0"
   >
 
 </head>
@@ -212,6 +212,69 @@
 
 
 
+        <div
+          class="parse-mode"
+          id="parseMode"
+          role="radiogroup"
+          aria-label="解析模式"
+        >
+
+          <span class="parse-mode-label">
+            解析模式
+          </span>
+
+          <div class="parse-mode-options">
+
+            <label class="parse-mode-option">
+              <input
+                type="radio"
+                name="parseMode"
+                value="auto"
+                checked
+              >
+              <span class="parse-mode-title">
+                自动
+                <em>推荐</em>
+              </span>
+              <span class="parse-mode-desc">
+                优先快速解析，质量不足自动升级高精度
+              </span>
+            </label>
+
+            <label class="parse-mode-option">
+              <input
+                type="radio"
+                name="parseMode"
+                value="fast"
+              >
+              <span class="parse-mode-title">
+                快速
+              </span>
+              <span class="parse-mode-desc">
+                优先速度，适合清晰版式
+              </span>
+            </label>
+
+            <label class="parse-mode-option">
+              <input
+                type="radio"
+                name="parseMode"
+                value="accurate"
+              >
+              <span class="parse-mode-title">
+                高精度
+              </span>
+              <span class="parse-mode-desc">
+                适合复杂扫描件与复杂版式
+              </span>
+            </label>
+
+          </div>
+
+        </div>
+
+
+
         <button
           class="primary-button"
           id="uploadButton"
@@ -277,6 +340,14 @@
             QUEUED
           </span>
 
+
+          <span
+            class="parse-badge"
+            id="parseModeBadge"
+            hidden
+          >
+          </span>
+
         </div>
 
 
@@ -307,6 +378,14 @@
         </div>
 
 
+        <p
+          class="progress-message"
+          id="progressMessage"
+          hidden
+        >
+        </p>
+
+
         <small class="phase-note">
           解析将在后台自动运行，完成后可直接下载 Markdown。
         </small>
@@ -329,7 +408,7 @@
 
   <script src="/app/tools/contract-review/workflow.js?v=3.0.0"></script>
 <script
-    src="/app/tools/contract-review/script.js?v=1.1.0"
+    src="/app/tools/contract-review/script.js?v=1.2.0"
   ></script>
   <script
     src="/app/tools/contract-review/contract-history.js?v=1.1.0"

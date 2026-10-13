@@ -5,6 +5,24 @@ import zipfile
 from pathlib import Path
 
 from .database import PROJECT_ROOT
+from .parse_profile import (
+    TIER_STANDARD,
+    VALID_TIERS,
+)
+
+
+# Stable MinerU stdout keywords -> coarse parse stages.
+#
+# We deliberately do NOT parse ANSI progress bars or rely on
+# exact percentages. Only stable phase keywords are used, and
+# missing keywords simply degrade to stage-level progress.
+_STAGE_KEYWORDS = (
+    ("layout", ("layout predict", "layoutpredict")),
+    ("vlm", ("vlm predict", "vlmpredict")),
+    ("ocr_det", ("ocr-det", "ocr det")),
+    ("ocr_rec", ("ocr-rec", "ocr rec")),
+    ("ocr_seal", ("ocr-seal", "ocr seal")),
+)
 
 
 MINERU_BIN = (
@@ -79,9 +97,22 @@ def _copy_export(
     )
 
 
-def parse_contract(contract):
+def parse_contract(
+    contract,
+    *,
+    tier=TIER_STANDARD,
+    on_stage=None,
+):
     """
     Parse one contract with MinerU.
+
+    tier is explicit (basic | standard) and is passed to the
+    MinerU CLI so the tier is never auto-selected.
+
+    on_stage, when provided, is called with a coarse stage key
+    ("layout", "vlm", "ocr_det", "ocr_rec", "ocr_seal") as the
+    stable MinerU phase keywords appear in the log. It never
+    receives a fabricated percentage.
 
     One MinerU pass produces a ZIP export containing:
     - markdown.md
@@ -94,6 +125,13 @@ def parse_contract(contract):
         parsed/document.middle.json
         parsed/document.structured.json
     """
+
+    tier = str(tier or "").strip().lower()
+
+    if tier not in VALID_TIERS:
+        raise ValueError(
+            f"Unknown MinerU tier: {tier!r}"
+        )
 
     if not MINERU_BIN.is_file():
         raise RuntimeError(
@@ -227,7 +265,7 @@ def parse_contract(contract):
         "zip",
 
         "--tier",
-        "standard",
+        tier,
     ]
 
 
@@ -252,25 +290,105 @@ def parse_contract(contract):
     )
 
 
+    stage_seen = set()
+
+    process = None
+
     with log_path.open(
         "w",
         encoding="utf-8",
     ) as log_file:
 
-        result = subprocess.run(
+        process = subprocess.Popen(
             command,
             cwd=str(
                 PROJECT_ROOT
             ),
             env=env,
-            stdout=log_file,
+            stdout=subprocess.PIPE,
+            # stderr is merged into stdout, so there is exactly ONE
+            # pipe and ONE reader (the loop below). With a single
+            # pipe there is no two-pipe deadlock, and the seal/skip
+            # warnings on stderr are preserved in mineru.log.
             stderr=subprocess.STDOUT,
             text=True,
-            check=False,
+            bufsize=1,
         )
 
+        try:
 
-    if result.returncode != 0:
+            for line in process.stdout:
+
+                log_file.write(
+                    line
+                )
+
+                log_file.flush()
+
+                if on_stage is None:
+                    continue
+
+                lowered = line.lower()
+
+                for stage, keywords in _STAGE_KEYWORDS:
+
+                    if stage in stage_seen:
+                        continue
+
+                    if any(
+                        keyword in lowered
+                        for keyword in keywords
+                    ):
+
+                        stage_seen.add(
+                            stage
+                        )
+
+                        try:
+                            on_stage(
+                                stage
+                            )
+
+                        except Exception:
+                            pass
+
+                        break
+
+            process.wait()
+
+        except BaseException:
+
+            # Never leave a zombie or a running MinerU child
+            # behind if reading or on_stage() raised.
+            if process.poll() is None:
+
+                try:
+                    process.terminate()
+                    process.wait(timeout=10)
+
+                except Exception:
+
+                    try:
+                        process.kill()
+                    except Exception:
+                        pass
+
+                    try:
+                        process.wait(timeout=5)
+                    except Exception:
+                        pass
+
+            raise
+
+        finally:
+
+            if process.stdout is not None:
+
+                process.stdout.close()
+
+    returncode = process.returncode
+
+    if returncode != 0:
 
         error_tail = ""
 
@@ -289,7 +407,7 @@ def parse_contract(contract):
 
         raise RuntimeError(
             "MinerU failed with exit code "
-            f"{result.returncode}\n"
+            f"{returncode}\n"
             f"{error_tail}"
         )
 
@@ -497,4 +615,7 @@ def parse_contract(contract):
 
         "middle_json_size":
             middle_json_size,
+
+        "tier":
+            tier,
     }

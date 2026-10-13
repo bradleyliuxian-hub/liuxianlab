@@ -111,6 +111,7 @@ def prepare_review_artifacts(
     *,
     original_name="contract.pdf",
     middle_json_path=None,
+    critical_issues=None,
 ):
     raw_path = Path(
         raw_markdown_path
@@ -179,6 +180,21 @@ def prepare_review_artifacts(
                 original_name,
         )
     )
+
+
+    # Critical integrity findings are already review-issue shaped.
+    # They are merged here so they get the same page/bbox
+    # enrichment. Issues without a bbox are still kept.
+    for issue in (
+        critical_issues
+        or []
+    ):
+
+        detected_issues.append(
+            dict(
+                issue
+            )
+        )
 
 
     if middle_json_path:
