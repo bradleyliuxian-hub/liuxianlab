@@ -506,8 +506,9 @@ def locate_issue(
 
     if best is None:
 
-        result["page"] = None
-        result["pageIdx"] = None
+        # A critical issue must never disappear just because a bbox
+        # could not be found. Preserve any page/pageIdx we already
+        # know and leave bbox empty.
         result["bbox"] = None
         result["bboxMode"] = None
         result["locationConfidence"] = 0.0

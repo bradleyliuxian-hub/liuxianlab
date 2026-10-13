@@ -1,16 +1,517 @@
+import hashlib
 import inspect
+import json
 import shutil
 import sys
+import time
 from contextlib import nullcontext
+from datetime import datetime, timezone
 from pathlib import Path
 
 from . import database
+from . import parse_cache
 from .consistency_artifacts import build_consistency_artifacts
+from .critical_integrity import (
+    PROFILE_VERSION as CRITICAL_INTEGRITY_PROFILE_VERSION,
+    build_critical_review_issues,
+    compare_critical_observations,
+    evaluate_critical_integrity,
+)
 from .mineru_service import parse_contract
+from .parse_profile import (
+    MODE_ACCURATE,
+    MODE_AUTO,
+    MODE_FAST,
+    TIER_BASIC,
+    TIER_STANDARD,
+    normalize_mode,
+)
+from .quality_gate import (
+    evaluate_parse_quality,
+    fallback_reason,
+)
 from .review_artifacts import prepare_review_artifacts
 
 
 PROJECT_ROOT = database.PROJECT_ROOT
+
+
+# ---------------------------------------------------------------------------
+# Progress
+# ---------------------------------------------------------------------------
+
+# Coarse stage -> progress, per tier band. Kept deliberately simple;
+# we never fabricate a precise MinerU percentage.
+#
+# NOTE: claim_next_contract already sets DB progress = 10, so every
+# ProgressReporter value below is >= 10 (see ProgressReporter floor).
+_BASIC_STAGE_PROGRESS = {
+    "layout": 30,
+    "vlm": 38,
+    "ocr_det": 44,
+    "ocr_rec": 48,
+    "ocr_seal": 52,
+}
+
+_STANDARD_STAGE_PROGRESS = {
+    "layout": 68,
+    "vlm": 74,
+    "ocr_det": 78,
+    "ocr_rec": 81,
+    "ocr_seal": 84,
+}
+
+_STAGE_MESSAGES = {
+    "layout": "正在分析页面布局",
+    "vlm": "正在识别合同文字",
+    "ocr_det": "正在识别合同文字",
+    "ocr_rec": "正在识别合同文字",
+    "ocr_seal": "正在识别印章与图片文字",
+}
+
+
+class ProgressReporter:
+    """
+    Monotonic progress writer.
+
+    Guarantees:
+    - progress never decreases
+    - PostgreSQL is not hammered (writes only on a message/stage
+      change, a large enough step, or after a minimum interval)
+    """
+
+    def __init__(
+        self,
+        contract_id,
+        *,
+        floor=0,
+        min_interval=1.0,
+        min_delta=2,
+    ):
+        self.contract_id = str(contract_id)
+        self.min_interval = float(min_interval)
+        self.min_delta = int(min_delta)
+
+        # Starting floor. The worker passes 10 because
+        # claim_next_contract has already written progress = 10.
+        # This guarantees ProgressReporter never regresses the DB.
+        self.progress = max(
+            0,
+            min(100, int(floor)),
+        )
+        self.message = None
+        self.stage = None
+        self.status = None
+
+        self._last_write = 0.0
+
+    def update(
+        self,
+        progress,
+        message=None,
+        *,
+        stage=None,
+        status=None,
+        force=False,
+    ):
+        try:
+            value = int(progress)
+        except (TypeError, ValueError):
+            return
+
+        value = max(0, min(100, value))
+
+        if self.progress is not None and value < self.progress:
+            value = self.progress
+
+        now = time.monotonic()
+
+        message_changed = (
+            message is not None
+            and message != self.message
+        )
+
+        marker_changed = (
+            (stage is not None and stage != self.stage)
+            or (status is not None and status != self.status)
+        )
+
+        grew = (
+            self.progress is None
+            or (value - self.progress) >= self.min_delta
+        )
+
+        time_ok = (
+            now - self._last_write
+        ) >= self.min_interval
+
+        if (
+            not force
+            and not message_changed
+            and not marker_changed
+            and not (grew and time_ok)
+        ):
+            return
+
+        try:
+            database.update_contract_progress(
+                self.contract_id,
+                progress=value,
+                progress_message=message,
+                stage=stage,
+                status=status,
+            )
+
+        except Exception as error:
+            print(
+                "[contract-worker] progress update failed:",
+                error,
+                flush=True,
+            )
+            return
+
+        self.progress = value
+
+        if message is not None:
+            self.message = message
+
+        if stage is not None:
+            self.stage = stage
+
+        if status is not None:
+            self.status = status
+
+        self._last_write = now
+
+
+# ---------------------------------------------------------------------------
+# Parse helpers
+# ---------------------------------------------------------------------------
+
+def _sha256_file(path, chunk_size=1024 * 1024):
+    """
+    Streaming SHA256. Never loads the whole PDF into memory.
+    """
+
+    digest = hashlib.sha256()
+
+    with open(path, "rb") as handle:
+        for chunk in iter(
+            lambda: handle.read(chunk_size),
+            b"",
+        ):
+            digest.update(chunk)
+
+    return digest.hexdigest()
+
+
+def _count_middle_pages(middle_json_path):
+    if not middle_json_path:
+        return None
+
+    try:
+        import json
+
+        data = json.loads(
+            Path(middle_json_path).read_text(
+                encoding="utf-8",
+                errors="replace",
+            )
+        )
+
+        pages = data.get("pages") if isinstance(data, dict) else None
+
+        if isinstance(pages, list):
+            return len(pages)
+
+    except Exception:
+        return None
+
+    return None
+
+
+def _result_from_restored(restored):
+    """
+    Build a parse-result dict from cached artifacts.
+    """
+
+    if not restored:
+        return None
+
+    raw = restored.get("raw_markdown")
+    middle = restored.get("middle_json")
+    structured = restored.get("structured_json")
+
+    if raw is None or middle is None:
+        return None
+
+    raw_path = Path(raw)
+
+    return {
+        "source_path": None,
+        "output_path": str(raw_path),
+        "markdown_path": str(raw_path),
+        "middle_json_path": str(Path(middle)),
+        "structured_json_path": (
+            str(Path(structured))
+            if structured
+            else None
+        ),
+        "output_size": raw_path.stat().st_size,
+        "tier": None,
+        "from_cache": True,
+    }
+
+
+def _run_parse(
+    contract,
+    tier,
+    reporter,
+    start_progress,
+):
+    stage_progress = (
+        _BASIC_STAGE_PROGRESS
+        if tier == TIER_BASIC
+        else _STANDARD_STAGE_PROGRESS
+    )
+
+    def on_stage(stage_key):
+        percent = stage_progress.get(stage_key)
+
+        if percent is None:
+            return
+
+        reporter.update(
+            percent,
+            _STAGE_MESSAGES.get(stage_key),
+            stage=stage_key,
+        )
+
+    reporter.update(
+        start_progress,
+        (
+            "正在启动快速解析"
+            if tier == TIER_BASIC
+            else "正在启动高精度解析"
+        ),
+        force=True,
+    )
+
+    return parse_contract(
+        contract,
+        tier=tier,
+        on_stage=on_stage,
+    )
+
+
+def _select_cached_parse(owner, source_sha256, mode):
+    """
+    Decide which cached tier (if any) to restore.
+
+    Returns ("use", tier, manifest) or (None, None, None).
+
+    The cached manifest's stored qualityPass is NOT used here.
+    For a Basic cache hit the worker re-runs the CURRENT quality
+    gate on the restored artifacts, so a stale stored value can
+    never decide AUTO's behaviour.
+    """
+
+    if not parse_cache.is_valid_sha256(source_sha256):
+        return (None, None, None)
+
+    if mode == MODE_ACCURATE:
+        manifest = parse_cache.lookup(
+            owner,
+            source_sha256,
+            TIER_STANDARD,
+        )
+
+        if manifest:
+            return ("use", TIER_STANDARD, manifest)
+
+        return (None, None, None)
+
+    if mode == MODE_FAST:
+        manifest = parse_cache.lookup(
+            owner,
+            source_sha256,
+            TIER_BASIC,
+        )
+
+        if manifest:
+            return ("use", TIER_BASIC, manifest)
+
+        return (None, None, None)
+
+    # AUTO: prefer a standard cache, then a basic cache. Whether a
+    # basic cache is actually usable is decided by re-evaluation.
+    standard = parse_cache.lookup(
+        owner,
+        source_sha256,
+        TIER_STANDARD,
+    )
+
+    if standard:
+        return ("use", TIER_STANDARD, standard)
+
+    basic = parse_cache.lookup(
+        owner,
+        source_sha256,
+        TIER_BASIC,
+    )
+
+    if basic:
+        return ("use", TIER_BASIC, basic)
+
+    return (None, None, None)
+
+
+def _store_cache(
+    owner,
+    source_sha256,
+    tier,
+    parsed_dir,
+    quality_result,
+):
+    """
+    Store MinerU artifacts only. Best-effort: never fatal.
+    """
+
+    if not parse_cache.is_valid_sha256(source_sha256):
+        return None
+
+    files = parse_cache.collect_cacheable_files(
+        parsed_dir
+    )
+
+    if not files:
+        return None
+
+    try:
+        return parse_cache.store(
+            owner,
+            source_sha256,
+            tier,
+            files=files,
+            quality_pass=(
+                (quality_result or {}).get("passed")
+            ),
+            metrics=(
+                (quality_result or {}).get("metrics")
+                or {}
+            ),
+        )
+
+    except Exception as error:
+        print(
+            "[contract-worker] cache store failed:",
+            error,
+            flush=True,
+        )
+
+        return None
+
+
+def _critical_fallback_reason(integrity):
+    """
+    Machine-readable AUTO fallback reason for a critical
+    integrity failure. Contains reason codes only, never
+    sensitive contract values.
+    """
+
+    codes = (
+        (integrity.get("metrics") or {}).get("reasonCodes")
+        or []
+    )
+
+    primary = (
+        codes[0]
+        if codes
+        else "critical_integrity_failed"
+    )
+
+    return (
+        "basic_critical_integrity_failed:"
+        + primary
+    )
+
+
+def _write_integrity_artifact(
+    *,
+    parsed_dir,
+    mode,
+    final_tier,
+    final_integrity,
+    cross_tier_findings,
+    basic_integrity,
+    recovered_reason_codes=None,
+):
+    """
+    Write the per-job private integrity artifact.
+
+    Never cached and never served publicly. Contains the
+    critical observations/findings for the FINAL selected
+    artifact, plus a small Basic summary when AUTO ran both
+    tiers. ``recoveredByStandard`` records a Basic critical
+    failure that the Standard re-parse resolved (audit evidence
+    only; it is not shown as a mandatory user issue).
+    """
+
+    parsed_dir = Path(parsed_dir)
+    parsed_dir.mkdir(parents=True, exist_ok=True)
+
+    recovered_reason_codes = list(
+        recovered_reason_codes or []
+    )
+
+    document = {
+        "version": 1,
+        "profileVersion": CRITICAL_INTEGRITY_PROFILE_VERSION,
+        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "mode": mode,
+        "finalTier": final_tier,
+        "recoveredByStandard": bool(
+            recovered_reason_codes
+        ),
+        "recoveredReasonCodes": recovered_reason_codes,
+        "observations": final_integrity.get("observations", {}),
+        "findings": final_integrity.get("findings", []),
+        "crossTierFindings": list(cross_tier_findings or []),
+        "metrics": {
+            **(final_integrity.get("metrics") or {}),
+            "crossTierCount": len(cross_tier_findings or []),
+        },
+    }
+
+    if basic_integrity is not None:
+
+        document["basicSummary"] = {
+            "requiresStandard": basic_integrity.get(
+                "requiresStandard"
+            ),
+            "observations": basic_integrity.get(
+                "observations",
+                {},
+            ),
+            "metrics": basic_integrity.get(
+                "metrics",
+                {},
+            ),
+        }
+
+    path = parsed_dir / "document.integrity.json"
+
+    path.write_text(
+        json.dumps(
+            document,
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    return path
 
 
 def _get_callable(*names):
@@ -476,6 +977,19 @@ def process_contract(
         ]
     )
 
+    reporter = ProgressReporter(
+        contract_id,
+        floor=10,
+    )
+
+    worker_start = time.monotonic()
+
+    metrics = {}
+
+    def elapsed_ms(start):
+        return int(
+            (time.monotonic() - start) * 1000
+        )
 
     try:
 
@@ -539,20 +1053,481 @@ def process_contract(
         )
 
 
-        print(
-            "[contract-worker] "
-            "starting MinerU...",
-            flush=True,
+        mode = normalize_mode(
+            contract.get(
+                "parse_mode_requested"
+            )
+        )
+
+        owner = (
+            contract.get(
+                "owner_username"
+            )
+            or ""
+        )
+
+        input_page_count = (
+            contract.get(
+                "page_count"
+            )
+        )
+
+        # Persist the resolved mode immediately so the UI
+        # can show it even if parsing later fails.
+        try:
+            database.update_parse_metadata(
+                contract_id,
+                parse_mode_requested=mode,
+            )
+        except Exception as error:
+            print(
+                "[contract-worker] metadata init failed:",
+                error,
+                flush=True,
+            )
+
+        source_path = (
+            PROJECT_ROOT
+            / contract["file_path"]
+        ).resolve()
+
+        parsed_dir = (
+            source_path.parent
+            / "parsed"
         )
 
 
         # ---------------------------------
-        # MinerU
+        # 1. File fingerprint
         # ---------------------------------
 
-        result = parse_contract(
+        reporter.update(
+            12,
+            "正在检查文件",
+            force=True,
+        )
+
+        hash_start = time.monotonic()
+
+        source_sha256 = ""
+
+        try:
+            source_sha256 = _sha256_file(
+                source_path
+            )
+
+        except Exception as error:
+            print(
+                "[contract-worker] hash failed:",
+                error,
+                flush=True,
+            )
+
+        metrics["hashMs"] = elapsed_ms(
+            hash_start
+        )
+
+
+        # ---------------------------------
+        # 2. Cache lookup
+        # ---------------------------------
+
+        reporter.update(
+            15,
+            "正在检查解析缓存",
+            force=True,
+        )
+
+        lookup_start = time.monotonic()
+
+        action, cached_tier, cached_manifest = (
+            _select_cached_parse(
+                owner,
+                source_sha256,
+                mode,
+            )
+        )
+
+        metrics["cacheLookupMs"] = elapsed_ms(
+            lookup_start
+        )
+
+
+        result = None
+        actual_tier = None
+        cache_hit = False
+        fallback_used = False
+        fallback_reason_value = None
+        quality_result = None
+        basic_integrity = None
+        original_name = _contract_original_name(
             contract
         )
+
+
+        # ---------------------------------
+        # 3a. Restore cache (Basic is re-validated)
+        # ---------------------------------
+
+        if action == "use":
+
+            reporter.update(
+                20,
+                "命中解析缓存",
+                force=True,
+            )
+
+            restore_start = time.monotonic()
+
+            restored = parse_cache.restore(
+                owner,
+                source_sha256,
+                cached_tier,
+                parsed_dir,
+            )
+
+            metrics["cacheRestoreMs"] = elapsed_ms(
+                restore_start
+            )
+
+            cached_result = _result_from_restored(
+                restored
+            )
+
+            if cached_result is not None:
+
+                cache_hit = True
+                actual_tier = cached_tier
+                result = cached_result
+
+                if cached_tier == TIER_BASIC:
+
+                    # IMPORTANT: re-run the CURRENT quality gate on
+                    # the restored artifacts. The manifest's stored
+                    # qualityPass is only metrics/debug and must not
+                    # decide AUTO behaviour (thresholds may have
+                    # changed since the entry was written).
+                    reporter.update(
+                        60,
+                        "正在检查快速解析质量",
+                        force=True,
+                    )
+
+                    gate_start = time.monotonic()
+
+                    quality_result = evaluate_parse_quality(
+                        result["output_path"],
+                        middle_json_path=result.get(
+                            "middle_json_path"
+                        ),
+                        page_count=input_page_count,
+                    )
+
+                    metrics["qualityGateMs"] = elapsed_ms(
+                        gate_start
+                    )
+
+                    metrics["cacheRevalidated"] = True
+
+                    integrity_start = time.monotonic()
+
+                    basic_integrity = (
+                        evaluate_critical_integrity(
+                            markdown_path=
+                                result["output_path"],
+
+                            middle_json_path=
+                                result.get(
+                                    "middle_json_path"
+                                ),
+
+                            original_name=
+                                original_name,
+                        )
+                    )
+
+                    metrics["criticalIntegrityMs"] = elapsed_ms(
+                        integrity_start
+                    )
+
+                    metrics["basicCriticalRequiresStandard"] = bool(
+                        basic_integrity["requiresStandard"]
+                    )
+
+                    needs_standard = (
+                        not quality_result["passed"]
+                        or basic_integrity["requiresStandard"]
+                    )
+
+                    if (
+                        mode == MODE_AUTO
+                        and needs_standard
+                    ):
+
+                        # Cached Basic no longer passes the current
+                        # structural and/or critical gate -> Standard.
+                        fallback_used = True
+
+                        fallback_reason_value = (
+                            fallback_reason(
+                                quality_result["reasons"]
+                            )
+                            if not quality_result["passed"]
+                            else _critical_fallback_reason(
+                                basic_integrity
+                            )
+                        )
+
+                        # The final result comes from a fresh parse.
+                        cache_hit = False
+
+                        reporter.update(
+                            65,
+                            "快速解析质量不足，正在自动切换高精度解析",
+                            force=True,
+                        )
+
+                        standard_start = time.monotonic()
+
+                        result = _run_parse(
+                            contract,
+                            TIER_STANDARD,
+                            reporter,
+                            65,
+                        )
+
+                        metrics["standardParseMs"] = elapsed_ms(
+                            standard_start
+                        )
+
+                        actual_tier = TIER_STANDARD
+
+                    else:
+
+                        reporter.update(
+                            70,
+                            "恢复解析结果",
+                            force=True,
+                        )
+
+                else:
+
+                    quality_result = {
+                        "passed": True,
+                        "reasons": [],
+                        "metrics": (
+                            (cached_manifest or {}).get(
+                                "metrics"
+                            )
+                            or {}
+                        ),
+                        "cached": True,
+                    }
+
+                    reporter.update(
+                        70,
+                        "恢复解析结果",
+                        force=True,
+                    )
+
+
+        # ---------------------------------
+        # 3c. No cache -> run the mode's tier
+        # ---------------------------------
+
+        if result is None:
+
+            if mode == MODE_ACCURATE:
+
+                standard_start = time.monotonic()
+
+                result = _run_parse(
+                    contract,
+                    TIER_STANDARD,
+                    reporter,
+                    65,
+                )
+
+                metrics["standardParseMs"] = elapsed_ms(
+                    standard_start
+                )
+
+                actual_tier = TIER_STANDARD
+
+            else:
+
+                basic_start = time.monotonic()
+
+                result = _run_parse(
+                    contract,
+                    TIER_BASIC,
+                    reporter,
+                    20,
+                )
+
+                metrics["basicParseMs"] = elapsed_ms(
+                    basic_start
+                )
+
+                actual_tier = TIER_BASIC
+
+                if _is_contract_deleted(
+                    contract_id
+                ):
+
+                    print(
+                        "[contract-worker] "
+                        "deleted after parsing",
+                        flush=True,
+                    )
+
+                    cleanup_deleted_contract(
+                        contract
+                    )
+
+                    return True
+
+                # -- Quality Gate --
+                reporter.update(
+                    60,
+                    "正在检查快速解析质量",
+                    force=True,
+                )
+
+                gate_start = time.monotonic()
+
+                quality_result = evaluate_parse_quality(
+                    result["output_path"],
+                    middle_json_path=result.get(
+                        "middle_json_path"
+                    ),
+                    page_count=input_page_count,
+                )
+
+                metrics["qualityGateMs"] = elapsed_ms(
+                    gate_start
+                )
+
+                metrics["basicQualityPass"] = bool(
+                    quality_result["passed"]
+                )
+
+                integrity_start = time.monotonic()
+
+                basic_integrity = (
+                    evaluate_critical_integrity(
+                        markdown_path=
+                            result["output_path"],
+
+                        middle_json_path=
+                            result.get(
+                                "middle_json_path"
+                            ),
+
+                        original_name=
+                            original_name,
+                    )
+                )
+
+                metrics["criticalIntegrityMs"] = elapsed_ms(
+                    integrity_start
+                )
+
+                metrics["basicCriticalRequiresStandard"] = bool(
+                    basic_integrity["requiresStandard"]
+                )
+
+                # Cache the basic result (pass or fail) so a
+                # later AUTO job does not rerun basic.
+                _store_cache(
+                    owner,
+                    source_sha256,
+                    TIER_BASIC,
+                    parsed_dir,
+                    quality_result,
+                )
+
+                # -- AUTO fallback --
+                needs_standard = (
+                    not quality_result["passed"]
+                    or basic_integrity["requiresStandard"]
+                )
+
+                if (
+                    mode == MODE_AUTO
+                    and needs_standard
+                ):
+
+                    fallback_used = True
+
+                    fallback_reason_value = (
+                        fallback_reason(
+                            quality_result["reasons"]
+                        )
+                        if not quality_result["passed"]
+                        else _critical_fallback_reason(
+                            basic_integrity
+                        )
+                    )
+
+                    reporter.update(
+                        65,
+                        "快速解析质量不足，正在自动切换高精度解析",
+                        force=True,
+                    )
+
+                    standard_start = time.monotonic()
+
+                    result = _run_parse(
+                        contract,
+                        TIER_STANDARD,
+                        reporter,
+                        65,
+                    )
+
+                    metrics["standardParseMs"] = elapsed_ms(
+                        standard_start
+                    )
+
+                    actual_tier = TIER_STANDARD
+
+
+        # ---------------------------------
+        # 3c-2. Standard finished (real parse)
+        # ---------------------------------
+        #
+        # Real Standard parses end at 84 (ocr_seal); emit 86 so the
+        # sequence 84 -> 86 -> 88 is natural. Cache restores use 70
+        # via their own path and never emit standard stage values,
+        # so nothing relies on ProgressReporter clamping.
+        if (
+            not cache_hit
+            and actual_tier == TIER_STANDARD
+        ):
+
+            reporter.update(
+                86,
+                "高精度解析完成",
+                force=True,
+            )
+
+
+        # ---------------------------------
+        # 3d. Cache the final tier (if freshly parsed)
+        # ---------------------------------
+
+        if (
+            not cache_hit
+            and actual_tier == TIER_STANDARD
+        ):
+
+            _store_cache(
+                owner,
+                source_sha256,
+                TIER_STANDARD,
+                parsed_dir,
+                {"passed": True, "metrics": {}},
+            )
 
 
         # ---------------------------------
@@ -579,8 +1554,115 @@ def process_contract(
 
 
         # ---------------------------------
-        # Review artifacts
+        # 3e. Critical Integrity Gate (final selected artifact)
         # ---------------------------------
+        #
+        # Standard is NOT ground truth: whatever artifact was
+        # finally selected (Basic for FAST/passing AUTO, Standard
+        # for ACCURATE/fallback) is re-evaluated with the CURRENT
+        # rules here. Nothing is reused from an earlier run.
+
+        final_integrity_start = time.monotonic()
+
+        final_integrity = evaluate_critical_integrity(
+            markdown_path=
+                result["output_path"],
+
+            middle_json_path=
+                result.get(
+                    "middle_json_path"
+                ),
+
+            original_name=
+                original_name,
+        )
+
+        cross_tier_findings = []
+
+        if (
+            basic_integrity is not None
+            and actual_tier == TIER_STANDARD
+        ):
+
+            cross_tier_findings = (
+                compare_critical_observations(
+                    basic_integrity,
+                    final_integrity,
+                )
+            )
+
+        metrics["finalCriticalIntegrityMs"] = elapsed_ms(
+            final_integrity_start
+        )
+
+        # A Basic critical failure that the Standard re-parse
+        # resolved is a successful repair, not a user issue.
+        recovered_reason_codes = []
+
+        if (
+            basic_integrity is not None
+            and basic_integrity.get("requiresStandard")
+            and not final_integrity["requiresStandard"]
+        ):
+
+            recovered_reason_codes = list(
+                basic_integrity["metrics"]["reasonCodes"]
+            )
+
+        _write_integrity_artifact(
+            parsed_dir=parsed_dir,
+            mode=mode,
+            final_tier=actual_tier,
+            final_integrity=final_integrity,
+            cross_tier_findings=cross_tier_findings,
+            basic_integrity=basic_integrity,
+            recovered_reason_codes=recovered_reason_codes,
+        )
+
+        metrics["criticalIntegrity"] = {
+            "profileVersion":
+                CRITICAL_INTEGRITY_PROFILE_VERSION,
+
+            "finalTier":
+                actual_tier,
+
+            "findingCount":
+                final_integrity["metrics"]["findingCount"],
+
+            "criticalCount":
+                final_integrity["metrics"]["criticalCount"],
+
+            "reviewCount":
+                final_integrity["metrics"]["reviewCount"],
+
+            "crossTierCount":
+                len(cross_tier_findings),
+
+            "reasonCodes":
+                list(
+                    final_integrity["metrics"]["reasonCodes"]
+                ),
+        }
+
+        critical_issues = (
+            build_critical_review_issues(
+                final_integrity,
+                cross_tier_findings,
+            )
+        )
+
+
+        # ---------------------------------
+        # 4. Review artifacts (never cached)
+        # ---------------------------------
+
+        reporter.update(
+            88,
+            "正在生成校对文件",
+            force=True,
+        )
+
+        artifact_start = time.monotonic()
 
         review_result = (
             prepare_review_artifacts(
@@ -589,21 +1671,18 @@ def process_contract(
                 ],
 
                 original_name=
-                    _contract_original_name(
-                        contract
-                    ),
+                    original_name,
 
                 middle_json_path=
                     result.get(
                         "middle_json_path"
                     ),
+
+                critical_issues=
+                    critical_issues,
             )
         )
 
-
-        # ---------------------------------
-        # Contract field / consistency data
-        # ---------------------------------
 
         consistency_result = (
             build_consistency_artifacts(
@@ -622,6 +1701,10 @@ def process_contract(
                         "middle_json_path"
                     ),
             )
+        )
+
+        metrics["reviewArtifactMs"] = elapsed_ms(
+            artifact_start
         )
 
 
@@ -668,6 +1751,76 @@ def process_contract(
 
 
         # ---------------------------------
+        # 5. Persist parse metadata
+        # ---------------------------------
+
+        parsed_pages = _count_middle_pages(
+            result.get(
+                "middle_json_path"
+            )
+        )
+
+        # MinerU's parsed page count is observation-only metadata.
+        # contracts.page_count is permanently the SOURCE PDF page
+        # count (set at upload by pdf-meta.js) and is NEVER
+        # overwritten here, so a future retry / reprocess keeps a
+        # reliable Quality Gate input.
+        metrics["parsedPageCount"] = parsed_pages
+
+        metrics["totalWorkerMs"] = elapsed_ms(
+            worker_start
+        )
+
+        metrics["qualityGate"] = (
+            quality_result
+            if quality_result is not None
+            else {
+                "passed": None,
+                "reasons": [],
+                "metrics": {},
+            }
+        )
+
+        try:
+
+            database.update_parse_metadata(
+                contract_id,
+
+                parse_mode_requested=
+                    mode,
+
+                parse_tier_actual=
+                    actual_tier,
+
+                parse_cache_hit=
+                    bool(cache_hit),
+
+                parse_fallback_used=
+                    bool(fallback_used),
+
+                parse_fallback_reason=
+                    fallback_reason_value,
+
+                source_sha256=
+                    (
+                        source_sha256
+                        or None
+                    ),
+
+                parse_metrics=
+                    metrics,
+            )
+
+        except Exception as error:
+
+            print(
+                "[contract-worker] metadata update failed:",
+                error,
+                flush=True,
+            )
+
+
+        # ---------------------------------
         # Ready for human review
         # ---------------------------------
 
@@ -681,6 +1834,14 @@ def process_contract(
                 90,
             error_message=
                 None,
+        )
+
+        reporter.update(
+            90,
+            "等待人工校对",
+            stage="reviewing",
+            status="processing",
+            force=True,
         )
 
 
@@ -754,6 +1915,13 @@ def process_contract(
             "progress: 90",
             flush=True,
         )
+
+
+        # Best-effort lazy cache prune. Never blocks the main flow.
+        try:
+            parse_cache.prune_expired()
+        except Exception:
+            pass
 
 
         return True

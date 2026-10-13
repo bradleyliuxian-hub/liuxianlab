@@ -4,6 +4,7 @@ from pathlib import Path
 
 import psycopg
 from psycopg.rows import dict_row
+from psycopg.types.json import Jsonb
 from dotenv import load_dotenv
 
 
@@ -177,6 +178,11 @@ def claim_contract(
                     status,
                     stage,
                     progress,
+                    page_count,
+                    parse_mode_requested,
+                    parse_tier_actual,
+                    source_sha256,
+                    progress_message,
                     created_at,
                     updated_at
                 """,
@@ -244,6 +250,11 @@ def claim_next_contract():
             c.status,
             c.stage,
             c.progress,
+            c.page_count,
+            c.parse_mode_requested,
+            c.parse_tier_actual,
+            c.source_sha256,
+            c.progress_message,
             c.created_at,
             c.updated_at
     """
@@ -292,6 +303,15 @@ def get_contract(
                     stage,
                     progress,
                     error_message,
+                    page_count,
+                    parse_mode_requested,
+                    parse_tier_actual,
+                    parse_cache_hit,
+                    parse_fallback_used,
+                    parse_fallback_reason,
+                    source_sha256,
+                    progress_message,
+                    parse_metrics,
                     created_at,
                     updated_at
 
@@ -430,3 +450,177 @@ def update_contract_state(
     return dict(
         row
     )
+
+
+def update_contract_progress(
+    contract_id,
+    *,
+    progress,
+    progress_message=None,
+    stage=None,
+    status=None,
+):
+    """
+    Lightweight progress update used by the worker's
+    ProgressReporter.
+
+    Only progress (plus an optional non-technical message and
+    stage/status) is written; parse metadata is left untouched.
+    """
+
+    with connect() as conn:
+
+        with conn.cursor(
+            row_factory=dict_row
+        ) as cur:
+
+            cur.execute(
+                """
+                UPDATE contracts
+
+                SET
+                    progress = %s,
+                    progress_message =
+                        COALESCE(%s, progress_message),
+                    stage = COALESCE(%s, stage),
+                    status = COALESCE(%s, status),
+                    updated_at = NOW()
+
+                WHERE id = %s
+
+                RETURNING
+                    progress,
+                    progress_message,
+                    stage,
+                    status
+                """,
+                (
+                    progress,
+                    progress_message,
+                    stage,
+                    status,
+                    contract_id,
+                ),
+            )
+
+            row = cur.fetchone()
+
+    if row is None:
+        raise RuntimeError(
+            f"Contract not found: {contract_id}"
+        )
+
+    return dict(
+        row
+    )
+
+
+def update_parse_metadata(
+    contract_id,
+    *,
+    parse_mode_requested=None,
+    parse_tier_actual=None,
+    parse_cache_hit=None,
+    parse_fallback_used=None,
+    parse_fallback_reason=None,
+    source_sha256=None,
+    page_count=None,
+    parse_metrics=None,
+):
+    """
+    Persist v1.1 parse metadata. Every argument is optional and
+    applied with COALESCE, so callers can update a subset.
+    """
+
+    metrics_param = (
+        Jsonb(parse_metrics)
+        if parse_metrics is not None
+        else None
+    )
+
+    with connect() as conn:
+
+        with conn.cursor(
+            row_factory=dict_row
+        ) as cur:
+
+            cur.execute(
+                """
+                UPDATE contracts
+
+                SET
+                    parse_mode_requested =
+                        COALESCE(
+                            %s,
+                            parse_mode_requested
+                        ),
+
+                    parse_tier_actual =
+                        COALESCE(
+                            %s,
+                            parse_tier_actual
+                        ),
+
+                    parse_cache_hit =
+                        COALESCE(
+                            %s,
+                            parse_cache_hit
+                        ),
+
+                    parse_fallback_used =
+                        COALESCE(
+                            %s,
+                            parse_fallback_used
+                        ),
+
+                    parse_fallback_reason =
+                        COALESCE(
+                            %s,
+                            parse_fallback_reason
+                        ),
+
+                    source_sha256 =
+                        COALESCE(
+                            %s,
+                            source_sha256
+                        ),
+
+                    page_count =
+                        COALESCE(
+                            %s,
+                            page_count
+                        ),
+
+                    parse_metrics =
+                        COALESCE(
+                            %s,
+                            parse_metrics
+                        ),
+
+                    updated_at = NOW()
+
+                WHERE id = %s
+
+                RETURNING id
+                """,
+                (
+                    parse_mode_requested,
+                    parse_tier_actual,
+                    parse_cache_hit,
+                    parse_fallback_used,
+                    parse_fallback_reason,
+                    source_sha256,
+                    page_count,
+                    metrics_param,
+                    contract_id,
+                ),
+            )
+
+            row = cur.fetchone()
+
+    if row is None:
+        raise RuntimeError(
+            f"Contract not found: {contract_id}"
+        )
+
+    return True

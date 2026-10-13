@@ -1270,7 +1270,7 @@
       window.alert(
         `还有 ${
           issueApi.getOpenCount()
-        } 个 OCR 待核对项。\n\n请先逐项核对后再生成最终 Markdown。`
+        } 个识别待核对项。\n\n请先逐项核对后再生成最终 Markdown。`
       );
 
       return;

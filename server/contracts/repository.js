@@ -57,6 +57,30 @@ function mapContract(row) {
     error:
       row.error_message,
 
+    sourceSha256:
+      row.source_sha256,
+
+    parseModeRequested:
+      row.parse_mode_requested,
+
+    parseTierActual:
+      row.parse_tier_actual,
+
+    parseCacheHit:
+      row.parse_cache_hit,
+
+    parseFallbackUsed:
+      row.parse_fallback_used,
+
+    parseFallbackReason:
+      row.parse_fallback_reason,
+
+    progressMessage:
+      row.progress_message,
+
+    parseMetrics:
+      row.parse_metrics,
+
     createdAt:
       row.created_at,
 
@@ -86,7 +110,10 @@ async function createContract(
         status,
         stage,
         progress,
-        error_message
+        error_message,
+        parse_mode_requested,
+        source_sha256,
+        page_count
       )
       VALUES (
         $1,
@@ -99,7 +126,10 @@ async function createContract(
         $8,
         $9,
         $10,
-        $11
+        $11,
+        $12,
+        $13,
+        $14
       )
       RETURNING *
       `,
@@ -114,7 +144,10 @@ async function createContract(
         contract.status,
         contract.stage,
         contract.progress,
-        contract.error
+        contract.error,
+        contract.parseModeRequested ?? null,
+        contract.sourceSha256 ?? null,
+        contract.pageCount ?? null
       ]
     );
 

@@ -9,6 +9,8 @@ const crypto = require("crypto");
 
 const { startContractWorker } = require("./parse-runner");
 
+const { readPdfPageCount } = require("./pdf-meta");
+
 const {
   createContract,
   getContractById,
@@ -32,6 +34,52 @@ const {
 
 const MAX_FILE_SIZE =
   25 * 1024 * 1024;
+
+
+const VALID_PARSE_MODES =
+  new Set([
+    "auto",
+    "fast",
+    "accurate"
+  ]);
+
+
+/*
+ * Contract Digitization v1.1.
+ *
+ * Returns:
+ *   "auto"      when parseMode is missing (old clients)
+ *   "fast" / "accurate"
+ *   null        when an explicit but invalid value is sent
+ */
+function normalizeParseMode(value) {
+
+  if (
+    value === undefined ||
+    value === null ||
+    value === ""
+  ) {
+
+    return "auto";
+
+  }
+
+
+  const candidate =
+    String(value)
+      .trim()
+      .toLowerCase();
+
+
+  return (
+    VALID_PARSE_MODES.has(
+      candidate
+    )
+      ? candidate
+      : null
+  );
+
+}
 
 
 function validContractId(value) {
@@ -565,6 +613,45 @@ function createContractRouter(
         }
 
 
+        /*
+         * Contract Digitization v1.1.
+         *
+         * parseMode is optional (old clients) and defaults to
+         * auto. An explicit invalid value is a 400.
+         */
+        const parseMode =
+          normalizeParseMode(
+            req.body?.parseMode
+          );
+
+
+        if (parseMode === null) {
+
+          await fsp.rm(
+            contractDir(
+              contractId
+            ),
+            {
+              recursive: true,
+              force: true
+            }
+          );
+
+
+          return res
+            .status(400)
+            .json({
+
+              ok: false,
+
+              error:
+                "无效的解析模式，仅支持 自动 / 快速 / 高精度"
+
+            });
+
+        }
+
+
         const owner =
           ownerUsername(req);
 
@@ -587,6 +674,17 @@ function createContractRouter(
         const now =
           new Date()
             .toISOString();
+
+
+        /*
+         * Best-effort input page count (never fails the upload).
+         */
+        const pageCount =
+          await readPdfPageCount(
+            sourcePath(
+              contractId
+            )
+          );
 
 
         const job = {
@@ -625,7 +723,12 @@ function createContractRouter(
           language:
             null,
 
-          pageCount:
+          pageCount,
+
+          parseModeRequested:
+            parseMode,
+
+          sourceSha256:
             null,
 
           createdAt:
@@ -712,7 +815,11 @@ function createContractRouter(
               created.stage,
 
             progress:
-              created.progress
+              created.progress,
+
+            requestedMode:
+              created.parseModeRequested
+              ?? parseMode
 
           });
 
@@ -988,7 +1095,29 @@ function createContractRouter(
                   job.createdAt,
 
                 updatedAt:
-                  job.updatedAt
+                  job.updatedAt,
+
+                progressMessage:
+                  job.progressMessage
+                  ?? null,
+
+                requestedMode:
+                  job.parseModeRequested
+                  ?? null,
+
+                actualTier:
+                  job.parseTierActual
+                  ?? null,
+
+                cacheHit:
+                  Boolean(
+                    job.parseCacheHit
+                  ),
+
+                fallbackUsed:
+                  Boolean(
+                    job.parseFallbackUsed
+                  )
 
               })
             )
@@ -1085,7 +1214,19 @@ function createContractRouter(
             job.updatedAt,
 
           error:
-            job.error || null
+            job.error || null,
+
+          progressMessage:
+            job.progressMessage
+            ?? null,
+
+          requestedMode:
+            job.parseModeRequested
+            ?? null,
+
+          actualTier:
+            job.parseTierActual
+            ?? null
 
         });
 
@@ -2208,7 +2349,42 @@ function createContractRouter(
 
           error:
             job.error ||
-            null
+            null,
+
+          pageCount:
+            job.pageCount
+            ?? job.page_count
+            ?? null,
+
+          requestedMode:
+            job.parseModeRequested
+            ?? null,
+
+          actualTier:
+            job.parseTierActual
+            ?? null,
+
+          cacheHit:
+            Boolean(
+              job.parseCacheHit
+            ),
+
+          fallbackUsed:
+            Boolean(
+              job.parseFallbackUsed
+            ),
+
+          fallbackReason:
+            job.parseFallbackReason
+            ?? null,
+
+          progressMessage:
+            job.progressMessage
+            ?? null,
+
+          parseMetrics:
+            job.parseMetrics
+            ?? null
 
         });
 

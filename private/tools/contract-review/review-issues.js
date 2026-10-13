@@ -175,7 +175,7 @@
 
 
     title.textContent =
-      "OCR 待核对项";
+      "识别待核对项";
 
 
     countBadge =
@@ -250,7 +250,7 @@
     if (
       severity === "error"
     ) {
-      return "高风险";
+      return "必须核对";
     }
 
 
@@ -949,7 +949,7 @@
 
     title.textContent =
       issue.title
-      || "OCR 待核对";
+      || "识别待核对";
 
 
     const severity =
@@ -1034,7 +1034,44 @@
     }
 
 
+    const isCritical =
+      issue.type === "critical_integrity";
+
+
     if (
+      isCritical &&
+      issue.parsedValue
+    ) {
+
+      card.appendChild(
+        makeTextRow(
+          "解析结果",
+          issue.parsedValue,
+          "ocr-source"
+        )
+      );
+
+    }
+
+
+    if (
+      isCritical &&
+      issue.referenceValue
+    ) {
+
+      card.appendChild(
+        makeTextRow(
+          "关联信息",
+          issue.referenceValue,
+          "ocr-suggestion"
+        )
+      );
+
+    }
+
+
+    if (
+      !isCritical &&
       issue.sourceText
     ) {
 
@@ -1221,7 +1258,7 @@
       ) {
 
         summaryText.textContent =
-          "没有未处理的 OCR 疑似问题";
+          "没有未处理的识别待核对项";
 
       } else {
 
@@ -1369,7 +1406,7 @@
 
 
       empty.textContent =
-        "当前没有检测到明显的 OCR 疑似问题。";
+        "当前没有检测到明显的识别疑似问题。";
 
 
       list.appendChild(
@@ -1440,7 +1477,7 @@
 
 
       summaryText.textContent =
-        "无法读取 OCR 待核对项";
+        "无法读取识别待核对项";
 
 
       list.innerHTML =
