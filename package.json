@@ -9,7 +9,8 @@
     "dev": "NODE_ENV=development node server.js",
     "start": "NODE_ENV=production node server.js",
     "user:create": "node create-user.js",
-    "user:list": "node list-users.js"
+    "user:list": "node list-users.js",
+    "test": "node --test tests/excel-decimal-check/*.test.js"
   },
   "engines": {
     "node": ">=20"

@@ -163,5 +163,26 @@
       "contract",
       "legal"
     ]
+  },
+  {
+    "slug": "excel-decimal-check",
+    "name": "Excel 小数检查",
+    "description": "检查并修正超过两位小数的单元格，导出问题清单与 Excel F5 定位地址。",
+    "category": "数据",
+    "status": "ready",
+    "badge": "可用",
+    "icon": "2DP",
+    "keywords": [
+      "excel",
+      "xlsx",
+      "小数",
+      "小数位",
+      "两位小数",
+      "四舍五入",
+      "检查",
+      "修正",
+      "decimal",
+      "round"
+    ]
   }
 ]
