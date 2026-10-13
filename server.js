@@ -14,6 +14,7 @@ const { createSalesIncomeRouter } = require('./server/sales-income/routes');
 const { createSalesIncomeInspectRouter } = require('./server/sales-income/inspect-routes');
 const { createSalesIncomeRunRouter } = require('./server/sales-income/run-routes');
 const { createContractRouter } = require('./server/contracts/routes');
+const { createExcelReviewRouter } = require('./server/excel-review/routes');
 require('dotenv').config();
 
 const app = express();
@@ -330,6 +331,15 @@ app.get(
 
 app.use('/api/contracts', requireAuth, sameOriginForStateChange, createContractRouter({ root: ROOT }));
 app.use('/api/sales-income', requireAuth, sameOriginForStateChange, createSalesIncomeRouter({ projectRoot: ROOT }));
+
+/*
+ * Excel Review Assistant.
+ *
+ * Authenticated page at /tools/excel-review (auto-detected from
+ * private/tools/excel-review/index.html) backed by an owner-scoped
+ * API. Files stay private under storage/excel-reviews/<id>/.
+ */
+app.use('/api/excel-reviews', requireAuth, sameOriginForStateChange, createExcelReviewRouter({ root: ROOT }));
 
 app.use('/app', requireAuth, express.static(PRIVATE_DIR, {
   index: false,

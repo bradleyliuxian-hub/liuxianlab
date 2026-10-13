@@ -165,6 +165,24 @@
     ]
   },
   {
+    "slug": "excel-review",
+    "name": "Excel 复核意见",
+    "description": "提取传统备注与 Microsoft 365 新版批注，生成可 F5 定位的复核清单与 Dashboard。",
+    "category": "数据",
+    "status": "ready",
+    "badge": "Beta",
+    "icon": "VRF",
+    "keywords": [
+      "excel",
+      "xlsx",
+      "批注",
+      "复核",
+      "回复",
+      "comment",
+      "review"
+    ]
+  },
+  {
     "slug": "excel-decimal-check",
     "name": "Excel 小数检查",
     "description": "检查并修正超过两位小数的单元格，导出问题清单与 Excel F5 定位地址。",

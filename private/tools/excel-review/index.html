@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Liuxian Lab Excel 复核意见管理工具" />
+  <title>Excel 复核意见 · Liuxian Lab</title>
+  <link rel="stylesheet" href="/app/tools/excel-review/styles.css?v=1.3.0" />
+</head>
+<body>
+  <div class="page-shell">
+    <header class="tool-header">
+      <a class="back-link" href="/" aria-label="返回工作台">←</a>
+      <div class="tool-brand">
+        <span class="tool-mark">VRF</span>
+        <div><strong>Excel 复核意见</strong><small>Liuxian Lab / Review Assistant</small></div>
+      </div>
+      <div class="header-actions">
+        <span class="private-badge"><i></i>私有处理</span>
+        <button class="ghost-button" id="newJobButton" type="button">新建任务</button>
+      </div>
+    </header>
+
+    <main class="tool-main">
+      <section class="intro-section">
+        <p class="eyebrow">EXCEL REVIEW ASSISTANT</p>
+        <h1>提取批注、生成复核清单、F5 定位。</h1>
+        <p>支持传统 Excel 备注，以及 Microsoft 365 新版线程批注。分析完成后在这里直接显示问题总数、新旧批注分布与问题提出人统计；生成的复核文件第一张表即为 Dashboard（随「回复」自动更新），随后是「新版批注」「旧版批注」两张可自由编辑的清单，每条记录都带 Excel Address（如 '财务复核'!B5），复制到原文件的 F5 / Ctrl+G 定位窗口即可跳转。</p>
+      </section>
+
+      <section class="workspace-card" id="uploadPanel">
+        <div class="card-heading">
+          <div><span class="step-no">01</span><div><h2>上传 Excel</h2><p>当前版本仅支持单个 <code>.xlsx</code> 文件，最大 20 MB。</p></div></div>
+          <span class="profile-chip">Review v1</span>
+        </div>
+
+        <label class="drop-zone" id="dropZone" for="fileInput">
+          <input id="fileInput" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden />
+          <span class="drop-icon">↥</span>
+          <strong>拖入 Excel，或点击选择文件</strong>
+          <small>.xlsx · 单文件 · 原文件不会被修改</small>
+        </label>
+
+        <div class="selected-file" id="selectedFile" hidden>
+          <span class="file-icon">XLSX</span>
+          <div class="file-copy"><strong id="fileName"></strong><small id="fileMeta"></small></div>
+          <button class="icon-button" id="clearFileButton" type="button" aria-label="移除文件">×</button>
+        </div>
+
+        <div class="upload-actions">
+          <p>文件仅保存在受保护的服务器存储目录，下载需通过登录与归属校验。</p>
+          <button class="primary-button" id="startButton" type="button" disabled>开始提取批注 <span>→</span></button>
+        </div>
+      </section>
+
+      <section class="workspace-card process-card" id="processPanel" hidden>
+        <div class="card-heading">
+          <div><span class="step-no">02</span><div><h2>处理进度</h2><p id="processMessage">正在准备任务…</p></div></div>
+          <span class="job-status" id="jobStatus">QUEUED</span>
+        </div>
+        <div class="progress-track"><span id="progressBar"></span></div>
+        <div class="progress-meta"><strong id="progressValue">0%</strong><span id="jobIdLabel"></span></div>
+        <div class="count-row" id="countRow" hidden>
+          <span>共发现 <strong id="itemCount">0</strong> 个问题</span>
+        </div>
+        <div class="error-box" id="errorBox" hidden></div>
+      </section>
+
+      <section class="workspace-card" id="reviewPanel" hidden>
+        <div class="card-heading">
+          <div><span class="step-no">03</span><div><h2>分析结果</h2><p id="summarySubtitle">共发现 0 个问题</p></div></div>
+        </div>
+
+        <div class="summary-metrics" id="summaryMetrics"></div>
+
+        <div class="author-block" id="authorBlock" hidden>
+          <h3>按问题提出人</h3>
+          <div class="author-list" id="authorList"></div>
+        </div>
+
+        <div class="action-row">
+          <a class="primary-button download-button" id="downloadReviewButton" href="#">下载 Review Excel <span>↓</span></a>
+        </div>
+        <p class="final-note">
+          每条记录都提供「Excel Address」（例如 <code>'财务复核'!B5</code>）。先打开原始 Excel，按 <code>F5</code> / <code>Ctrl+G</code>，
+          粘贴地址即可定位到对应单元格。Review 文件可自由编辑：排序、筛选、新增列、修改显示内容、填写「回复 / 状态」均可；
+          Excel 内 Dashboard 会随「回复」自动更新。系统只生成清单，不回写原文件，也不会读取这些列。
+        </p>
+      </section>
+    </main>
+
+    <footer class="tool-footer"><span>Liuxian Lab</span><span>Excel Review Assistant v1.3</span></footer>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="/app/tools/excel-review/script.js?v=1.3.0"></script>
+  <script src="/app/tools/excel-review/excel-review-history.js?v=1.3.0"></script>
+</body>
+</html>
