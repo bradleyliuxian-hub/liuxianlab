@@ -91,9 +91,9 @@ Do not narrate tool calls, repeat the request, paste whole files, re-list passin
 
 Fields: Current Goal, Current Task, Completed, Pending, Changed Files, Verification, Known Issues, Git State (branch / dirty / uncommitted), Deployment Impact (deps / env / migrations / restart), Next Action, Last Updated.
 
-Update after: feature sub-step, bug fix, verification, review, stage end, before deploy prep; and on pause phrases (先到这里 / 暂停 / 我先关机 / 保存进度 / 下次继续 / 今天先这样). On pause: check `git status` + `git diff`, summarize, update snapshot, confirm saved; do not commit/push/deploy.
+Update after: feature sub-step, bug fix, verification, review, stage end, before deploy prep; and on pause phrases (先到这里 / 暂停 / 我先关机 / 保存进度 / 下次继续 / 今天先这样 / 下班 / 我下班了). On pause: check `git status` + `git diff`, summarize, update snapshot, confirm saved; do not commit/push/deploy.
 
-Resume (继续 before work / 继续之前的工作 / 恢复工作 / 接着做 / 从上次继续): read `PROJECT_STATUS.md`, `git status --short`, `git diff --stat`, recent commits (full `git diff` only if needed); reconcile with reality (real Git wins); give a 2–4 line summary; if the next action is safe, do it. Any git write or production action needs explicit approval.
+Resume (继续 before work / 继续之前的工作 / 恢复工作 / 接着做 / 从上次继续 / 上班): read `PROJECT_STATUS.md`, `git status --short`, `git diff --stat`, recent commits (full `git diff` only if needed); reconcile with reality (real Git wins); give a 2–4 line summary; if the next action is safe, do it. Any git write or production action needs explicit approval.
 
 Commands: `/checkpoint` (save; no commit/push/deploy), `/resume` and `/recover` (resume flow).
 

@@ -228,7 +228,7 @@ function renderTools() {
     const glyph = fragment.querySelector('.tool-glyph');
     const title = fragment.querySelector('h3');
     const description = fragment.querySelector('.tool-description');
-    const status = fragment.querySelector('.status-badge');
+    const version = fragment.querySelector('.version-badge');
     const category = fragment.querySelector('.category-label');
     const favorite = fragment.querySelector('.favorite-button');
     const link = fragment.querySelector('.tool-link');
@@ -238,8 +238,8 @@ function renderTools() {
     glyph.textContent = tool.icon || toolName.slice(0, 2);
     title.textContent = toolName;
     description.textContent = tool.description || '';
-    status.textContent = tool.badge || '';
-    status.hidden = !status.textContent;
+    version.textContent = tool.version || '';
+    version.hidden = !version.textContent;
     category.textContent = tool.category || '';
     link.href = toolSlug ? `/tools/${encodeURIComponent(toolSlug)}` : '#';
     link.setAttribute('aria-label', `打开 ${toolName}`);

@@ -267,7 +267,7 @@ app.get('/api/tools', requireAuth, (_req, res) => {
     description: tool.description,
     category: tool.category,
     status: tool.status,
-    badge: tool.badge,
+    version: tool.version,
     icon: tool.icon,
     keywords: Array.isArray(tool.keywords) ? tool.keywords : []
   }));

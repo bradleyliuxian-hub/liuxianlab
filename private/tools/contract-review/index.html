@@ -17,7 +17,7 @@
 
   <link
     rel="stylesheet"
-    href="/app/tools/contract-review/styles.css?v=4.2.0"
+    href="/app/tools/contract-review/styles.css?v=4.2.1"
   >
 
 </head>
@@ -53,6 +53,10 @@
 
 
       <div class="header-actions">
+
+        <span class="version-chip" title="当前工具版本">
+          v1.1.1
+        </span>
 
         <span class="private-badge">
           <i></i>
@@ -394,6 +398,61 @@
 
 
     </main>
+
+
+
+    <section class="changelog-section">
+
+      <div class="changelog-card">
+
+        <div class="changelog-head">
+
+          <span class="changelog-eyebrow">
+            VERSION HISTORY
+          </span>
+
+          <h2>
+            版本迭代
+          </h2>
+
+        </div>
+
+
+        <ul class="changelog-list">
+
+          <li class="changelog-item">
+            <span class="changelog-ver">v1.1.1</span>
+            <p class="changelog-text">
+              <strong>解析加速与准确度恢复</strong>：新增「自动 / 快速 / 高精度」解析模式、MinerU 解析缓存、结构质量门与关键一致性校验（金额、合同编号、日期），并输出「识别待核对项」。
+            </p>
+          </li>
+
+          <li class="changelog-item">
+            <span class="changelog-ver">v1.0.2</span>
+            <p class="changelog-text">
+              <strong>解析稳定性修复</strong>：生产 MinerU 改用本地 ONNX 模型，并加入 seal crop 安全补丁。
+            </p>
+          </li>
+
+          <li class="changelog-item">
+            <span class="changelog-ver">v1.0.1</span>
+            <p class="changelog-text">
+              <strong>生产发布</strong>：合同数字化审阅正式上线。
+            </p>
+          </li>
+
+          <li class="changelog-item">
+            <span class="changelog-ver">v1.0.0</span>
+            <p class="changelog-text">
+              <strong>基础能力</strong>：上传扫描版 PDF，MinerU OCR 生成 Markdown，人工复核后完成。
+            </p>
+          </li>
+
+        </ul>
+
+      </div>
+
+    </section>
 
 
   </div>

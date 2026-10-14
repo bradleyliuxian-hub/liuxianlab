@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="description" content="Liuxian Lab Excel 标准化工具" />
   <title>Excel 标准化 · Liuxian Lab</title>
-  <link rel="stylesheet" href="/app/tools/excel-standardizer/styles.css?v=1.0.0" />
+  <link rel="stylesheet" href="/app/tools/excel-standardizer/styles.css?v=1.0.1" />
 </head>
 <body>
   <div class="page-shell">
@@ -16,6 +16,7 @@
         <div><strong>Excel 标准化</strong><small>Liuxian Lab / Data Tool</small></div>
       </div>
       <div class="header-actions">
+        <span class="version-chip" title="当前工具版本">v1.0.0</span>
         <span class="private-badge"><i></i>私有处理</span>
         <button class="ghost-button" id="newJobButton" type="button">新建任务</button>
       </div>
@@ -31,7 +32,7 @@
       <section class="workspace-card" id="uploadPanel">
         <div class="card-heading">
           <div><span class="step-no">01</span><div><h2>上传工作簿</h2><p>当前版本支持单个 <code>.xlsx</code> 文件；应用层不设置文件大小上限。</p></div></div>
-          <span class="profile-chip">Standard v1</span>
+          <span class="profile-chip">Standard v1.0.0</span>
         </div>
 
         <label class="drop-zone" id="dropZone" for="fileInput">
@@ -128,10 +129,22 @@
       </section>
     </main>
 
-    <footer class="tool-footer"><span>Liuxian Lab</span><span>Excel Standardizer v1</span></footer>
+    <section class="changelog-section">
+      <div class="changelog-card">
+        <div class="changelog-head">
+          <p class="eyebrow">VERSION HISTORY</p>
+          <h2>版本迭代</h2>
+        </div>
+        <ul class="changelog-list">
+          <li class="changelog-item"><span class="changelog-ver">v1.0.0</span><p class="changelog-text"><strong>基础能力</strong>：上传 <code>.xlsx</code>，按规则标准化（文本清理、日期格式、表头样式、列宽与工作表设置），生成新文件并保留可审计的变更记录；原文件保持不变。</p></li>
+        </ul>
+      </div>
+    </section>
+
+    <footer class="tool-footer"><span>Liuxian Lab</span><span>Excel Standardizer v1.0.0</span></footer>
   </div>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script src="/app/tools/excel-standardizer/script.js?v=1.0.0"></script>
+  <script src="/app/tools/excel-standardizer/script.js?v=1.0.1"></script>
 </body>
 </html>

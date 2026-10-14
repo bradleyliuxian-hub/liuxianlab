@@ -5,7 +5,7 @@
     "description": "按规则标准化 Excel，并保留变更记录。",
     "category": "数据",
     "status": "ready",
-    "badge": "可用",
+    "version": "v1.0.0",
     "icon": "XLS",
     "keywords": [
       "excel",
@@ -18,122 +18,12 @@
     ]
   },
   {
-    "slug": "ai-writer",
-    "name": "AI 文本助手",
-    "description": "润色、改写、总结与文本生成。",
-    "category": "AI",
-    "status": "planned",
-    "badge": "即将开放",
-    "icon": "AI",
-    "keywords": [
-      "ai",
-      "文本",
-      "润色",
-      "总结",
-      "写作"
-    ]
-  },
-  {
-    "slug": "pdf-toolbox",
-    "name": "PDF 工具箱",
-    "description": "合并、拆分与压缩 PDF。",
-    "category": "文件",
-    "status": "planned",
-    "badge": "规划中",
-    "icon": "PDF",
-    "keywords": [
-      "pdf",
-      "合并",
-      "拆分",
-      "压缩",
-      "文件"
-    ]
-  },
-  {
-    "slug": "image-studio",
-    "name": "图片处理",
-    "description": "压缩、调整尺寸与格式转换。",
-    "category": "文件",
-    "status": "planned",
-    "badge": "规划中",
-    "icon": "IMG",
-    "keywords": [
-      "图片",
-      "压缩",
-      "尺寸",
-      "png",
-      "jpg",
-      "webp"
-    ]
-  },
-  {
-    "slug": "json-formatter",
-    "name": "JSON 格式化",
-    "description": "格式化、校验与压缩 JSON。",
-    "category": "开发",
-    "status": "planned",
-    "badge": "即将开放",
-    "icon": "{}",
-    "keywords": [
-      "json",
-      "格式化",
-      "校验",
-      "开发"
-    ]
-  },
-  {
-    "slug": "qr-generator",
-    "name": "二维码生成",
-    "description": "将链接或文本生成二维码。",
-    "category": "效率",
-    "status": "planned",
-    "badge": "规划中",
-    "icon": "QR",
-    "keywords": [
-      "二维码",
-      "qr",
-      "链接",
-      "分享"
-    ]
-  },
-  {
-    "slug": "time-converter",
-    "name": "时间转换",
-    "description": "时间戳、日期与时区转换。",
-    "category": "效率",
-    "status": "planned",
-    "badge": "规划中",
-    "icon": "TIME",
-    "keywords": [
-      "时间",
-      "时间戳",
-      "日期",
-      "时区"
-    ]
-  },
-  {
-    "slug": "text-encoder",
-    "name": "文本编码",
-    "description": "URL、Base64 与常见文本编码转换。",
-    "category": "开发",
-    "status": "planned",
-    "badge": "规划中",
-    "icon": "ENC",
-    "keywords": [
-      "url",
-      "base64",
-      "编码",
-      "解码",
-      "文本"
-    ]
-  },
-  {
     "slug": "sales-income-analysis",
     "name": "销售 / 收入分析",
     "description": "分析销售或收入明细，并输出抵消明细。",
     "category": "数据",
     "status": "ready",
-    "badge": "可用",
+    "version": "v3.1.0",
     "icon": "FIN",
     "keywords": [
       "excel",
@@ -152,7 +42,7 @@
     "description": "上传扫描版 PDF，自动 OCR 并生成 Markdown 文档。",
     "category": "AI",
     "status": "ready",
-    "badge": "Beta",
+    "version": "v1.1.1",
     "icon": "LAW",
     "keywords": [
       "合同",
@@ -170,7 +60,7 @@
     "description": "提取传统备注与 Microsoft 365 新版批注，生成可 F5 定位的复核清单与 Dashboard。",
     "category": "数据",
     "status": "ready",
-    "badge": "Beta",
+    "version": "v1.3.1",
     "icon": "VRF",
     "keywords": [
       "excel",
@@ -188,7 +78,7 @@
     "description": "检查并修正超过两位小数的单元格，导出问题清单与 Excel F5 定位地址。",
     "category": "数据",
     "status": "ready",
-    "badge": "可用",
+    "version": "v1.0.2",
     "icon": "2DP",
     "keywords": [
       "excel",

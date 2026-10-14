@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="description" content="Liuxian Lab Excel 小数检查工具" />
   <title>Excel 小数检查 · Liuxian Lab</title>
-  <link rel="stylesheet" href="/app/tools/excel-decimal-check/styles.css?v=1.0.1" />
+  <link rel="stylesheet" href="/app/tools/excel-decimal-check/styles.css?v=1.0.2" />
 </head>
 <body>
   <div class="page-shell">
@@ -16,6 +16,7 @@
         <div><strong>Excel 小数检查</strong><small>Liuxian Lab / Decimal Check</small></div>
       </div>
       <div class="header-actions">
+        <span class="version-chip" title="当前工具版本">v1.0.2</span>
         <span class="private-badge"><i></i>浏览器本地处理</span>
         <button class="ghost-button" id="newJobButton" type="button">重新开始</button>
       </div>
@@ -35,7 +36,7 @@
       <section class="workspace-card" id="uploadPanel">
         <div class="card-heading">
           <div><span class="step-no">01</span><div><h2>上传工作簿</h2><p>支持 <code>.xlsx</code> / <code>.xlsm</code> / <code>.xlsb</code> / <code>.xls</code>；原文件不会被修改。</p></div></div>
-          <span class="profile-chip">Decimal v1</span>
+          <span class="profile-chip">Decimal v1.0.2</span>
         </div>
 
         <label class="drop-zone" id="dropZone" for="fileInput">
@@ -133,14 +134,27 @@
       </section>
     </main>
 
-    <footer class="tool-footer"><span>Liuxian Lab</span><span>Excel Decimal Check v1</span></footer>
+    <section class="changelog-section">
+      <div class="changelog-card">
+        <div class="changelog-head">
+          <p class="eyebrow">VERSION HISTORY</p>
+          <h2>版本迭代</h2>
+        </div>
+        <ul class="changelog-list">
+          <li class="changelog-item"><span class="changelog-ver">v1.0.2</span><p class="changelog-text"><strong>版本号展示与迭代记录</strong>：页面显示工具版本号与版本迭代说明。</p></li>
+          <li class="changelog-item"><span class="changelog-ver">v1.0</span><p class="changelog-text"><strong>基础能力</strong>：浏览器本地扫描超过两位小数的单元格，区分原始数据与公式结果，导出修正文件与带 F5 定位的问题清单。</p></li>
+        </ul>
+      </div>
+    </section>
+
+    <footer class="tool-footer"><span>Liuxian Lab</span><span>Excel Decimal Check v1.0.2</span></footer>
   </div>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <script src="/app/vendor/xlsx/xlsx.full.min.js?v=0.18.5"></script>
-  <script src="/app/tools/excel-decimal-check/decimal-core.js?v=1.0.1"></script>
-  <script src="/app/tools/excel-decimal-check/decimal-workbook.js?v=1.0.1"></script>
-  <script src="/app/tools/excel-decimal-check/script.js?v=1.0.1"></script>
+  <script src="/app/tools/excel-decimal-check/decimal-core.js?v=1.0.2"></script>
+  <script src="/app/tools/excel-decimal-check/decimal-workbook.js?v=1.0.2"></script>
+  <script src="/app/tools/excel-decimal-check/script.js?v=1.0.2"></script>
 </body>
 </html>

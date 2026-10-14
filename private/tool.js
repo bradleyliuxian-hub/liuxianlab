@@ -23,7 +23,6 @@ async function loadTool() {
   document.querySelector('#toolIcon').textContent = tool.icon || 'TOOL';
   document.querySelector('#toolName').textContent = tool.name;
   document.querySelector('#toolDescription').textContent = tool.description;
-  document.querySelector('#toolStatus').textContent = tool.badge || '规划中';
   document.querySelector('#toolSlug').textContent = tool.slug;
 }
 

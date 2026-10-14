@@ -1376,3 +1376,137 @@ button.contract-history-action {
 .parse-badge.fallback {
   background: rgba(182, 227, 0, 0.22);
 }
+
+
+/* Version chip + changelog */
+
+.version-chip {
+  min-height: 30px;
+
+  display: inline-flex;
+  align-items: center;
+
+  padding: 0 11px;
+
+  border: 1px solid var(--line);
+  border-radius: 999px;
+
+  color: var(--text);
+  background: var(--surface-soft);
+
+  font-size: 11px;
+  font-weight: 700;
+
+  letter-spacing: 0.02em;
+
+  white-space: nowrap;
+}
+
+
+.changelog-section {
+  padding: 0 30px 30px;
+}
+
+
+.changelog-card {
+  padding: 22px 24px;
+
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+
+  background: var(--surface-soft);
+}
+
+
+.changelog-head {
+  display: flex;
+  align-items: baseline;
+
+  gap: 12px;
+}
+
+
+.changelog-eyebrow {
+  color: var(--muted);
+
+  font-size: 10px;
+  font-weight: 800;
+
+  letter-spacing: 0.14em;
+}
+
+
+.changelog-head h2 {
+  margin: 0;
+
+  color: var(--text);
+
+  font-size: 16px;
+  letter-spacing: -0.03em;
+}
+
+
+.changelog-list {
+  margin: 16px 0 0;
+  padding: 0;
+
+  list-style: none;
+
+  display: grid;
+  gap: 12px;
+}
+
+
+.changelog-item {
+  display: grid;
+
+  grid-template-columns:
+    66px 1fr;
+
+  gap: 14px;
+  align-items: start;
+}
+
+
+.changelog-ver {
+  padding: 4px 8px;
+
+  border-radius: var(--radius-sm);
+
+  background: var(--accent-soft);
+  color: #4d6a10;
+
+  font-size: 10px;
+  font-weight: 900;
+
+  text-align: center;
+
+  white-space: nowrap;
+}
+
+
+.changelog-text {
+  margin: 0;
+
+  color: var(--muted);
+
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+
+.changelog-text strong {
+  color: var(--text);
+  font-weight: 700;
+}
+
+
+@media (max-width: 820px) {
+  .changelog-section {
+    padding: 0 16px 24px;
+  }
+
+  .changelog-card {
+    padding: 18px;
+  }
+}

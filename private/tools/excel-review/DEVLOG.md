@@ -1,0 +1,184 @@
+# Excel 复核意见 · 开发日志（DEVLOG）
+
+> 工具：Excel Review Assistant
+> 入口：`/tools/excel-review`
+> 产品定位：**只读抽取** Excel 批注并生成可 F5 定位的复核清单；不回写原文件。
+> 当前 UI 版本：`v1.3.0`（工具卡片 badge：Beta）
+> 最近更新：2026-10-14
+
+本文件记录该工具的**版本功能**与**版本修改**，供开发者（AI 接手）与使用者查阅。
+详细的分版本实现报告见仓库 `docs/excel-review-*.md`。
+
+---
+
+## 1. 功能概述
+
+从 `.xlsx` 中提取两类批注，汇总为一份带定位信息的「复核清单」工作簿：
+
+- **传统 Excel 批注 / Note**（legacy）
+- **Microsoft 365 新版线程批注**（threaded comment + reply）
+
+分析完成后网页直接展示：问题总数、新旧批注分布、问题提出人统计。
+生成的 Review 工作簿包含 Dashboard 与两张可自由编辑的清单，每条记录带 Excel
+Address（F5 / Ctrl+G 可跳转）与 Source Reference。
+
+**明确不做的事**：上传已回复文件、自动写回原批次注、生成 final.xlsx。
+系统只产出清单，不读取用户本地填写的「回复 / 状态」列。
+
+---
+
+## 2. 版本历史（功能 + 修改）
+
+### V1（2026-10-13）— 首个可用版本（只读 legacy 批注）
+
+- 新增登录保护的 `/tools/excel-review`；`.xlsx` 上传（扩展名 + MIME + ZIP 头 + 20MB 校验）。
+- PostgreSQL 任务表 `excel_review_jobs`（独立表，不改 contracts）。
+- openpyxl 提取传统批注：Sheet / Cell 地址 / 当前值 / 批注正文 / 作者。
+- 生成 `review.xlsx`：`Comments` 表 + 隐藏 `_Mapping`；Mapping 防篡改 token + source SHA256。
+- **当时**支持重新上传已回复文件写回批次注、生成 `final.xlsx`（源文件不受影响）。
+- 历史记录、删除、owner 隔离、私有下载、progress/status。
+- 新增：`server/excel-review/{migrations/001_excel_review.sql,repository.js,parse-runner.js,routes.js}`、
+  `services/excel_review/*`、`private/tools/excel-review/*`；修改 `server.js`（挂载）、`config/tools.json`。
+- 测试：Python 22 pass；Node 端到端 25 项断言。
+- 报告：`docs/excel-review-v1-report.md`
+
+### V1.1（2026-10-13）— 支持 Microsoft 365 新版线程批注
+
+**根因**：openpyxl 3.1.5 不认识 `xl/threadedComments/*` 与 `xl/persons/*`；且
+`load_workbook() -> save()` 会**删除**这些 part，因此含线程的工作簿绝不能由 openpyxl 重新保存。
+
+- 新增 OOXML 低层解析：`ooxml_package.py`（OPC/ZIP + relationships）、
+  `ooxml_threaded_comments.py`（按 relationships 动态定位，不按文件名猜 sheet）。
+- 统一批注模型：`legacy | threaded | threaded_reply`，含 threadId / parentThreadId / personId。
+- Review 结构升级：新增 Source File / Source Reference / Type 等列。
+- **移除所有 worksheet protection**（改为无保护、可自由编辑）。
+- Mapping 升级到 **V2**（item UUID、source SHA256、token、version、thread identity）。
+- 写回改为双模式：纯 legacy 用 openpyxl；含线程用 **OOXML 手术式补丁**，逐字节保留
+  threadedComments / persons / rels / Content Types。
+- **原生线程 Reply 写回未实现**（环境无桌面 Excel 可验证），改为明确上报 `threadedRepliesSkipped`。
+- 测试：36 pass；Node 端到端 13 项。
+- 报告：`docs/excel-review-v1.1-report.md`、`docs/excel-review-v1.1-verification-report.md`
+
+### V1.2（2026-10-13）— 两表结构 + 原始值取缓存结果
+
+**根因**：V1.1 用 `data_only=False` 读值，公式单元格会暴露公式字符串 / `#VALUE!` 等错误。
+
+- 同时打开两个 workbook：结构用 `data_only=False`，显示值用 `data_only=True` 取**缓存结果**；
+  统一经 `normalize_display_value()`，公式永不输出、错误值与无缓存值留空。
+- Review 固定为**两张可见表**：`新版批注`（threaded + reply）、`旧版批注`（legacy）+ 隐藏 `_Mapping`。
+- 可见表移除全部技术字段（ID / Thread ID / token / hash / 时间等）。
+- 新增隐藏列 `_ITEM_ID`（随行排序移动），用于安全定位；Mapping 升级 **V3**。
+- 测试：42 pass。
+- 报告：`docs/excel-review-v1.2-report.md`
+
+### V1.2 收口（2026-10-13）— Excel Address + 取消自动回写
+
+- 产品流程收敛为：`source.xlsx → review.xlsx → 下载 → 人工查看 / F5 定位`。
+- 新增 `format_excel_address()`，可见表插入 **G 列 Excel Address**（如 `'财务复核'!B5`，单引号转义）。
+- **移除**：回复上传、自动写回、`reply_writer.py`、final.xlsx、`replies` / `final-file` 路由（返回 404）。
+- 「回复 / 状态」列仍保留供本地维护，但后台不读取。
+- 测试：28 pass。
+- 报告：`docs/excel-review-v1.2-simplification-report.md`
+
+### 线程状态修复（2026-10-13）— `done` 语义
+
+- **根因**：状态列被硬编码为 `pending`；且 `done` 只识别 `=="true"`，真实 Excel 写的是 `done="1"`。
+- `parse_done()` 支持 `1/true/yes/on`；parser 传播 root 的 resolved 到全部后代。
+- 新状态规则：legacy → pending；threaded root 无 done → pending；`done` → completed；
+  threaded reply 继承 root；孤立 reply 保守判 pending。
+- 测试：58 pass。
+- 报告：`docs/excel-review-thread-status-fix-report.md`
+
+### V1.3（2026-10-13）— Dashboard + 网页统计
+
+- 新增 `statistics.py`：单一统计对象（问题总数 / 新旧分布 / 作者分布），Web 与 Excel 共同消费。
+- Review 新增 **Dashboard** 为第一张表：KPI + 按作者统计，全部用 Structured References 公式
+  （`fullCalcOnLoad`，随「回复」列自动更新）。
+- 网页新增分析结果 Summary（问题数 / 新旧 / 提出人 / 按作者列表）。
+- 问题定义：legacy note 与 threaded root 计为 question，threaded reply 不计入。
+- 测试：43 pass。
+- 报告：`docs/excel-review-v1.3-report.md`
+
+### 线程合并为单行（2026-10-13）
+
+- 一个线程（root + 若干 reply）在 Review 中只占 **一行**；回复文本合并写入该行「回复」列。
+- `build_review_workbook` 只写 threaded root，按 `rootThreadId` 归组回复。
+- 报告：`docs/excel-review-thread-single-row-report.md`
+
+### 提交与发布
+
+| commit / tag | 说明 |
+|---|---|
+| `009fa48` | `feat: add Excel Review Assistant tool`（V1→V1.3 + 线程修复合并入库） |
+| `e8ea6a9` | `fix: prevent formula injection in Excel review output` |
+| tag `excel-tools-v1.0.0` | Excel 工具（复核 + 小数检查）发布点 |
+| — | **生产部署已完成**（migration 001 + PM2 restart，用户确认） |
+
+**公式注入修复（`e8ea6a9`）**：所有用户来源字符串（文件名 / Sheet / 单元格 / 批注正文 / 作者 /
+时间 / thread+person id / Source Reference / Excel Address）统一经 `set_literal_cell`，
+强制 `data_type='s'`，避免以 `=` 开头的文本被 openpyxl 当作公式；Dashboard 公式保持公式。
+
+---
+
+## 3. 当前实现结构
+
+```
+private/tools/excel-review/             前端（登录后可用）
+  index.html / styles.css / script.js / excel-review-history.js
+
+server/excel-review/                    Node 路由层
+  migrations/001_excel_review.sql       任务表（additive、幂等）
+  repository.js                         任务 CRUD / owner 隔离
+  parse-runner.js                       调用 Python worker
+  routes.js                             /api/excel-reviews/*
+
+services/excel_review/                  Python 抽取层
+  parser.py                             双 workbook 读值 + 统一模型 + Excel Address
+  ooxml_package.py / ooxml_threaded_comments.py   线程批注 OOXML 解析
+  review_workbook.py                    Dashboard + 两表 + 隐藏 _Mapping
+  statistics.py                         统计模型
+  status.py / worker.py                 CLI 入口
+```
+
+### Review 工作簿结构
+
+```
+1. Dashboard   问题总数 / 已回答 / 未回答 / 回答率 / 新旧分布 / 按作者统计（公式驱动）
+2. 新版批注    A 类型 | B 原文件 | C Sheet | D Cell | E 原始值 | F 批注内容 |
+               G Excel Address | H 作者 | I 回复 | J 状态 | K Source Reference | L _ITEM_ID(隐藏)
+3. 旧版批注    同上列结构
+4. _Mapping    hidden：item UUID / source SHA256 / token / thread identity / mapping_version(v3)
+```
+
+### API
+
+```
+POST   /api/excel-reviews                  上传 source.xlsx -> 提取
+GET    /api/excel-reviews                  当前用户历史
+GET    /api/excel-reviews/:id              状态 / progress / stats
+GET    /api/excel-reviews/:id/review-file  下载 review.xlsx
+DELETE /api/excel-reviews/:id              删除任务与文件
+GET    /api/excel-reviews/meta             能力信息
+```
+
+全部挂载于 `requireAuth` + same-origin 校验；文件路径由 job UUID 推导，无用户输入进入路径。
+
+---
+
+## 4. 测试
+
+```
+Excel Review tests:    65 pass / 0 fail
+  .venv/bin/python -m unittest discover -s services/excel_review/tests -t .
+Contract Review 回归:  135 pass（未受影响）
+```
+
+---
+
+## 5. 已知限制
+
+- 仅支持 `.xlsx`；`.xls` / `.xlsm` 不支持。
+- 网页**无法得知**用户下载后在本机填写的回复；「已回答 / 回答率」只在 Excel 内 Dashboard 随「回复」列变化。
+- 不回写原文件、不生成 final.xlsx（V1.2 起主动下线）。
+- 复杂 OOXML 高级对象（图片 / 图表 / 数据透视）不保证全量保真；本工具只读、不重建工作簿。
+- `_Mapping` 为权威机器身份，不要手改；可见字段（排序 / 加列 / 改文案）不影响定位。
