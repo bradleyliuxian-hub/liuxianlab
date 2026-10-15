@@ -67,6 +67,10 @@ __pycache__/
 *.before-*
 *.save
 
+# AI/OpenCode mechanical backups (moved outside repo; ignore recurrence)
+.opencode-backup/
+archive/opencode-backup-*/
+
 # Runtime contract data
 storage/
 

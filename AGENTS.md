@@ -26,6 +26,9 @@ Real Repo  >  Git State  >  PROJECT_STATUS.md  >  docs/agent  >  skill reference
 Never let stale docs, `PROJECT_STATUS.md`, or a handoff override the real code +
 Git. When they disagree, code + Git win and the doc is corrected.
 
+Current repo and current docs take precedence. Archive/historical material is
+evidence only and is not loaded by default.
+
 ### 1.1 Evidence labels (mandatory)
 
 - Only a fact whose implementing file was actually read **in this task** may be
@@ -157,7 +160,8 @@ Commands: `/checkpoint` (save; no commit/push/deploy), `/resume` and `/recover` 
 - `PROJECT_INDEX.md` — knowledge map: "I hit X, read Y".
 - `docs/agent/` — project facts and per-domain knowledge (single source of truth).
 - Skills under `.opencode/skills/` — 7 project workflows (`repo-inspector`, `development-task`, `contract-review`, `excel-review`, `excel-tail-risk`, `excel-hardcode`, `deployment-safety`).
-- No `.opencode/optional-skills/` content is auto-loaded; it is opt-in only.
+- Generic/shared skills (e.g. workspace `shared-skills/`) are not part of the
+  project active skill set and must not auto-load into Liuxian Lab tasks.
 
 ## 12. Output standard
 
