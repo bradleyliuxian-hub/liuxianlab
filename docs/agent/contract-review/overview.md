@@ -27,6 +27,7 @@ historical handoff stays in archive (not loaded by default).
 
 ## Read next
 
+- Modes / quality gate / AUTO fallback / cache / progress: `quality-and-cache.md`.
 - Pipeline / modes: `worker.py`, `quality_gate.py`, `parse_cache.py`.
 - Locator: `issue_locator.py` (be conservative).
 - API/DB: `server/contracts/routes.js`, `repository.js`.
