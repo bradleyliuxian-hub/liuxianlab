@@ -1,6 +1,6 @@
 # Deployment (production details)
 
-Read on demand. Deployment is a separate phase; see AGENTS §6 and the `deploy` command/agent.
+Read on demand. Deployment is a separate phase; see AGENTS §10 and the `deployment-safety` skill.
 
 ## Target topology
 

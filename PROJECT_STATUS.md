@@ -1,48 +1,67 @@
-# PROJECT STATUS
+# Project Status
 
-## Current Goal
-Excel Review Assistant V1.4.3 — 修复生产端上传文件名 UTF-8 乱码（`【NEW】 23-26331 …` → `â€‹ NEWâ€‹ 23-26331 …`）。仅修编码链路，不加新功能。
+Updated: 2026-10-15
 
-## Current Task
-完成根因修复（multipart 文件名按 UTF-8 解码）+ 存量乱码读取还原 + 测试。**未 commit / 未 push / 未 deploy。**
+> Short current-state snapshot. Overwrite each time; no history, no diffs, no secrets.
+> Source of truth is the real repo + Git; if this file disagrees, Git wins.
 
-## Root Cause
-`multipart/form-data` 的 filename 参数由 **busboy 默认按 latin1 解码**，UTF-8 字节被单字节解码：`【`(E3 80 90) → `â€‹`（Windows-1252 渲染），随后原样写入 DB 与页面。
-- 发生层：**上传解析（server, multer/busboy）**，不是 HTML/JS/CSS/JSON/DB/Nginx。
-- 证据：`defParamCharset` 缺省时 `req.file.originalname` 码点为 `e3,80,90…`；加 `defParamCharset:'utf8'` 后为 `3010,4e,45…`（正确 `【NEW】`）。
+## Git
 
-## Completed
-- **根因修复**：`server/excel-review/routes.js` 两处 `multer({...})` 增加 `defParamCharset: 'utf8'`（multer 2.4.0 转发给 busboy 1.6）→ `originalname` 直接为正确 UTF-8，落库/回显/review.xlsx/Control Log 均正确。
-- **存量数据还原**：新增 `server/excel-review/encoding.js#repairMojibake()`，对**已是乱码**的存量文件名在读取时无损还原（正常 ASCII/中文/西文原名不动）。用于 `publicJob.originalFilename`、review 下载名、Control Log 的 `sourceFile`。
-- **未改动**（本已正确）：HTML `<meta charset="utf-8">`；JS/CSS/JSON 文件均 UTF-8；Express `res.json` / static 均 `charset=utf-8`；PostgreSQL `server_encoding/client_encoding = UTF8`；xlsx/zip 二进制下载不做字符转码；前端用 `textContent`（无 `innerHTML`，无 XSS 回归）。
-- 版本 → v1.4.3（缓存 bust）；changelog/DEVLOG 更新。
+- Branch: `main` (query: `git branch --show-current`)
+- HEAD: `17dbc98` (query: `git rev-parse --short HEAD`)
+- origin/main: in sync
+- Working tree: dirty — uncommitted AI/OpenCode dev-system files only
+  (no business code). Query: `git status --short`.
 
-## Verification
-- 单测/集成：`tests/excel-review/encoding.test.js`（latin1 与 Windows-1252 乱码还原、正常文本不动，3 条）+ `upload-pipeline.test.js` UTF-8 文件名往返（1 条）。`npm test` **147 pass / 0 fail**。
-- 真机（本地 PG `liuxianlab`，应用凭据 + 真实 repository）：POST `【NEW】 财务复核测试.xlsx` → HTTP 202，response `job.originalFilename` 与 DB `original_filename` 均为 `【NEW】 财务复核测试.xlsx`（无乱码）。
-- Python `services/excel_review` **79 pass**；`git diff --check` 干净；`node --check` 全过。
-- 未触碰二进制下载与 Contract Review。
+## Current Focus
 
-## Known Issues
-- 已存在（乱码入库）的旧任务：**页面显示**已由 `repairMojibake` 修复；其 review.xlsx / Control Log 快照在生成时已写入乱码，如需完全一致需**重新上传**（或对历史产物做一次性重建）。
-- 生产 Nginx 配置不在本仓库；`charset utf-8;` 建议（对 text/* 生效，勿作用于 xlsx/zip）——需按部署环境单独确认。
+AI / OpenCode control-plane refactor — Phases 1–4 + 4.1 + 4.2 + **final pre-commit
+cleanup**. **AI/config files only; no business code changed.** Status = pre-commit
+candidate (NOT committed).
 
-## Changed Files
-- 新增：`server/excel-review/encoding.js`、`tests/excel-review/encoding.test.js`。
-- 修改：`server/excel-review/routes.js`、`server/excel-review/control-log-routes.js`、`tests/excel-review/upload-pipeline.test.js`、`private/tools/excel-review/{index.html,DEVLOG.md}`、`config/tools.json`。
-- 未改：前端 `script.js`/`excel-review-history.js`（本就用 `textContent`）、DB schema、Contract Review。
+- Active skills (exactly 7): `repo-inspector`, `development-task`,
+  `contract-review`, `excel-review`, `excel-tail-risk`, `excel-hardcode`,
+  `deployment-safety`.
+- Candidate commit scope: `AGENTS.md`, `PROJECT_STATUS.md`, `PROJECT_INDEX.md`,
+  `.opencode/opencode.json`, `.opencode/skills/**`, `docs/agent/**`,
+  `archive/opencode-skills-design/**`. Excludes backups, `ui-ux-pro-max`,
+  contract-speed docs.
+- Final cleanup fixed broken refs (4× non-existent `archive/liuxianlab-deploy/…`,
+  1× stale `AGENTS §3.1`).
+- Legacy design skills archived (`archive/opencode-skills-design/`); `ui-ux-pro-max`
+  in `.opencode/optional-skills/` (not auto-loaded).
 
-## Git State
-- branch: main；HEAD `6cf772b`（已推送）；本轮改动未 commit。
+## Known Broken
 
-## Deployment Impact
-- 纯服务端代码 + 版本号；无新依赖 / 无 env / 无 migration。**生效需重启 Node（PM2）**。前端资源版本 v1.4.3。
+- None confirmed in the app or the refactor.
+- Caveat (not broken): the parent `~/AI-Workspace` has its own `.git` pointing at
+  the same origin as this repo — always confirm cwd before Git operations.
+
+## Pending Decision
+
+- Restart OpenCode (config-time changes are not hot-reloaded).
+- Routing verification (one real bug / feature / review / deploy request) — **not
+  yet run; status UNVERIFIED**.
+- Human review of the AI refactor before any commit (scope proposed, see Focus).
+- Backup dirs disposition: keep `.opencode-backup/` and `archive/opencode-backup-*`
+  untracked (not deleted); decide whether to add a `.gitignore` rule.
+- `ui-ux-pro-max`: candidate to move to shared/global skills later (not in repo commit).
+- SEPARATE DOCUMENT GOVERNANCE DECISION: `docs/contract-speed-v1.1-*.md` stay untracked.
+- Later/separate: parent-repo vs sub-repo Git structure.
 
 ## Next Action
-- 生产部署（另行批准）：重启 Node → 验证 `curl -I` charset、API JSON、页面文件名。等待批准：不 commit / push / deploy。
 
-## Session Log
-- 2026-10-15：V1.4.3 上传文件名 UTF-8 编码修复（defParamCharset + repairMojibake）；npm test 147 pass；本地真机 DB 往返验证通过。
+1. Restart OpenCode to load the updated `AGENTS.md` / skills.
+2. Run representative routing verification.
+3. Human review before commit. Do not commit/push/deploy without approval.
 
-## Last Updated
-2026-10-15
+## Last Verification
+
+- Final pre-commit cleanup: `git diff --check` clean; exactly 7 active skills;
+  `.opencode/opencode.json` valid minimal JSON; candidate scope contains no
+  business code / tests / migrations / deps / config / backups / optional-skill /
+  contract-speed docs; broken-ref audit fixed (see Focus). Business test suites
+  **NOT RUN** this round (no business code changed).
+- Historical (previous rounds, not re-run): Node `npm test` 148 pass / 0 fail;
+  `services/excel_review` 79 pass; `services/contract_review` 99 pass
+  (+2 import errors, `psycopg` missing in venv — environment, unrelated).

@@ -32,4 +32,4 @@ Read on demand.
 ## Complexity
 
 - A static/front-end-only tool is SIMPLE/MEDIUM (builder + minimal verify).
-- A tool with new routes/jobs is MEDIUM; one with persistence/migrations/workers is COMPLEX (AGENTS §3.1).
+- A tool with new routes/jobs is MEDIUM; one with persistence/migrations/workers is COMPLEX (AGENTS §5).

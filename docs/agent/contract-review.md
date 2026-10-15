@@ -44,5 +44,5 @@ storage/contracts/<uuid>/
 ## Notes / risks
 
 - Touch `requireAuth`/same-origin, upload limits, path handling, SQL, and worker lifecycle with care.
-- Migrations and the Python worker are COMPLEX changes (see AGENTS §3.1).
+- Migrations and the Python worker are COMPLEX changes (see AGENTS §5).
 - Never read/print contract contents or `.env` unless the task requires it.
