@@ -30,8 +30,9 @@
   const resultSubtitle = $('#resultSubtitle');
   const formatNote = $('#formatNote');
 
-  const downloadFixedButton = $('#downloadFixedButton');
+  const downloadHighlightButton = $('#downloadHighlightButton');
   const downloadIssuesButton = $('#downloadIssuesButton');
+  const highlightStatus = $('#highlightStatus');
 
   const sheetFilter = $('#sheetFilter');
   const typeFilter = $('#typeFilter');
@@ -43,17 +44,25 @@
   const pageLabel = $('#pageLabel');
   const issueCountChip = $('#issueCountChip');
 
+  const excelViewerHost = $('#excelViewer');
+  const reviewShell = $('#reviewShell');
+  const reviewSplitter = $('#reviewSplitter');
+
   const PAGE_SIZE = 50;
   const SUPPORTED_EXT = ['xlsx', 'xlsm', 'xlsb', 'xls'];
 
   const state = {
     file: null,
     baseName: 'workbook',
+    workbook: null,
     issues: [],
     summary: null,
     sheetStats: [],
     filtered: [],
-    visible: 0
+    visible: 0,
+    leftPaneWidth: 0,
+    model: null,
+    viewer: null
   };
 
   function showToast(message) {
@@ -129,12 +138,17 @@
   function resetResults() {
     state.issues = [];
     state.summary = null;
+    state.workbook = null;
     state.sheetStats = [];
     state.filtered = [];
     state.visible = 0;
+    if (state.viewer && typeof state.viewer.destroy === 'function') state.viewer.destroy();
+    state.model = null;
+    state.viewer = null;
     resultsPanel.hidden = true;
     processPanel.hidden = true;
     errorBox.hidden = true;
+    if (excelViewerHost) excelViewerHost.textContent = '';
     setProgress(0);
   }
 
@@ -151,13 +165,6 @@
   function decimalsLabel(issue) {
     if (issue.type === 'unknown') return '—';
     return DecimalWorkbook.formatDecimals(issue.decimals);
-  }
-
-  function statusClass(status) {
-    if (status === DecimalWorkbook.STATUS.manual) return ' is-manual';
-    if (status === DecimalWorkbook.STATUS.unknown) return ' is-unknown';
-    if (status === DecimalWorkbook.STATUS.failed) return ' is-failed';
-    return '';
   }
 
   async function copyText(text) {
@@ -208,11 +215,6 @@
     badge.textContent = issue.typeLabel;
     loc.appendChild(badge);
     top.appendChild(loc);
-
-    const status = document.createElement('span');
-    status.className = `status-badge${statusClass(issue.status)}`;
-    status.textContent = issue.status || '';
-    top.appendChild(status);
     item.appendChild(top);
 
     const body = document.createElement('div');
@@ -222,7 +224,6 @@
       { label: 'F5 定位地址', value: issue.goto, code: true },
       { label: '当前值 / 公式结果', value: formatValue(issue), code: false },
       { label: '有效小数位', value: decimalsLabel(issue), code: false },
-      { label: '处理状态', value: issue.status || '—', code: false },
       { label: '公式', value: issue.originalFormula || '—', code: true }
     ];
 
@@ -242,18 +243,48 @@
 
     const actions = document.createElement('div');
     actions.className = 'issue-actions';
+    const locateButton = document.createElement('button');
+    locateButton.type = 'button';
+    locateButton.className = 'locate-button';
+    locateButton.textContent = '定位';
+    locateButton.addEventListener('click', (event) => {
+      event.stopPropagation();
+      if (state.model) state.model.selectIssue(issue);
+    });
+    actions.appendChild(locateButton);
     const copyButton = document.createElement('button');
     copyButton.type = 'button';
     copyButton.className = 'copy-button';
     copyButton.textContent = '复制地址';
-    copyButton.addEventListener('click', async () => {
+    copyButton.addEventListener('click', async (event) => {
+      event.stopPropagation();
       const ok = await copyText(issue.goto);
       showToast(ok ? `已复制：${issue.goto}` : '复制失败，请手动选择文本。');
     });
     actions.appendChild(copyButton);
     item.appendChild(actions);
 
+    item.dataset.key = `${issue.sheetName}!${issue.cell}`;
+    item.classList.add('issue-item--clickable');
+    item.addEventListener('click', () => { if (state.model) state.model.selectIssue(issue); });
+
     return item;
+  }
+
+  function highlightActiveIssue() {
+    const selected = state.model ? state.model.state().selectedIssue : null;
+    const key = selected ? `${selected.sheetName}!${selected.cellAddress}` : '';
+    [...issueList.querySelectorAll('.issue-item')].forEach((node) => {
+      const active = Boolean(key) && node.dataset.key === key;
+      node.classList.toggle('is-active', active);
+      if (active && node.scrollIntoView) node.scrollIntoView({ block: 'nearest' });
+    });
+  }
+
+  function applyFiltersToModel() {
+    if (!state.model) return;
+    state.model.setFilterKind(typeFilter.value || '');
+    state.model.setFilterSheet(sheetFilter.value || '');
   }
 
   function currentFiltered() {
@@ -288,6 +319,8 @@
     const hasMore = shown < total;
     pagination.hidden = !hasMore;
     pageLabel.textContent = hasMore ? `已显示 ${shown} / ${total}` : '';
+
+    highlightActiveIssue();
   }
 
   function populateSheetFilter() {
@@ -321,17 +354,35 @@
 
   function buildFormatNote() {
     const ext = extensionOf(state.file ? state.file.name : '');
-    const macronote = ext === 'xlsm'
-      ? '。原文件为 .xlsm，修正版会尽量保留 VBA 宏，但请自行确认宏完整。'
-      : ext === 'xls'
-        ? '。原文件为老版 .xls，修正版将输出为 .xlsx，公式与结构会保留，部分样式可能丢失。'
-        : ext === 'xlsb'
-          ? '。原文件为 .xlsb，修正版将以 .xlsb 输出。'
-          : '';
-    formatNote.textContent =
-      '说明：修正版会保留数值、公式、合并单元格、列宽与隐藏工作表等结构；' +
-      '受浏览器端 Excel 引擎限制，字体、填充等样式与冻结窗格可能无法完全保留。' + macronote;
+    const canHighlight = ext === 'xlsx' || ext === 'xlsm';
+    formatNote.textContent = canHighlight
+      ? '说明：标黄对比文件基于原始文件生成副本，仅对问题单元格添加黄色填充，' +
+        '公式、外部链接、命名范围、隐藏状态、图表等保持不变；原上传文件不会被修改。'
+      : '说明：当前文件为 .' + ext + '，暂不支持生成标黄对比文件（仅支持 .xlsx / .xlsm）。' +
+        '问题清单与网页内复核仍可正常使用。';
     formatNote.hidden = false;
+    if (downloadHighlightButton) {
+      downloadHighlightButton.disabled = !canHighlight;
+      downloadHighlightButton.title = canHighlight ? '' : '仅支持 .xlsx / .xlsm 原文件';
+    }
+  }
+
+  function initViewer() {
+    if (!excelViewerHost) return;
+    if (typeof ExcelViewerCore === 'undefined' || typeof ExcelViewer === 'undefined') {
+      excelViewerHost.textContent = '';
+      const note = document.createElement('div');
+      note.className = 'vwr-empty';
+      note.textContent = '网页内定位组件未能加载，请刷新页面后重试。';
+      excelViewerHost.appendChild(note);
+      return;
+    }
+    state.model = ExcelViewerCore.createViewerModel(state.workbook, state.issues);
+    state.viewer = ExcelViewer.createExcelViewer({ root: excelViewerHost, model: state.model });
+    state.model.subscribe(() => { highlightActiveIssue(); });
+    applyFiltersToModel();
+    const first = state.model.filteredIssues()[0];
+    if (first) state.model.selectIssue(first);
   }
 
   async function runScan() {
@@ -359,8 +410,20 @@
         throw new Error('无法解析该文件。请确认它是有效的 Excel 工作簿，且未加密或损坏。');
       }
 
-      const result = DecimalWorkbook.analyzeWorkbook(XLSX, wb);
-      state.issues = result.issues;
+      // Read-only scan: the viewer shows the ORIGINAL (unmodified) workbook,
+      // with yellow highlights overlaid. The workbook is never rewritten.
+      const result = DecimalWorkbook.scanWorkbook(XLSX, wb);
+      state.workbook = wb;
+      // Extend each issue with the fields the shared viewer expects, without
+      // dropping any original field used by the list / exports.
+      state.issues = result.issues.map((issue) => Object.assign({}, issue, {
+        cellAddress: issue.cell,
+        severity: issue.type,
+        ruleId: issue.type,
+        cellType: issue.originalFormula ? 'formula' : 'number',
+        formula: issue.originalFormula || null,
+        value: issue.originalValue
+      }));
       state.summary = result.summary;
       state.sheetStats = result.sheetStats;
 
@@ -370,6 +433,7 @@
 
       renderSummary(result.summary);
       populateSheetFilter();
+      initViewer();
       renderIssues(true);
       buildFormatNote();
 
@@ -399,23 +463,47 @@
     xlsb: 'application/vnd.ms-excel.sheet.binary.macroEnabled.12'
   };
 
-  async function downloadFixed() {
-    if (!state.file) return;
-    downloadFixedButton.disabled = true;
+  const HIGHLIGHT_BUTTON_HTML = downloadHighlightButton ? downloadHighlightButton.innerHTML : '';
+
+  function setHighlightStatus(message, isError) {
+    if (!highlightStatus) return;
+    if (!message) { highlightStatus.hidden = true; highlightStatus.textContent = ''; highlightStatus.classList.remove('is-error'); return; }
+    highlightStatus.hidden = false;
+    highlightStatus.textContent = message;
+    highlightStatus.classList.toggle('is-error', Boolean(isError));
+  }
+
+  // Same OOXML minimal patch as the hardcode check: highlights the issue cells
+  // in a COPY of the original file. The workbook is never rebuilt and the
+  // original upload is never modified.
+  async function downloadHighlight() {
+    if (!state.file || !state.summary) return;
+    if (typeof ExcelOoxmlHighlight === 'undefined' || typeof fflate === 'undefined') {
+      setHighlightStatus('对比文件生成失败，原文件未受影响。', true);
+      showToast('对比文件生成失败，原文件未受影响。');
+      return;
+    }
+    downloadHighlightButton.disabled = true;
+    downloadHighlightButton.textContent = '正在生成对比文件…';
+    setHighlightStatus('正在生成对比文件…', false);
     try {
       const buffer = await state.file.arrayBuffer();
-      const wb = XLSX.read(new Uint8Array(buffer), DecimalWorkbook.readOptions({ type: 'array' }));
-      DecimalWorkbook.analyzeWorkbook(XLSX, wb);
-
-      const bookType = DecimalWorkbook.fixedOutputType(state.file.name);
-      const output = XLSX.write(wb, { bookType, type: 'array', compression: true });
-      const blob = new Blob([output], { type: MIME[bookType] || MIME.xlsx });
-      downloadBlob(blob, `${state.baseName}_decimal_fixed.${bookType}`);
-      showToast('已生成修正后的 Excel。');
+      const { data } = ExcelOoxmlHighlight.buildHighlightedWorkbook(
+        fflate,
+        new Uint8Array(buffer),
+        state.issues,
+        {}
+      );
+      const blob = new Blob([data], { type: MIME.xlsx });
+      downloadBlob(blob, `${state.baseName}_小数标黄对比版.xlsx`);
+      setHighlightStatus('已生成标黄对比文件。', false);
+      showToast('已生成标黄对比文件。');
     } catch (error) {
-      showToast('生成修正版失败，请重试。');
+      setHighlightStatus('对比文件生成失败，原文件未受影响。', true);
+      showToast('对比文件生成失败，原文件未受影响。');
     } finally {
-      downloadFixedButton.disabled = false;
+      downloadHighlightButton.disabled = false;
+      downloadHighlightButton.innerHTML = HIGHLIGHT_BUTTON_HTML;
     }
   }
 
@@ -436,10 +524,10 @@
   }
 
   startButton.addEventListener('click', runScan);
-  downloadFixedButton.addEventListener('click', downloadFixed);
+  downloadHighlightButton.addEventListener('click', downloadHighlight);
   downloadIssuesButton.addEventListener('click', downloadIssues);
-  sheetFilter.addEventListener('change', () => renderIssues(true));
-  typeFilter.addEventListener('change', () => renderIssues(true));
+  sheetFilter.addEventListener('change', () => { renderIssues(true); applyFiltersToModel(); });
+  typeFilter.addEventListener('change', () => { renderIssues(true); applyFiltersToModel(); });
   loadMoreButton.addEventListener('click', () => {
     state.visible += PAGE_SIZE;
     renderIssues(false);
@@ -449,6 +537,83 @@
     resetResults();
     uploadPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
+
+  const LEFT_MIN = 280;
+  const LEFT_MAX = 520;
+  const VIEWER_MIN = 700;
+  const SPLITTER_GAP = 16;
+
+  function leftBounds() {
+    const shellWidth = (reviewShell && reviewShell.clientWidth) || 1440;
+    const max = Math.max(LEFT_MIN, Math.min(LEFT_MAX, shellWidth - 8 - 24 - VIEWER_MIN));
+    return { min: LEFT_MIN, max };
+  }
+
+  function setLeftWidth(px) {
+    if (!reviewShell) return 0;
+    const bounds = leftBounds();
+    const width = Math.max(bounds.min, Math.min(bounds.max, Math.round(px)));
+    reviewShell.style.setProperty('--hv-left-w', `${width}px`);
+    state.leftPaneWidth = width;
+    try { localStorage.setItem('hv-left-w', String(width)); } catch (_) {}
+    return width;
+  }
+
+  function currentLeftWidth() {
+    if (!reviewShell) return 340;
+    const inline = parseFloat(reviewShell.style.getPropertyValue('--hv-left-w'));
+    if (Number.isFinite(inline) && inline > 0) return inline;
+    if (Number.isFinite(state.leftPaneWidth) && state.leftPaneWidth > 0) return state.leftPaneWidth;
+    return 340;
+  }
+
+  (function initSplitter() {
+    if (!reviewSplitter || !reviewShell) return;
+    let saved = 0;
+    try { saved = Number(localStorage.getItem('hv-left-w')) || 0; } catch (_) {}
+    setLeftWidth(saved > 0 ? saved : 340);
+
+    let dragging = false;
+    const refresh = () => { if (state.viewer && state.viewer.refresh) state.viewer.refresh(); };
+    const move = (event) => {
+      if (!dragging) return;
+      const clientX = event.touches ? event.touches[0].clientX : event.clientX;
+      const rect = reviewShell.getBoundingClientRect();
+      setLeftWidth(clientX - rect.left - SPLITTER_GAP);
+      refresh();
+    };
+    const stop = () => {
+      if (!dragging) return;
+      dragging = false;
+      reviewSplitter.classList.remove('is-dragging');
+      reviewShell.classList.remove('is-resizing');
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', stop);
+      window.removeEventListener('touchmove', move);
+      window.removeEventListener('touchend', stop);
+      refresh();
+    };
+    const start = (event) => {
+      if (event.button != null && event.button !== 0) return;
+      dragging = true;
+      reviewSplitter.classList.add('is-dragging');
+      reviewShell.classList.add('is-resizing');
+      if (event.preventDefault) event.preventDefault();
+      window.addEventListener('mousemove', move);
+      window.addEventListener('mouseup', stop);
+      window.addEventListener('touchmove', move, { passive: false });
+      window.addEventListener('touchend', stop);
+    };
+    reviewSplitter.addEventListener('mousedown', start);
+    reviewSplitter.addEventListener('touchstart', start, { passive: false });
+    reviewSplitter.addEventListener('keydown', (event) => {
+      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+      event.preventDefault();
+      setLeftWidth(currentLeftWidth() + (event.key === 'ArrowLeft' ? 24 : -24));
+      refresh();
+    });
+    window.addEventListener('resize', () => setLeftWidth(currentLeftWidth()));
+  })();
 
   if (typeof XLSX === 'undefined') {
     startButton.disabled = true;

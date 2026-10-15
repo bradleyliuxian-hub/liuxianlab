@@ -15,6 +15,7 @@ const { createSalesIncomeInspectRouter } = require('./server/sales-income/inspec
 const { createSalesIncomeRunRouter } = require('./server/sales-income/run-routes');
 const { createContractRouter } = require('./server/contracts/routes');
 const { createExcelReviewRouter } = require('./server/excel-review/routes');
+const { createExcelReviewControlLogRouter } = require('./server/excel-review/control-log-routes');
 require('dotenv').config();
 
 const app = express();
@@ -340,6 +341,12 @@ app.use('/api/sales-income', requireAuth, sameOriginForStateChange, createSalesI
  * API. Files stay private under storage/excel-reviews/<id>/.
  */
 app.use('/api/excel-reviews', requireAuth, sameOriginForStateChange, createExcelReviewRouter({ root: ROOT }));
+
+/*
+ * Excel Review Control Log (V1.4): aggregates several excel-review jobs into
+ * one multi-file snapshot. Same auth + owner scope; private download only.
+ */
+app.use('/api/excel-review-control-logs', requireAuth, sameOriginForStateChange, createExcelReviewControlLogRouter({ root: ROOT }));
 
 app.use('/app', requireAuth, express.static(PRIVATE_DIR, {
   index: false,

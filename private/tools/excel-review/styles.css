@@ -400,3 +400,15 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .changelog-text strong { color: var(--text); font-weight: 700; }
 @media (max-width: 820px) { .changelog-section { padding: 0 16px 8px; } }
 @media (max-width: 520px) { .changelog-card { padding: 18px; } }
+
+/* ---- v1.4.0: batch upload + Control Log ---- */
+.batch-list { margin-top: 14px; display: grid; gap: 8px; }
+.batch-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.batch-name { font-size: 12px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.batch-meta { color: var(--muted); font-size: 10px; white-space: nowrap; }
+.erh-item-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.erh-check { width: 16px; height: 16px; accent-color: var(--accent); flex: 0 0 auto; }
+.erh-selection { margin-top: 12px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 10px 12px; border: 1px dashed var(--line-strong); border-radius: 12px; }
+.erh-selection-info { color: var(--muted); font-size: 11px; }
+.erh-create { height: 34px; padding: 0 14px; border: 0; border-radius: 10px; background: var(--accent); color: var(--dark); font-size: 10px; font-weight: 800; cursor: pointer; }
+.erh-create:disabled { opacity: .45; cursor: not-allowed; }

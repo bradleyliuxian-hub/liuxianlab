@@ -1,49 +1,59 @@
 # PROJECT STATUS
 
 ## Current Goal
-`excel-hardcode-check` 精度优化（第三轮）：ROUND 千元/万元换算豁免、ROUND 主体外人工尾差（ROUNDING_PLUG）强化、输入/数据列抑制。不新增规则框架。
+Excel Review Assistant V1.4.2 — 上传主链路 Regression Fix：单 `.xlsx` / 多 `.xlsx` / `.zip` 统一走同一个 canonical Job 创建实现；失败时给出准确原因（区分数据库不可用等），不再显示笼统错误。
 
 ## Current Task
-完成 UNIT_CONVERSION 豁免、HC006 无邻居兜底、HC101/HC103 数据列抑制；全部单测与压力回归通过。未 commit / 未 push / 未部署。
+完成 `job-factory.js`（唯一建 Job 实现）、`routes.js` 改造（内存上传 + 精确错误码 + 新路由 `/archive`）、前端错误码映射、ZIP 解压体积上限、契约回归测试。**未 commit / 未 push / 未 deploy / 未跑生产 migration。**
+
+## Root Cause（诊断结论）
+单文件与 ZIP 失败**同一根因**：`repository.createJob` 无法连接 PostgreSQL。
+**真实定位**：`.env` `DATABASE_URL`（本机 127.0.0.1:5432 的库），但本机 **PostgreSQL 未运行**；PostgreSQL 数据目录下的 `postmaster.pid` 是上次非正常关机遗留的**陈旧锁**（PID 被无关进程复用）导致无法自启。**已处理**：删除陈旧锁 → 启动 PG 16 → 以应用凭据应用 `002`（此前仅 001）→ 重启 dev server。`createJob` 往返验证通过，dev 日志不再 `ECONNREFUSED 5432`。
+- `POST /api/excel-reviews` 命中 catch → 500 `无法创建 Excel 复核任务。`
+- `/archive` 对每个成员同样失败并被 catch → 400 `压缩包内没有可处理的 .xlsx 文件。`
+HTTP → Multer → 校验 → 存储 → Python worker 链路**未回归**：用真实 PostgreSQL（临时集群，应用 001+002）+ 真实文件验证，单文件、多文件、ZIP 全部成功。
 
 ## Completed
-- **UNIT_CONVERSION（HC204 收敛）**：ROUND/ROUNDUP/ROUNDDOWN/ROUNDBANK/MROUND 的值参数中经 `*`/`/` 的 `1000/10000/...` 视为正常公共换算常量（非死数、非高风险证据）；ROUND 位数参数 `0/2` 仍为控制参数。独立 `A1/1000` 仍 HC204。
-- **HC006 ROUNDING_PLUG**：ROUND 主体之外的小额 `+/-` 常量（±0.01/0.02、±1..±5）标记为 ROUNDING_PLUG。左右/上下同类公式一致且仅当前格额外出现 → HIGH；无邻居或单侧 → 至少 SUSPICIOUS；不因金额小而忽略。
-- **HC101 收紧**：crossing run 命中时，若正交轴为纯数据列（两侧均为非公式且存在）→ 不报。
-- **HC103 收紧**：横向 formula run 右侧的固定值，仅当其所在列也含公式时视为断点；否则按数据/结果列处理不报（修复正交空格导致的漏抑制）。
-- **HC104**：保持退役（无触发路径）。
-
-## Pending
-- 真实样本人工标注 → precision；是否 commit / push。
+- **Canonical Job 创建**：`server/excel-review/job-factory.js#createExcelReviewJobFromBuffer()`，唯一实现；单文件与 ZIP 每个 `.xlsx` 均调用它（含目录/`source.xlsx`/`meta.json`/建库/入队/清理）。
+- **精确错误码**：`UNAUTHENTICATED / INVALID_XLSX / INVALID_FILE_TYPE / UPLOAD_TOO_LARGE / STORAGE_WRITE_FAILED / DB_UNAVAILABLE(503) / JOB_CREATE_FAILED / WORKER_ENQUEUE_FAILED`；前端 `ERROR_MESSAGES` 映射。
+- **无 ghost job**：建库前失败清理目录；入队失败把该行标记 failed；ZIP 单成员失败隔离。
+- **ZIP 加固**：`archive vs workbook` 由路由+扩展名判定（`.xlsx` 也是 PK，绝不按 magic 分流）；`MAX_ARCHIVE_TOTAL_UNCOMPRESSED=200MB` 防 zip 炸弹；成员 ≤50、单成员 ≤20MB。
+- 未改 Contract Review；未恢复回写 / reply upload / final.xlsx。
 
 ## Changed Files
-- 工具：`private/tools/excel-hardcode-check/{formula-parser.js,formula-pattern.js,hardcode-core.js}`（工作簿/前端未见行为回归）。
-- 测试：`tests/excel-hardcode-check/{formula-parser.test.js,formula-pattern.test.js,hardcode-core.test.js}`（新增 12 用例）。
-- `PROJECT_STATUS.md`。（未跟踪工具/测试/benchmark 仍在工作区。）
+- 新增：`server/excel-review/job-factory.js`、`tests/excel-review/upload-pipeline.test.js`（+ 既有 `tests/excel-review/archive.test.js`）。
+- 修改：`server/excel-review/routes.js`（内存上传、canonical helper、错误码、archive 路由健壮化）、`server.js`（挂载 control-log 路由，V1.4）、`private/tools/excel-review/{index.html,script.js,excel-review-history.js,styles.css,DEVLOG.md}`、`package.json`、`config/tools.json`（v1.4.2）、`PROJECT_STATUS.md`。
+- V1.4 其余新增（control-log-*、control_log.py/worker、migration 002）保持不变。
 
-## Verification
-- `npm test`：111 pass / 0 fail（含压力回归 43/22/28、15/3/25 基线，未改夹具、未改规则 ID）。
-- Vision Star：173 → 161（HIGH 48→48 / SUSP 26→34 / NOTICE 99→79）。
-  - HC204 17→0；HC006 41→51（28 HIGH / 23 SUSP）；HC103 9→7（数据列 X100/X101 抑制）；HC201 72→69（3 条 `/1000` 常量转 HC006）；HC101 2→2。
-- 报告：`~/Downloads/【NEW】23-26331 Spreadsheet_Vision Star_死数检查报告_v3.xlsx`（已回读校验）。
+## Verification（本地真实链路）
+- 临时本地 PostgreSQL 16（端口 5433，应用 `001`+`002`）+ 本地 harness（session stub）：
+  - 单文件小 xlsx → 202 → `review_ready`，Q=2。
+  - 单文件真实 4.9MB `Spreadsheet_Vision Star.xlsx` → 202 → `review_ready`，Q=28；`source.xlsx` SHA256 与上传文件一致。
+  - ZIP（legacy + threaded + no_comment + notes.txt）→ 202 → 3 jobs → `review_ready` Q=2 / 27 / 0；忽略 txt。
+  - `.xlsx` 投递到 `/archive` → 400 `INVALID_FILE_TYPE`（**证明不按 PK magic 误判**）。
+  - 停库后：单文件 `/` 与 `/archive` 均返回 **503 `DB_UNAVAILABLE`**（即原“无法创建任务”的真实原因）。
+  - Control Log：5 个已完成 Job → `review_ready`，files=5 / questions=59；`control_log.xlsx` 可重开（Dashboard/Control Log/Source Files/_Mapping）。
+- `npm test`：**143 pass / 0 fail**（含 upload-pipeline 6 + archive 5）。
+- Python：`services/excel_review` **79 pass / 0 fail**。
+- Contract Review：**99 pass / 2 import errors**（`psycopg` 缺失，环境问题、与本次无关）。
+- `node --check` 全过；`git diff --check` 干净。
 
 ## Known Issues
-- HC006 无邻居兜底为 SUSPICIOUS，量大时需人工批量确认（本轮 Vision Star 新增 10 条）。
-- HC101 在 Vision Star 的 2 条均为公式列硬编码打断，倾向为真，未再收紧。
-- 整行范围 `1:1`、复杂数组常量、动态数组未支持（v1 跳过）。
+- 生产需 PostgreSQL 可达（否则现在会明确返回 503 DB_UNAVAILABLE）；生产还需应用 migration `002` 并重启 Node。
+- 仅后缀 `.xlsx`（ZIP 内成员亦须 `.xlsx`）。
 
 ## Git State
-- branch: main；HEAD `51036b8`（tag `liuxianlab-v1.1.0`）；origin/main 同步。
-- dirty：`config/tools.json`、`package.json`、`PROJECT_STATUS.md`；未跟踪 `private/tools/excel-hardcode-check/`、`tests/excel-hardcode-check/`、`scripts/local/hardcode-benchmark.js`。
+- branch: main；HEAD `ec3df9d`（未 commit）。
+- 详见报告 `~/Downloads/excel-review-v1.4.2-regression-fix-report.md`。
 
 ## Deployment Impact
-- 纯前端静态资源 + 工具配置；无 server.js 改动、无依赖、无 migration；PM2 无需重启。
+- 无新依赖 / 无 env；生产需应用 `002_excel_review_control_logs.sql` 并重启 Node（PM2）以加载新路由。
 
 ## Next Action
-- 人工复核 v3 报告（重点 HC006 ROUNDING_PLUG）；仅对可复现模式做受控调参，保持 111 测试全绿。等待人工审核：不 push、不部署。
+- 人工评审；生产 preflight（PG 可达校验、migration、PM2 重启审批）。等待批准：不 commit / push / deploy。
 
 ## Session Log
-- 2026-10-15：UNIT_CONVERSION + HC006 兜底 + HC101/HC103 数据列抑制；npm test 111 pass；Vision Star 重扫 161 条并生成 v3 报告。
+- 2026-10-15：V1.4.2 上传回归修复（canonical job-factory + 错误码 + ZIP 加固 + 契约测试）；真实 PG 链路验证通过；npm test 143 pass。
 
 ## Last Updated
 2026-10-15

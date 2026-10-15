@@ -15,6 +15,7 @@ __all__ = [
     "parser",
     "statistics",
     "review_workbook",
+    "control_log",
     "status",
     "ooxml_package",
     "ooxml_threaded_comments",

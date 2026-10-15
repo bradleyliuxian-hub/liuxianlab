@@ -57,10 +57,10 @@
   {
     "slug": "excel-review",
     "name": "Excel 复核意见",
-    "description": "提取传统备注与 Microsoft 365 新版批注，生成可 F5 定位的复核清单与 Dashboard。",
+    "description": "提取传统备注与 Microsoft 365 新版批注，生成可 F5 定位的复核清单与 Dashboard；支持多文件汇总 Control Log。",
     "category": "数据",
     "status": "ready",
-    "version": "v1.3.1",
+    "version": "v1.4.2",
     "icon": "VRF",
     "keywords": [
       "excel",
@@ -75,10 +75,10 @@
   {
     "slug": "excel-decimal-check",
     "name": "Excel 小数检查",
-    "description": "检查并修正超过两位小数的单元格，导出问题清单与 Excel F5 定位地址。",
+    "description": "检查并修正超过两位小数的单元格；支持网页内定位复核，导出修正文件与问题清单。",
     "category": "数据",
     "status": "ready",
-    "version": "v1.0.2",
+    "version": "v1.2.0",
     "icon": "2DP",
     "keywords": [
       "excel",
@@ -96,10 +96,10 @@
   {
     "slug": "excel-hardcode-check",
     "name": "Excel 死数检查",
-    "description": "识别公式被固定值替代、引用被固定数字替代及公式中额外加入的死数，输出检查报告。",
+    "description": "识别公式被固定值替代、引用被固定数字替代及公式中额外加入的死数；支持网页内定位复核、检查报告与标黄对比文件。",
     "category": "数据",
     "status": "ready",
-    "version": "v1.0.0",
+    "version": "v1.2.6",
     "icon": "HCD",
     "keywords": [
       "excel",

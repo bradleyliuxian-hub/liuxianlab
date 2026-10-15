@@ -4,17 +4,20 @@
  * Excel Review Assistant - HTTP routes.
  *
  *   POST   /api/excel-reviews                  upload source .xlsx -> extract
+ *   POST   /api/excel-reviews/archive          upload .zip -> one job per .xlsx
  *   GET    /api/excel-reviews                  history for current owner
  *   GET    /api/excel-reviews/meta             capabilities
  *   GET    /api/excel-reviews/:id              status / progress
  *   GET    /api/excel-reviews/:id/review-file  download review.xlsx
  *   DELETE /api/excel-reviews/:id              delete job + files
  *
- * There is no reply upload and no automatic write-back / final.xlsx.
+ * Single .xlsx and archive members are created by the SAME canonical factory
+ * (job-factory.createExcelReviewJobFromBuffer). There is no reply upload and
+ * no automatic write-back / final.xlsx.
+ *
  * Auth + same-origin are enforced by the parent app.use() in server.js.
  */
 
-const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const express = require('express');
@@ -22,14 +25,32 @@ const multer = require('multer');
 
 const repository = require('./repository');
 const { createExcelReviewRunner } = require('./parse-runner');
+const {
+  createExcelReviewJobFromBuffer,
+  looksLikeZipBuffer,
+  JobCreationError
+} = require('./job-factory');
+const fflate = require('../../private/vendor/fflate/fflate.umd.js');
 
 const MAX_FILE_SIZE = 20 * 1024 * 1024;
+const MAX_ARCHIVE_SIZE = 50 * 1024 * 1024;             // uploaded .zip
+const MAX_ARCHIVE_FILES = 50;                          // .xlsx extracted per archive
+const MAX_ARCHIVE_ENTRY_SIZE = MAX_FILE_SIZE;          // single .xlsx member
+const MAX_ARCHIVE_TOTAL_UNCOMPRESSED = 200 * 1024 * 1024; // zip-bomb guard
 
 const ACCEPTED_MIME = new Set([
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-excel',
   'application/octet-stream',
   'application/zip',
   'application/x-zip-compressed'
+]);
+
+const ARCHIVE_MIME = new Set([
+  'application/zip',
+  'application/x-zip-compressed',
+  'application/octet-stream',
+  'multipart/x-zip'
 ]);
 
 function validJobId(value) {
@@ -49,16 +70,50 @@ function isXlsxName(name) {
   return path.extname(String(name || '')).toLowerCase() === '.xlsx';
 }
 
-function looksLikeZip(filePath) {
-  const fd = fs.openSync(filePath, 'r');
+function isArchiveName(name) {
+  return path.extname(String(name || '')).toLowerCase() === '.zip';
+}
+
+// Archive members: real .xlsx only; drop directories, hidden/AppleDouble,
+// non-xlsx, and anything that looks like a traversal attempt.
+function isXlsxEntryName(name) {
+  const normalized = String(name || '').replace(/\\/g, '/');
+  if (!normalized || normalized.endsWith('/')) return false;
+  if (normalized.startsWith('/') || normalized.includes('..')) return false;
+  if (normalized.startsWith('__MACOSX/')) return false;
+  const base = path.basename(normalized);
+  if (!base || base.startsWith('.')) return false;
+  return /\.xlsx$/i.test(base);
+}
+
+/*
+ * Safely extract .xlsx entries from an uploaded zip. Entry names are never
+ * used as filesystem paths (each job dir is a fresh UUID), so zip-slip is
+ * impossible by construction; the checks are defence + noise filtering.
+ * A cumulative uncompressed-size cap guards against zip bombs.
+ */
+function extractXlsxEntries(buffer) {
+  let files;
   try {
-    const buffer = Buffer.alloc(4);
-    const bytes = fs.readSync(fd, buffer, 0, 4, 0);
-    if (bytes < 4) return false;
-    return buffer[0] === 0x50 && buffer[1] === 0x4b && [0x03, 0x05, 0x07].includes(buffer[2]);
-  } finally {
-    fs.closeSync(fd);
+    files = fflate.unzipSync(new Uint8Array(buffer));
+  } catch (_) {
+    const error = new Error('无法解压该压缩包，请确认是有效的 .zip 文件。');
+    error.code = 'INVALID_ARCHIVE';
+    throw error;
   }
+  const entries = [];
+  let total = 0;
+  Object.keys(files).forEach((name) => {
+    if (!isXlsxEntryName(name)) return;
+    const data = files[name];
+    if (!data || data.length === 0) return;
+    if (data.length > MAX_ARCHIVE_ENTRY_SIZE) return;
+    total += data.length;
+    if (total > MAX_ARCHIVE_TOTAL_UNCOMPRESSED) return;
+    entries.push({ name: String(name).replace(/\\/g, '/'), base: path.basename(name), data });
+  });
+  entries.sort((a, b) => (a.name < b.name ? -1 : 1));
+  return entries.slice(0, MAX_ARCHIVE_FILES);
 }
 
 function downloadBase(name) {
@@ -98,18 +153,9 @@ function createExcelReviewRouter(options = {}) {
   runner.recover();
 
   function jobDir(jobId) {
-    return path.join(storageRoot, jobId);
+    return path.join(storageRoot, String(jobId));
   }
 
-  function relativePath(absolutePath) {
-    return path.relative(root, absolutePath).split(path.sep).join('/');
-  }
-
-  /*
-   * Read the per-job statistics from extracted.json (written by the
-   * Python worker). This keeps web/API stats and the review workbook
-   * Dashboard on a single extraction result - no DB schema needed.
-   */
   function readStatistics(jobId) {
     try {
       const file = path.join(jobDir(jobId), 'extracted.json');
@@ -121,97 +167,140 @@ function createExcelReviewRouter(options = {}) {
     }
   }
 
-  const storage = multer.diskStorage({
-    destination(req, _file, callback) {
-      callback(null, req.excelReviewDir);
-    },
-    filename(req, _file, callback) {
-      callback(null, req.excelReviewFilename);
-    }
-  });
-
-  const upload = multer({
-    storage,
+  // Memory storage: the canonical factory owns the job directory.
+  const uploadXlsx = multer({
+    storage: multer.memoryStorage(),
     limits: { files: 1, fields: 8, fileSize: MAX_FILE_SIZE },
     fileFilter(_req, file, callback) {
-      const extension = path.extname(file.originalname || '').toLowerCase();
-      if (extension !== '.xlsx' || !ACCEPTED_MIME.has(file.mimetype)) {
-        callback(new Error('仅支持 .xlsx 文件。'));
+      if (!isXlsxName(file.originalname) || !ACCEPTED_MIME.has(file.mimetype)) {
+        const error = new Error('仅支持 .xlsx 文件。');
+        error.code = 'INVALID_FILE_TYPE';
+        callback(error);
         return;
       }
       callback(null, true);
     }
   });
 
-  function receiveFile(req, res, next) {
-    upload.single('file')(req, res, (error) => {
-      if (!error) return next();
-      if (error.code === 'LIMIT_FILE_SIZE') {
-        return res.status(413).json({ ok: false, message: 'Excel 文件不能超过 20 MB。' });
+  const uploadZip = multer({
+    storage: multer.memoryStorage(),
+    limits: { files: 1, fields: 8, fileSize: MAX_ARCHIVE_SIZE },
+    fileFilter(_req, file, callback) {
+      if (!isArchiveName(file.originalname) || !ARCHIVE_MIME.has(file.mimetype)) {
+        const error = new Error('仅支持 .zip 压缩包。');
+        error.code = 'INVALID_FILE_TYPE';
+        callback(error);
+        return;
       }
-      return res.status(400).json({ ok: false, message: error.message || '文件上传失败。' });
-    });
-  }
+      callback(null, true);
+    }
+  });
 
-  function prepareSourceUpload(req, _res, next) {
-    req.excelReviewId = crypto.randomUUID();
-    req.excelReviewDir = jobDir(req.excelReviewId);
-    req.excelReviewFilename = 'source.xlsx';
-    fs.mkdirSync(req.excelReviewDir, { recursive: true, mode: 0o700 });
-    next();
-  }
-
-  router.post('/', prepareSourceUpload, receiveFile, async (req, res) => {
-    const jobId = req.excelReviewId;
-    const dir = req.excelReviewDir;
-
-    try {
-      if (!req.file) {
-        fs.rmSync(dir, { recursive: true, force: true });
-        return res.status(400).json({ ok: false, message: '请选择一个 .xlsx 文件。' });
-      }
-
-      const sourcePath = path.join(dir, 'source.xlsx');
-      if (!looksLikeZip(sourcePath)) {
-        fs.rmSync(dir, { recursive: true, force: true });
-        return res.status(400).json({ ok: false, message: '文件内容不是有效的 .xlsx 工作簿。' });
-      }
-
-      const owner = ownerUsername(req);
-      if (!owner) {
-        fs.rmSync(dir, { recursive: true, force: true });
-        return res.status(401).json({ ok: false, message: '请先登录。' });
-      }
-
-      const originalFilename = safeOriginalName(req.file.originalname);
-
-      // The Python worker reads this to populate the "Source File" column.
-      fs.writeFileSync(
-        path.join(dir, 'meta.json'),
-        `${JSON.stringify({ originalFilename })}\n`,
-        { mode: 0o600 }
-      );
-
-      const job = await repository.createJob({
-        id: jobId,
-        ownerUsername: owner,
-        originalFilename,
-        status: 'queued',
-        phase: 'extract',
-        progress: 0,
-        progressMessage: '文件已上传，等待处理…',
-        sourcePath: relativePath(sourcePath)
+  function receive(uploader, tooLargeMessage) {
+    return (req, res, next) => {
+      uploader.single('file')(req, res, (error) => {
+        if (!error) return next();
+        if (error.code === 'LIMIT_FILE_SIZE') {
+          return res.status(413).json({ ok: false, code: 'UPLOAD_TOO_LARGE', message: tooLargeMessage });
+        }
+        const code = error.code === 'INVALID_FILE_TYPE' ? 'INVALID_FILE_TYPE' : 'UPLOAD_REJECTED';
+        return res.status(400).json({ ok: false, code, message: error.message || '文件上传失败。' });
       });
+    };
+  }
 
-      runner.enqueue(jobId);
+  function sendJobError(res, error, fallbackMessage) {
+    if (error instanceof JobCreationError) {
+      return res.status(error.status).json({ ok: false, code: error.code, message: error.message });
+    }
+    console.error('[excel-review]', error);
+    return res.status(500).json({ ok: false, code: 'INTERNAL_ERROR', message: fallbackMessage || '服务器错误，请稍后重试。' });
+  }
 
-      console.log('[excel-review]', 'job queued:', jobId, originalFilename);
+  router.post('/', receive(uploadXlsx, 'Excel 文件不能超过 20 MB。'), async (req, res) => {
+    if (!req.file || !req.file.buffer) {
+      return res.status(400).json({ ok: false, code: 'NO_FILE', message: '请选择一个 .xlsx 文件。' });
+    }
+    const owner = ownerUsername(req);
+    if (!owner) {
+      return res.status(401).json({ ok: false, code: 'UNAUTHENTICATED', message: '请先登录。' });
+    }
+    try {
+      const job = await createExcelReviewJobFromBuffer({
+        repository,
+        runner,
+        root,
+        storageRoot,
+        ownerUsername: owner,
+        originalFilename: safeOriginalName(req.file.originalname),
+        buffer: req.file.buffer,
+        fromArchive: false
+      });
+      console.log('[excel-review]', 'job queued:', job.id, job.originalFilename);
       return res.status(202).json({ ok: true, job: publicJob(job) });
     } catch (error) {
-      console.error('[excel-review upload]', error);
-      fs.rmSync(dir, { recursive: true, force: true });
-      return res.status(500).json({ ok: false, message: '无法创建 Excel 复核任务。' });
+      return sendJobError(res, error, '无法创建 Excel 复核任务。');
     }
+  });
+
+  router.post('/archive', receive(uploadZip, '压缩包不能超过 50 MB。'), async (req, res) => {
+    if (!req.file || !req.file.buffer) {
+      return res.status(400).json({ ok: false, code: 'NO_FILE', message: '请选择一个 .zip 压缩包。' });
+    }
+    const owner = ownerUsername(req);
+    if (!owner) {
+      return res.status(401).json({ ok: false, code: 'UNAUTHENTICATED', message: '请先登录。' });
+    }
+    if (!looksLikeZipBuffer(req.file.buffer)) {
+      return res.status(400).json({ ok: false, code: 'INVALID_ARCHIVE', message: '文件内容不是有效的 .zip 压缩包。' });
+    }
+
+    let entries;
+    try {
+      entries = extractXlsxEntries(req.file.buffer);
+    } catch (error) {
+      return res.status(400).json({ ok: false, code: error.code || 'INVALID_ARCHIVE', message: error.message });
+    }
+    if (!entries.length) {
+      return res.status(400).json({ ok: false, code: 'EMPTY_ARCHIVE', message: '压缩包内没有找到 .xlsx 文件。' });
+    }
+
+    const jobs = [];
+    const failures = [];
+    for (const entry of entries) {
+      try {
+        const job = await createExcelReviewJobFromBuffer({
+          repository,
+          runner,
+          root,
+          storageRoot,
+          ownerUsername: owner,
+          originalFilename: safeOriginalName(entry.base),
+          buffer: entry.data,
+          fromArchive: true
+        });
+        jobs.push(publicJob(job));
+      } catch (error) {
+        failures.push({
+          name: entry.name,
+          code: error.code || 'JOB_CREATE_FAILED',
+          message: error instanceof JobCreationError ? error.message : '无法创建任务。'
+        });
+      }
+    }
+
+    if (!jobs.length) {
+      const dbDown = failures.some((f) => f.code === 'DB_UNAVAILABLE');
+      return res.status(dbDown ? 503 : 400).json({
+        ok: false,
+        code: dbDown ? 'DB_UNAVAILABLE' : 'NO_VALID_XLSX',
+        message: dbDown ? '数据库暂时不可用，请稍后重试。' : '压缩包内没有可处理的 .xlsx 文件。',
+        failures
+      });
+    }
+
+    console.log('[excel-review archive]', 'created', jobs.length, 'jobs; failed', failures.length);
+    return res.status(202).json({ ok: true, jobs, failures, count: jobs.length });
   });
 
   router.get('/', async (req, res) => {
@@ -221,7 +310,7 @@ function createExcelReviewRouter(options = {}) {
       return res.json({ ok: true, jobs: jobs.map(publicJob) });
     } catch (error) {
       console.error('[excel-review history]', error);
-      return res.status(500).json({ ok: false, message: '无法读取历史记录。' });
+      return res.status(500).json({ ok: false, code: 'DB_UNAVAILABLE', message: '无法读取历史记录。' });
     }
   });
 
@@ -230,9 +319,13 @@ function createExcelReviewRouter(options = {}) {
     res.json({
       ok: true,
       accepted: ['.xlsx'],
+      archiveAccepted: ['.zip'],
       maxFileSize: MAX_FILE_SIZE,
+      maxArchiveSize: MAX_ARCHIVE_SIZE,
+      maxArchiveFiles: MAX_ARCHIVE_FILES,
       maxConcurrentJobs: maxConcurrent,
       capabilities: {
+        archiveUpload: true,
         legacyComments: true,
         threadedCommentsRead: true,
         reviewWorkbook: true,
@@ -252,10 +345,10 @@ function createExcelReviewRouter(options = {}) {
   router.get('/:id', async (req, res) => {
     try {
       if (!validJobId(req.params.id)) {
-        return res.status(400).json({ ok: false, message: '无效的任务编号。' });
+        return res.status(400).json({ ok: false, code: 'INVALID_ID', message: '无效的任务编号。' });
       }
       const job = await repository.getJobForOwner(req.params.id, ownerUsername(req));
-      if (!job) return res.status(404).json({ ok: false, message: '任务不存在。' });
+      if (!job) return res.status(404).json({ ok: false, code: 'NOT_FOUND', message: '任务不存在。' });
       const payload = publicJob(job);
       const stats = readStatistics(job.id);
       if (stats) payload.stats = stats;
@@ -263,43 +356,43 @@ function createExcelReviewRouter(options = {}) {
       return res.json({ ok: true, job: payload });
     } catch (error) {
       console.error('[excel-review status]', error);
-      return res.status(500).json({ ok: false, message: '无法读取任务状态。' });
+      return res.status(500).json({ ok: false, code: 'DB_UNAVAILABLE', message: '无法读取任务状态。' });
     }
   });
 
   router.get('/:id/review-file', async (req, res) => {
     try {
       if (!validJobId(req.params.id)) {
-        return res.status(400).json({ ok: false, message: '无效的任务编号。' });
+        return res.status(400).json({ ok: false, code: 'INVALID_ID', message: '无效的任务编号。' });
       }
       const job = await repository.getJobForOwner(req.params.id, ownerUsername(req));
-      if (!job) return res.status(404).json({ ok: false, message: '任务不存在。' });
+      if (!job) return res.status(404).json({ ok: false, code: 'NOT_FOUND', message: '任务不存在。' });
       if (job.status !== 'review_ready' && job.status !== 'completed') {
-        return res.status(409).json({ ok: false, message: '复核文件尚未生成。' });
+        return res.status(409).json({ ok: false, code: 'NOT_READY', message: '复核文件尚未生成。' });
       }
       const file = path.join(jobDir(job.id), 'review.xlsx');
       if (!fs.existsSync(file)) {
-        return res.status(404).json({ ok: false, message: '复核文件不存在。' });
+        return res.status(404).json({ ok: false, code: 'FILE_MISSING', message: '复核文件不存在。' });
       }
       res.set('Cache-Control', 'private, no-store');
       return res.download(file, `${downloadBase(job.originalFilename)}-review.xlsx`);
     } catch (error) {
       console.error('[excel-review review-file]', error);
-      return res.status(500).json({ ok: false, message: '无法下载复核文件。' });
+      return res.status(500).json({ ok: false, code: 'INTERNAL_ERROR', message: '无法下载复核文件。' });
     }
   });
 
   router.delete('/:id', async (req, res) => {
     try {
       if (!validJobId(req.params.id)) {
-        return res.status(400).json({ ok: false, message: '无效的任务编号。' });
+        return res.status(400).json({ ok: false, code: 'INVALID_ID', message: '无效的任务编号。' });
       }
       const owner = ownerUsername(req);
       const job = await repository.getJobForOwner(req.params.id, owner);
-      if (!job) return res.status(404).json({ ok: false, message: '任务不存在。' });
+      if (!job) return res.status(404).json({ ok: false, code: 'NOT_FOUND', message: '任务不存在。' });
 
       if (job.status === 'processing') {
-        return res.status(409).json({ ok: false, message: '任务仍在处理中，暂时无法删除。' });
+        return res.status(409).json({ ok: false, code: 'BUSY', message: '任务仍在处理中，暂时无法删除。' });
       }
 
       await repository.deleteJobForOwner(job.id, owner);
@@ -307,11 +400,17 @@ function createExcelReviewRouter(options = {}) {
       return res.json({ ok: true, id: job.id });
     } catch (error) {
       console.error('[excel-review delete]', error);
-      return res.status(500).json({ ok: false, message: '删除任务失败。' });
+      return res.status(500).json({ ok: false, code: 'INTERNAL_ERROR', message: '删除任务失败。' });
     }
   });
 
   return router;
 }
 
-module.exports = { createExcelReviewRouter };
+module.exports = {
+  createExcelReviewRouter,
+  // exported for tests / reuse
+  extractXlsxEntries,
+  looksLikeZipBuffer,
+  isXlsxEntryName
+};

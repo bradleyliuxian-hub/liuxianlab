@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="description" content="Liuxian Lab Excel 死数检查工具" />
   <title>Excel 死数检查 · Liuxian Lab</title>
-  <link rel="stylesheet" href="/app/tools/excel-hardcode-check/styles.css?v=1.0.0" />
+  <link rel="stylesheet" href="/app/tools/excel-hardcode-check/styles.css?v=1.2.6" />
 </head>
 <body>
   <div class="page-shell">
@@ -16,7 +16,7 @@
         <div><strong>Excel 死数检查</strong><small>Liuxian Lab / Hardcode Check</small></div>
       </div>
       <div class="header-actions">
-        <span class="version-chip" title="当前工具版本">v1.0.0</span>
+        <span class="version-chip" title="当前工具版本">v1.2.6</span>
         <span class="private-badge"><i></i>浏览器本地处理</span>
         <button class="ghost-button" id="newJobButton" type="button">重新开始</button>
       </div>
@@ -82,43 +82,59 @@
         </div>
 
         <section class="download-card">
-          <div class="download-head"><span class="step-no">03</span><div><h2>下载报告</h2><p>单独生成报告文件，不修改源工作簿。</p></div></div>
+          <div class="download-head"><span class="step-no">03</span><div><h2>下载结果</h2><p>两个文件相互独立，各自单独生成，都不会修改你的原始工作簿。</p></div></div>
           <div class="download-grid">
             <div class="download-item">
               <button class="primary-button download-button" id="downloadReportButton" type="button">下载死数检查报告.xlsx <span>↓</span></button>
-              <p>包含 <strong>Dashboard</strong> 与 <strong>检查结果</strong> 两张表，每条记录带 Excel F5 定位地址。</p>
+              <p>包含 <strong>Dashboard</strong> 与 <strong>检查结果</strong> 两张表，可查看等级、规则、公式、固定数值、判断依据及 Excel Address（F5 定位）。</p>
+            </div>
+            <div class="download-item">
+              <button class="primary-button download-button download-button--compare" id="downloadHighlightButton" type="button">下载标黄对比文件.xlsx <span>↓</span></button>
+              <p>在原工作簿副本中，仅对疑似问题单元格添加黄色填充，用于与原文件人工对照。<small>公式、外部链接及工作簿结构保持不变。</small></p>
+              <p class="download-status" id="highlightStatus" hidden></p>
             </div>
           </div>
         </section>
 
-        <section class="issues-card">
-          <div class="card-heading">
-            <div><span class="step-no">04</span><div><h2>检查结果</h2><p>只列出疑似问题，正常公式不显示。</p></div></div>
-            <span class="profile-chip" id="issueCountChip">0 条</span>
-          </div>
-
-          <div class="filter-row">
-            <select id="sheetFilter"><option value="">全部工作表</option></select>
-            <div class="severity-tabs" id="severityTabs">
-              <button class="severity-tab active" type="button" data-severity="">全部</button>
-              <button class="severity-tab" type="button" data-severity="HIGH">高风险</button>
-              <button class="severity-tab" type="button" data-severity="SUSPICIOUS">可疑</button>
-              <button class="severity-tab" type="button" data-severity="HARDCODE_NOTICE">硬编码提示</button>
+        <section class="review-shell" id="reviewShell">
+          <div class="review-pane review-pane--list issues-card">
+            <div class="card-heading">
+              <div><span class="step-no">04</span><div><h2>检查结果</h2><p>点击任意问题定位到右侧 Excel。</p></div></div>
+              <span class="profile-chip" id="issueCountChip">0 条</span>
             </div>
-            <span id="filterCountLabel">0 条</span>
+
+            <div class="filter-row">
+              <select id="sheetFilter"><option value="">全部工作表</option></select>
+              <div class="severity-tabs" id="severityTabs">
+                <button class="severity-tab active" type="button" data-filter="">全部</button>
+                <button class="severity-tab" type="button" data-filter="HIGH">高风险</button>
+                <button class="severity-tab" type="button" data-filter="SUSPICIOUS">可疑</button>
+                <button class="severity-tab" type="button" data-filter="HARDCODE_NOTICE">硬编码提示</button>
+                <button class="severity-tab" type="button" data-filter="ROUNDING_PLUG">人工尾差</button>
+              </div>
+              <span id="filterCountLabel">0 条</span>
+            </div>
+
+            <div class="issue-list" id="issueList"></div>
+
+            <div class="empty-state" id="issuesEmpty" hidden>
+              <span aria-hidden="true">✓</span>
+              <h3>未发现疑似死数</h3>
+              <p>没有命中当前规则。你仍可下载报告（内容为表头）。</p>
+            </div>
+
+            <div class="pagination" id="pagination" hidden>
+              <button id="loadMoreButton" type="button">显示更多</button>
+              <span id="pageLabel"></span>
+            </div>
           </div>
 
-          <div class="issue-list" id="issueList"></div>
+          <div class="review-splitter" id="reviewSplitter" role="separator" aria-orientation="vertical" tabindex="0" aria-label="拖动调整问题列表宽度"></div>
 
-          <div class="empty-state" id="issuesEmpty" hidden>
-            <span aria-hidden="true">✓</span>
-            <h3>未发现疑似死数</h3>
-            <p>没有命中当前规则。你仍可下载报告（内容为表头）。</p>
-          </div>
-
-          <div class="pagination" id="pagination" hidden>
-            <button id="loadMoreButton" type="button">显示更多</button>
-            <span id="pageLabel"></span>
+          <div class="review-pane review-pane--viewer">
+            <div class="viewer-card">
+              <div id="excelViewer" class="excel-viewer"></div>
+            </div>
           </div>
         </section>
       </section>
@@ -131,21 +147,33 @@
           <h2>版本迭代</h2>
         </div>
         <ul class="changelog-list">
+          <li class="changelog-item"><span class="changelog-ver">v1.2.6</span><p class="changelog-text"><strong>网格铺满视口</strong>：聚焦模式不再只显示 ±邻域小窗，改为按视口宽高渲染足够行列填满卡片；完整工作表模式随滚动持续扩展虚拟行列，并监听容器尺寸变化（ResizeObserver/分栏拖动）自动补足；空白行列照常显示行号列头。</p></li>
+          <li class="changelog-item"><span class="changelog-ver">v1.2.5</span><p class="changelog-text"><strong>可浏览范围扩展</strong>：Viewer 不再止步于 used range，自动在数据下方/右侧追加空白网格（+100 行 / +20 列，并按视口高度/宽度动态补足），定位靠边单元格也能居中；仍为虚拟滚动，空白网格不写入 workbook。</p></li>
+          <li class="changelog-item"><span class="changelog-ver">v1.2.4</span><p class="changelog-text"><strong>颜色语义区分</strong>：问题单元格 = 浅黄（随“显示问题标记”开关）；当前选中/定位单元格 = 淡蓝 + 蓝框；选中且为问题 = 淡蓝 + 蓝框 + 黄色角标，二者清晰可辨。</p></li>
+          <li class="changelog-item"><span class="changelog-ver">v1.2.3</span><p class="changelog-text"><strong>定位与自由滚动解耦</strong>：定位/上一个/下一个只在动作发生时把镜头移动到目标一次，之后可自由滚动、拖动、点选，不再被拉回；新增「回到当前问题」按钮与可用的名称框定位。</p></li>
+          <li class="changelog-item"><span class="changelog-ver">v1.2.2</span><p class="changelog-text"><strong>两栏工作台</strong>：删除右侧详情栏，改为「问题列表 + Excel Viewer」两栏，页面接近全宽；问题卡片补充异常常量与核心判断依据；修复左右拖动分隔条，宽度实时生效并保持（可记忆）。</p></li>
+          <li class="changelog-item"><span class="changelog-ver">v1.2.1</span><p class="changelog-text"><strong>复核工作台布局</strong>：Excel Viewer 成为页面主体（更高更宽，独立滚动），Viewer 与详情间支持拖动调宽；问题详情精简为必要字段并提供「更多详情」折叠；问题卡片收紧，一屏可见更多问题。</p></li>
+          <li class="changelog-item"><span class="changelog-ver">v1.2.0</span><p class="changelog-text"><strong>网页内定位复核</strong>：新增只读 Excel Viewer，点击问题清单即可切换 Sheet、定位单元格并显示公式/数值与问题依据；支持问题黄色标记开关、问题聚焦与完整工作表（虚拟滚动）、上一个 / 下一个问题。工作簿只读，不修改任何数据。</p></li>
+          <li class="changelog-item"><span class="changelog-ver">v1.1.0</span><p class="changelog-text"><strong>标黄对比文件</strong>：新增第二个独立下载按钮，基于原始上传文件生成副本，仅对疑似问题单元格添加浅黄填充，供与原文件人工对照。采用 OOXML ZIP 最小补丁，公式、外部链接、命名范围、隐藏状态、图表等保持原样；原文件不被修改。</p></li>
           <li class="changelog-item"><span class="changelog-ver">v1.0.0</span><p class="changelog-text"><strong>基础能力</strong>：浏览器本地扫描 <code>.xlsx</code>，通过相邻公式的相对引用模式识别被固定值打断的公式序列、被固定值替代的引用与额外加入的死数；输出 HIGH / 可疑 / 硬编码提示分级与独立检查报告，不修改源文件。</p></li>
         </ul>
       </div>
     </section>
 
-    <footer class="tool-footer"><span>Liuxian Lab</span><span>Excel Hardcode Check v1.0.0</span></footer>
+    <footer class="tool-footer"><span>Liuxian Lab</span><span>Excel Hardcode Check v1.2.6</span></footer>
   </div>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <script src="/app/vendor/xlsx/xlsx.full.min.js?v=0.18.5"></script>
-  <script src="/app/tools/excel-hardcode-check/formula-parser.js?v=1.0.0"></script>
-  <script src="/app/tools/excel-hardcode-check/formula-pattern.js?v=1.0.0"></script>
-  <script src="/app/tools/excel-hardcode-check/hardcode-core.js?v=1.0.0"></script>
-  <script src="/app/tools/excel-hardcode-check/hardcode-workbook.js?v=1.0.0"></script>
-  <script src="/app/tools/excel-hardcode-check/script.js?v=1.0.0"></script>
+  <script src="/app/vendor/fflate/fflate.umd.js?v=0.8.2"></script>
+  <script src="/app/tools/excel-hardcode-check/formula-parser.js?v=1.2.6"></script>
+  <script src="/app/tools/excel-hardcode-check/formula-pattern.js?v=1.2.6"></script>
+  <script src="/app/tools/excel-hardcode-check/hardcode-core.js?v=1.2.6"></script>
+  <script src="/app/tools/excel-hardcode-check/hardcode-workbook.js?v=1.2.6"></script>
+  <script src="/app/shared/excel-highlight/ooxml-highlight.js?v=1.2.6"></script>
+  <script src="/app/shared/excel-viewer/viewer-core.js?v=1.2.6"></script>
+  <script src="/app/shared/excel-viewer/excel-viewer.js?v=1.2.6"></script>
+  <script src="/app/tools/excel-hardcode-check/script.js?v=1.2.6"></script>
 </body>
 </html>

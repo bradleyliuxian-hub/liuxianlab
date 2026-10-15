@@ -3,8 +3,8 @@
 > 工具：Excel Review Assistant
 > 入口：`/tools/excel-review`
 > 产品定位：**只读抽取** Excel 批注并生成可 F5 定位的复核清单；不回写原文件。
-> 当前 UI 版本：`v1.3.0`（工具卡片 badge：Beta）
-> 最近更新：2026-10-14
+> 当前 UI 版本：`v1.4.2`（工具卡片 badge：Beta）
+> 最近更新：2026-10-15
 
 本文件记录该工具的**版本功能**与**版本修改**，供开发者（AI 接手）与使用者查阅。
 详细的分版本实现报告见仓库 `docs/excel-review-*.md`。
@@ -28,6 +28,47 @@ Address（F5 / Ctrl+G 可跳转）与 Source Reference。
 ---
 
 ## 2. 版本历史（功能 + 修改）
+
+### V1.4.2（2026-10-15）— 上传主链路 Regression Fix（单 XLSX / ZIP）
+
+**真实环境定位（2026-10-15 复现）**：`.env` 的 `DATABASE_URL` = `127.0.0.1:5432/liuxianlab`，但本机 **PostgreSQL 未运行**（端口 5432 关闭；PostgreSQL 数据目录下的 `postmaster.pid` 为上次非正常关机遗留的**陈旧锁文件**，其 PID 已被无关进程复用）。→ `repository.createJob` 连接被拒 → 单文件 500 / ZIP 400。
+
+**处理**：删除陈旧 `postmaster.pid` → 启动 PostgreSQL 16 → 用应用凭据应用 `002_excel_review_control_logs.sql`（此前只应用过 001）→ 重启开发服务器加载修复代码。验证：`repository.createJob` 往返成功；dev 日志不再出现 `ECONNREFUSED 5432`。
+
+**根因（同一个）**：`repository.createJob` 无法连接 PostgreSQL（本机 `ECONNREFUSED 127.0.0.1:5432`）。单文件 `POST /api/excel-reviews` 命中 catch → 500 `无法创建 Excel 复核任务。`；ZIP 路由对每个成员同样失败并 catch → 400 `压缩包内没有可处理的 .xlsx 文件。`。HTTP/Multer/校验/存储/Python worker 链路本身未回归（用真实 PG + 真实文件验证：单文件、多文件、ZIP 均成功）。
+
+- **Canonical Job 创建**：新增 `server/excel-review/job-factory.js#createExcelReviewJobFromBuffer()`，**唯一**的建 Job 实现；单文件上传与 ZIP 每个 `.xlsx` 成员都调用它（`routes.js` 改为内存上传 → factory 负责目录/`source.xlsx`/`meta.json`/建库/入队）。
+- **精确错误码/信息**：`UNAUTHENTICATED / INVALID_XLSX / INVALID_FILE_TYPE / UPLOAD_TOO_LARGE / STORAGE_WRITE_FAILED / DB_UNAVAILABLE(503) / JOB_CREATE_FAILED / WORKER_ENQUEUE_FAILED`；前端按 code 映射友好文案（数据库不可用不再伪装成“无法创建任务”）。
+- **无 ghost job**：建库前失败 → 清理目录；入队失败 → 标记该行为 failed；ZIP 单成员失败隔离、不入 Control Log。
+- **ZIP 加固**：PK 头仅表示“是 ZIP 容器”，**archive vs workbook 由路由 + 扩展名决定**（`.xlsx` 也是 PK，绝不按 magic 分流）；新增累计解压上限 `MAX_ARCHIVE_TOTAL_UNCOMPRESSED=200MB` 防 zip 炸弹。
+- **测试**：`tests/excel-review/upload-pipeline.test.js`（stub DB 锁定契约：单文件 202+job.id、`.xlsx` 不被当作 archive、ZIP→每成员一个 Job、空包 400、**DB 故障→503 DB_UNAVAILABLE**、成员失败隔离）；`npm test` 143 pass。
+
+
+### V1.4.1（2026-10-15）— 压缩包（.zip）上传
+
+- 上传框可接受一个 `.zip`（内含多个 `.xlsx`）：`POST /api/excel-reviews/archive` 服务端用 vendored `fflate` **安全解压**，为每个 `.xlsx` 建立**独立 Job**（仍复用现有校验/存储/worker/owner scope），返回 jobs 列表；前端随后正常轮询，可继续汇总 Control Log。
+- 安全：入口名不用作文件系统路径（每个 Job 目录是新 UUID，天然防 zip-slip）；额外过滤目录 / `__MACOSX` / 隐藏 / `._` / 非 `.xlsx` / `..` / 绝对路径；单包上限 50MB、成员上限 50、单成员 ≤20MB。
+- 前端：多选支持 `.xlsx` 与 `.zip` 混选；zip 会展开为多个任务行。能力在 `/meta` 暴露 `archiveUpload`/`archiveAccepted`/`maxArchiveSize`/`maxArchiveFiles`。
+- 新增测试：`tests/excel-review/archive.test.js`（PK 头、入口名过滤、zip-slip 拒绝、非 zip 拒绝、成员上限）。
+
+
+### V1.4（2026-10-15）— 多文件 Review Control Log
+
+**新增上层汇总对象 Control Log**，单文件 Job 架构不变（1 Excel = 1 Job）。
+
+- **批量上传**：上传框支持多选 `.xlsx`；每个文件仍走原有校验 → storage → 独立 Job → worker（不创建“多文件 Job”）。per-file 状态与错误隔离（部分失败不影响其它文件）。
+- **历史多选**：历史记录可勾选多个已完成任务（或批量上传完成后），点击「创建 Control Log」。
+- **统一生成路径**：批量上传与历史多选最终都 `POST /api/excel-review-control-logs { jobIds }`，只有一套生成逻辑。
+- **数据模型**：新增 `excel_review_control_logs` 与 `excel_review_control_log_jobs`（relation，`PRIMARY KEY(control_log_id, excel_review_job_id)`，job id 为普通 UUID，不 FK/不级联 → 删除源 Job 不影响 Control Log）。migration：`server/excel-review/migrations/002_excel_review_control_logs.sql`（additive/幂等/BEGIN-COMMIT）。
+- **独立快照**：创建时 Python worker 读取各 Job 的 `extracted.json`，写出 `storage/excel-review-control-logs/<id>/{control_log.json, control_log.xlsx}`；此后不依赖源 Job artifacts（删源 Job 后仍可下载）。
+- **身份 / 去重**：Control Log 用 `control_log_id + control_item_id` 作为机器身份，`control_no=CL-0001...` 仅显示；来源靠 `source_job_id + source_item_id`（`source_filename`/sheet/cell 不作唯一身份）。同一 Job / 同一 source item 只入一次（DB 唯一约束 + service 与 build 双重防御去重）。
+- **统计口径沿用 V1.3**：Question = legacy note + threaded root；threaded reply 不计为问题（`statistics.py` 复用）。Author = 批注作者，空 → 未知作者。
+- **Control Log 工作簿**：`Dashboard` + `Control Log` + `Source Files` + 隐藏 `_Mapping`；可见表无 worksheet protection；Control Log 表转为 Excel Table（`ControlLogTable`/`SourceFilesTable`），Dashboard 用结构化引用 + IFERROR。
+- **Control Log 列**：Control No. / Source File / Sheet / Cell / Excel Address / Type / Original Value / Review Issue / Author / Reply / Status / Owner / Priority / Due Date / Notes / Source Reference（+ 隐藏 `_CONTROL_ITEM_ID`）。Reply/Owner/Priority/Due Date/Notes 默认空，Status 默认 Open。
+- **API**：`POST/GET/GET :id/GET :id/file/DELETE :id` 于 `/api/excel-review-control-logs`（requireAuth + owner scope + 私有下载）。
+- **不做**：回复上传 / 自动回写 / final.xlsx；不新增 AI / 协作 / 新数据库 / 前端框架。删除 Control Log 不删除源 Job。
+- 新增：`server/excel-review/{control-log-repository.js,control-log-runner.js,control-log-routes.js,migrations/002_excel_review_control_logs.sql}`、`services/excel_review/{control_log.py,control_log_worker.py}`、`services/excel_review/tests/test_control_log.py`；前端 `index.html/script.js/excel-review-history.js/styles.css`。
+
 
 ### V1（2026-10-13）— 首个可用版本（只读 legacy 批注）
 

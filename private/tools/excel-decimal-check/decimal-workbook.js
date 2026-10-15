@@ -1,10 +1,14 @@
 'use strict';
 
 /*
- * Liuxian Lab — Excel decimal check workbook logic.
+ * Liuxian Lab — Excel decimal check workbook logic (read-only).
  *
  * XLSX-engine agnostic: the SheetJS namespace is always passed in as the
  * first argument, so this module runs unchanged in the browser and in Node.
+ *
+ * The tool only *reports* cells whose actual numeric value has more than two
+ * decimals. It never fixes or rewrites the workbook; an offline "highlighted
+ * copy" is produced separately by a shared OOXML minimal patch.
  */
 (function (root, factory) {
   const core = (typeof module !== 'undefined' && module.exports)
@@ -22,13 +26,6 @@
     raw: '原始数据异常',
     formula: '公式结果异常',
     unknown: '公式结果不可判定'
-  };
-
-  const STATUS = {
-    fixed: '已自动修正',
-    manual: '需要人工处理',
-    unknown: '无法判断',
-    failed: '处理失败'
   };
 
   function readOptions(extra) {
@@ -60,11 +57,7 @@
       originalValue: value,
       isNumericValue: Boolean(numeric),
       decimals,
-      originalFormula: formula || '',
-      fixedValue: null,
-      fixedFormula: '',
-      status: '',
-      note: ''
+      originalFormula: formula || ''
     };
   }
 
@@ -72,7 +65,7 @@
    * Scan every worksheet and collect cells whose *actual* numeric value has
    * more than two effective decimal places. Formula cells without a readable
    * cached result are reported separately as "公式结果不可判定" — never
-   * guessed, never treated as normal.
+   * guessed, never treated as normal. The workbook is only read.
    */
   function scanWorkbook(XLSX, wb) {
     const issues = [];
@@ -136,98 +129,6 @@
     return { issues, sheetStats, summary };
   }
 
-  function markFailed(issue, reason) {
-    issue.status = STATUS.failed;
-    issue.note = reason || '修正过程中发生异常。';
-  }
-
-  /*
-   * Apply safe automatic fixes on the workbook in place and annotate each
-   * issue object with its outcome. This is the single place where an issue's
-   * fixedValue / fixedFormula / status / note are decided, so the UI and the
-   * issue-list export always read the same final records.
-   *
-   * Raw numbers are rounded to two decimals; formula cells are wrapped in
-   * ROUND(...,2) unless they cannot be changed safely (array formulas,
-   * already-rounded formulas with a stale cache, or missing cells).
-   */
-  function applyFixes(XLSX, wb, issues) {
-    issues.forEach(function (issue) {
-      try {
-        const ws = wb.Sheets[issue.sheetName];
-        const cell = ws ? ws[issue.cell] : null;
-        if (!cell) {
-          markFailed(issue, '未能在工作簿中定位该单元格。');
-          return;
-        }
-
-        if (issue.type === 'raw') {
-          const fixed = core.roundToTwo(issue.originalValue);
-          if (!Number.isFinite(fixed) || core.hasMoreThanTwoDecimals(fixed)) {
-            issue.status = STATUS.manual;
-            issue.note = '该数值无法安全自动修正，请人工核对。';
-            return;
-          }
-          cell.v = fixed;
-          cell.t = 'n';
-          delete cell.w;
-          issue.fixedValue = fixed;
-          issue.status = STATUS.fixed;
-          issue.note = '';
-          return;
-        }
-
-        if (issue.type === 'formula') {
-          if (cell.F) {
-            issue.status = STATUS.manual;
-            issue.fixedFormula = issue.originalFormula;
-            issue.note = '数组公式，未自动修改，请人工核对。';
-            return;
-          }
-          if (core.isAlreadyRoundedFormula(issue.originalFormula)) {
-            issue.status = STATUS.manual;
-            issue.fixedFormula = issue.originalFormula;
-            issue.note = '公式已包含 ROUND 两位，但缓存结果显示超过两位小数，请人工核对。';
-            return;
-          }
-          const wrapped = core.wrapFormulaWithRound(issue.originalFormula);
-          cell.f = wrapped;
-          cell.t = 'n';
-          if (issue.isNumericValue) {
-            const fixed = core.roundToTwo(issue.originalValue);
-            cell.v = fixed;
-            issue.fixedValue = fixed;
-          } else {
-            delete cell.v;
-          }
-          delete cell.w;
-          issue.fixedFormula = wrapped;
-          issue.status = STATUS.fixed;
-          issue.note = '';
-          return;
-        }
-
-        issue.status = STATUS.unknown;
-        issue.note = '当前 Excel 文件未保存可读取的公式计算结果，请在 Excel / WPS 中重新计算并保存后再次检查';
-      } catch (error) {
-        markFailed(issue, error && error.message ? error.message : '修正过程中发生异常。');
-      }
-    });
-
-    return issues;
-  }
-
-  /*
-   * Scan a workbook and immediately resolve each issue's automatic-fix
-   * outcome. The returned issues are the final records shared by the page
-   * and the issue-list export — never rebuild them separately.
-   */
-  function analyzeWorkbook(XLSX, wb) {
-    const result = scanWorkbook(XLSX, wb);
-    applyFixes(XLSX, wb, result.issues);
-    return result;
-  }
-
   function formatDecimals(places) {
     return places === null ? '>15' : places;
   }
@@ -239,7 +140,7 @@
   function buildIssuesAoa(issues) {
     const header = [
       '序号', '异常类型', '工作表', '单元格', 'F5定位地址',
-      '原值', '有效小数位', '原公式', '修正后值', '修正后公式', '自动处理状态', '备注'
+      '原值', '有效小数位', '原公式'
     ];
 
     const rows = issues.map(function (issue, index) {
@@ -251,11 +152,7 @@
         issue.goto,
         issue.isNumericValue && issue.originalValue !== null ? issue.originalValue : '',
         formatDecimals(issue.decimals),
-        issue.originalFormula || '',
-        issue.fixedValue !== null && issue.fixedValue !== undefined ? issue.fixedValue : '',
-        issue.fixedFormula || '',
-        issue.status || '',
-        issue.note || ''
+        issue.originalFormula || ''
       ];
     });
 
@@ -268,8 +165,7 @@
 
     ws['!cols'] = [
       { wch: 6 }, { wch: 18 }, { wch: 16 }, { wch: 10 }, { wch: 24 },
-      { wch: 14 }, { wch: 8 }, { wch: 24 }, { wch: 14 }, { wch: 24 },
-      { wch: 14 }, { wch: 40 }
+      { wch: 16 }, { wch: 8 }, { wch: 28 }
     ];
 
     if (aoa.length > 1) {
@@ -281,32 +177,26 @@
       };
     }
 
+    const sanitize = (sheet) => {
+      Object.keys(sheet).forEach((key) => {
+        if (key.charAt(0) === '!') return;
+        const cell = sheet[key];
+        if (cell && typeof cell.v === 'string') { cell.t = 's'; delete cell.f; delete cell.F; }
+      });
+    };
+    sanitize(ws);
+
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, '问题清单');
     return wb;
   }
 
-  /*
-   * Output book type so the corrected file keeps its original family where
-   * SheetJS can safely write it. Everything else falls back to .xlsx.
-   */
-  function fixedOutputType(fileName) {
-    const name = String(fileName || '').toLowerCase();
-    if (name.endsWith('.xlsm')) return 'xlsm';
-    if (name.endsWith('.xlsb')) return 'xlsb';
-    return 'xlsx';
-  }
-
   return {
     TYPE_LABELS,
-    STATUS,
     readOptions,
     scanWorkbook,
-    applyFixes,
-    analyzeWorkbook,
     buildIssuesAoa,
     buildIssuesWorkbook,
-    fixedOutputType,
     formatDecimals
   };
 });
