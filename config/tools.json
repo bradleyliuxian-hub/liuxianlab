@@ -92,5 +92,24 @@
       "decimal",
       "round"
     ]
+  },
+  {
+    "slug": "excel-hardcode-check",
+    "name": "Excel 死数检查",
+    "description": "识别公式被固定值替代、引用被固定数字替代及公式中额外加入的死数，输出检查报告。",
+    "category": "数据",
+    "status": "ready",
+    "version": "v1.0.0",
+    "icon": "HCD",
+    "keywords": [
+      "excel",
+      "xlsx",
+      "死数",
+      "硬编码",
+      "hardcode",
+      "公式",
+      "检查",
+      "引用"
+    ]
   }
 ]

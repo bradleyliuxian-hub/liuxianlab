@@ -10,7 +10,8 @@
     "start": "NODE_ENV=production node server.js",
     "user:create": "node create-user.js",
     "user:list": "node list-users.js",
-    "test": "node --test tests/excel-decimal-check/*.test.js"
+    "test": "node --test tests/excel-decimal-check/*.test.js tests/excel-hardcode-check/*.test.js",
+    "bench:hardcode": "node scripts/local/hardcode-benchmark.js"
   },
   "engines": {
     "node": ">=20"

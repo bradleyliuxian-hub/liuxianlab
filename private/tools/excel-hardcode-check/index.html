@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Liuxian Lab Excel 死数检查工具" />
+  <title>Excel 死数检查 · Liuxian Lab</title>
+  <link rel="stylesheet" href="/app/tools/excel-hardcode-check/styles.css?v=1.0.0" />
+</head>
+<body>
+  <div class="page-shell">
+    <header class="tool-header">
+      <a class="back-link" href="/" aria-label="返回工作台">←</a>
+      <div class="tool-brand">
+        <span class="tool-mark">HCD</span>
+        <div><strong>Excel 死数检查</strong><small>Liuxian Lab / Hardcode Check</small></div>
+      </div>
+      <div class="header-actions">
+        <span class="version-chip" title="当前工具版本">v1.0.0</span>
+        <span class="private-badge"><i></i>浏览器本地处理</span>
+        <button class="ghost-button" id="newJobButton" type="button">重新开始</button>
+      </div>
+    </header>
+
+    <main class="tool-main">
+      <section class="intro-section">
+        <p class="eyebrow">EXCEL HARDCODE CHECK</p>
+        <h1>找出疑似被固定数字覆盖的公式与引用。</h1>
+        <p>
+          文件在你的浏览器中读取、扫描与生成，不会上传到服务器。工具通过相邻公式的相对引用模式，
+          识别被固定值打断的公式序列、被固定值替代的引用，以及公式中额外加入的硬编码数值；
+          并对一般硬编码给出提示。结果只作疑似提示，请人工核对。
+        </p>
+      </section>
+
+      <section class="workspace-card" id="uploadPanel">
+        <div class="card-heading">
+          <div><span class="step-no">01</span><div><h2>上传工作簿</h2><p>当前版本仅支持 <code>.xlsx</code>；原文件不会被修改。</p></div></div>
+          <span class="profile-chip">Hardcode v1</span>
+        </div>
+
+        <label class="drop-zone" id="dropZone" for="fileInput">
+          <input id="fileInput" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden />
+          <span class="drop-icon">↥</span>
+          <strong>拖入 Excel，或点击选择文件</strong>
+          <small>.xlsx · 单文件 · 浏览器本地处理 · 不上传</small>
+        </label>
+
+        <div class="selected-file" id="selectedFile" hidden>
+          <span class="file-icon">XLSX</span>
+          <div class="file-copy"><strong id="fileName"></strong><small id="fileMeta"></small></div>
+          <button class="icon-button" id="clearFileButton" type="button" aria-label="移除文件">×</button>
+        </div>
+
+        <div class="upload-actions">
+          <p>仅在浏览器内存中处理；下载报告时会新建文件，不会覆盖你的原始工作簿。</p>
+          <button class="primary-button" id="startButton" type="button" disabled>开始检查 <span>→</span></button>
+        </div>
+      </section>
+
+      <section class="workspace-card process-card" id="processPanel" hidden>
+        <div class="card-heading">
+          <div><span class="step-no">02</span><div><h2>本地扫描</h2><p id="processMessage">正在读取工作簿…</p></div></div>
+          <span class="job-status" id="jobStatus">READING</span>
+        </div>
+        <div class="progress-track"><span id="progressBar"></span></div>
+        <div class="error-box" id="errorBox" hidden></div>
+      </section>
+
+      <section class="results-shell" id="resultsPanel" hidden>
+        <div class="results-head">
+          <div><p class="eyebrow">RESULT</p><h2>扫描完成</h2><p id="resultSubtitle">已扫描工作簿。</p></div>
+        </div>
+
+        <div class="summary-grid">
+          <article><span>工作表</span><strong id="statSheets">0</strong><small>个</small></article>
+          <article><span>扫描单元格</span><strong id="statCells">0</strong><small>非空单元格</small></article>
+          <article><span>公式单元格</span><strong id="statFormula">0</strong><small>含公式</small></article>
+          <article class="is-high"><span>高风险</span><strong id="statHigh">0</strong><small>结构证据较强</small></article>
+          <article class="is-suspicious"><span>可疑</span><strong id="statSuspicious">0</strong><small>需人工确认</small></article>
+          <article class="is-notice"><span>硬编码提示</span><strong id="statNotice">0</strong><small>固定数值</small></article>
+        </div>
+
+        <section class="download-card">
+          <div class="download-head"><span class="step-no">03</span><div><h2>下载报告</h2><p>单独生成报告文件，不修改源工作簿。</p></div></div>
+          <div class="download-grid">
+            <div class="download-item">
+              <button class="primary-button download-button" id="downloadReportButton" type="button">下载死数检查报告.xlsx <span>↓</span></button>
+              <p>包含 <strong>Dashboard</strong> 与 <strong>检查结果</strong> 两张表，每条记录带 Excel F5 定位地址。</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="issues-card">
+          <div class="card-heading">
+            <div><span class="step-no">04</span><div><h2>检查结果</h2><p>只列出疑似问题，正常公式不显示。</p></div></div>
+            <span class="profile-chip" id="issueCountChip">0 条</span>
+          </div>
+
+          <div class="filter-row">
+            <select id="sheetFilter"><option value="">全部工作表</option></select>
+            <div class="severity-tabs" id="severityTabs">
+              <button class="severity-tab active" type="button" data-severity="">全部</button>
+              <button class="severity-tab" type="button" data-severity="HIGH">高风险</button>
+              <button class="severity-tab" type="button" data-severity="SUSPICIOUS">可疑</button>
+              <button class="severity-tab" type="button" data-severity="HARDCODE_NOTICE">硬编码提示</button>
+            </div>
+            <span id="filterCountLabel">0 条</span>
+          </div>
+
+          <div class="issue-list" id="issueList"></div>
+
+          <div class="empty-state" id="issuesEmpty" hidden>
+            <span aria-hidden="true">✓</span>
+            <h3>未发现疑似死数</h3>
+            <p>没有命中当前规则。你仍可下载报告（内容为表头）。</p>
+          </div>
+
+          <div class="pagination" id="pagination" hidden>
+            <button id="loadMoreButton" type="button">显示更多</button>
+            <span id="pageLabel"></span>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <section class="changelog-section">
+      <div class="changelog-card">
+        <div class="changelog-head">
+          <p class="eyebrow">VERSION HISTORY</p>
+          <h2>版本迭代</h2>
+        </div>
+        <ul class="changelog-list">
+          <li class="changelog-item"><span class="changelog-ver">v1.0.0</span><p class="changelog-text"><strong>基础能力</strong>：浏览器本地扫描 <code>.xlsx</code>，通过相邻公式的相对引用模式识别被固定值打断的公式序列、被固定值替代的引用与额外加入的死数；输出 HIGH / 可疑 / 硬编码提示分级与独立检查报告，不修改源文件。</p></li>
+        </ul>
+      </div>
+    </section>
+
+    <footer class="tool-footer"><span>Liuxian Lab</span><span>Excel Hardcode Check v1.0.0</span></footer>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script src="/app/vendor/xlsx/xlsx.full.min.js?v=0.18.5"></script>
+  <script src="/app/tools/excel-hardcode-check/formula-parser.js?v=1.0.0"></script>
+  <script src="/app/tools/excel-hardcode-check/formula-pattern.js?v=1.0.0"></script>
+  <script src="/app/tools/excel-hardcode-check/hardcode-core.js?v=1.0.0"></script>
+  <script src="/app/tools/excel-hardcode-check/hardcode-workbook.js?v=1.0.0"></script>
+  <script src="/app/tools/excel-hardcode-check/script.js?v=1.0.0"></script>
+</body>
+</html>
