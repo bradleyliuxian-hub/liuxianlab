@@ -179,3 +179,35 @@ test('archive isolates a per-member failure from the rest', async () => {
     STUB.failCreate = original;
   }
 });
+
+test('a UTF-8 filename survives the upload as correct text (no mojibake)', async () => {
+  STUB.failCreate = null;
+  const name = '【NEW】 财务复核测试.xlsx';
+  const { status, body } = await postFile('/api/excel-reviews', name, makeXlsxBytes());
+  assert.equal(status, 202);
+  assert.equal(body.job.originalFilename, name, 'multipart filename decoded as UTF-8');
+  const stored = STUB.created.find((job) => job.id === body.job.id);
+  assert.ok(stored, 'job recorded');
+  assert.equal(stored.originalFilename, name, 'DB-bound filename is correct UTF-8');
+});
+
+test('filename matrix: all names round-trip without mojibake', async () => {
+  STUB.failCreate = null;
+  const names = [
+    '23-26331 Spreadsheet_Vision Star.xlsx',
+    '【NEW】 测试文件.xlsx',
+    '财务复核测试.xlsx',
+    'Project [Final].xlsx',
+    "Manager's Review.xlsx",
+    '测试 & Review.xlsx',
+    '日本語テスト.xlsx',
+    'Résumé.xlsx',
+    'emoji-✅-review.xlsx',
+    '空格 文件 名.xlsx'
+  ];
+  for (const name of names) {
+    const { status, body } = await postFile('/api/excel-reviews', name, makeXlsxBytes());
+    assert.equal(status, 202, name);
+    assert.equal(body.job.originalFilename, name, name);
+  }
+});

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="description" content="Liuxian Lab Excel 复核意见管理工具" />
   <title>Excel 复核意见 · Liuxian Lab</title>
-  <link rel="stylesheet" href="/app/tools/excel-review/styles.css?v=1.4.2" />
+  <link rel="stylesheet" href="/app/tools/excel-review/styles.css?v=1.4.3" />
 </head>
 <body>
   <div class="page-shell">
@@ -16,7 +16,7 @@
         <div><strong>Excel 复核意见</strong><small>Liuxian Lab / Review Assistant</small></div>
       </div>
       <div class="header-actions">
-        <span class="version-chip" title="当前工具版本">v1.4.2</span>
+        <span class="version-chip" title="当前工具版本">v1.4.3</span>
         <span class="private-badge"><i></i>私有处理</span>
         <button class="ghost-button" id="newJobButton" type="button">新建任务</button>
       </div>
@@ -32,7 +32,7 @@
       <section class="workspace-card" id="uploadPanel">
         <div class="card-heading">
           <div><span class="step-no">01</span><div><h2>上传 Excel</h2><p>支持多个 <code>.xlsx</code> 文件或一个 <code>.zip</code> 压缩包（内含多个 .xlsx）；单个文件最大 20 MB。</p></div></div>
-          <span class="profile-chip">Review v1.4.2</span>
+          <span class="profile-chip">Review v1.4.3</span>
         </div>
 
         <label class="drop-zone" id="dropZone" for="fileInput">
@@ -95,6 +95,7 @@
           <h2>版本迭代</h2>
         </div>
         <ul class="changelog-list">
+          <li class="changelog-item"><span class="changelog-ver">v1.4.3</span><p class="changelog-text"><strong>文件名编码修复</strong>：修正上传文件名被按 latin1 解码导致的乱码（如 <code>【NEW】</code> → <code>â€‹</code>）；multipart 文件名按 UTF-8 解析，并在读取时修复历史乱码数据。</p></li>
           <li class="changelog-item"><span class="changelog-ver">v1.4.2</span><p class="changelog-text"><strong>上传链路修复</strong>：单文件/多文件/.zip 统一走同一个 Job 创建实现；失败时给出准确原因（如数据库不可用），不再显示笼统错误；ZIP 更稳健并新增解压体积上限。</p></li>
           <li class="changelog-item"><span class="changelog-ver">v1.4.1</span><p class="changelog-text"><strong>压缩包上传</strong>：可上传一个 <code>.zip</code>（内含多个 .xlsx），服务端安全解压后为每个 .xlsx 建立独立任务，随即可汇总为 Control Log。</p></li>
           <li class="changelog-item"><span class="changelog-ver">v1.4</span><p class="changelog-text"><strong>多文件 Control Log</strong>：一次上传多个 Excel（每个仍独立任务）；可将多个任务（含历史任务多选）汇总为一份跨文件 Control Log，含 Dashboard / Control Log / Source Files，独立快照、可下载可删除。</p></li>
@@ -107,11 +108,11 @@
       </div>
     </section>
 
-    <footer class="tool-footer"><span>Liuxian Lab</span><span>Excel Review Assistant v1.4.2</span></footer>
+    <footer class="tool-footer"><span>Liuxian Lab</span><span>Excel Review Assistant v1.4.3</span></footer>
   </div>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script src="/app/tools/excel-review/script.js?v=1.4.2"></script>
-  <script src="/app/tools/excel-review/excel-review-history.js?v=1.4.2"></script>
+  <script src="/app/tools/excel-review/script.js?v=1.4.3"></script>
+  <script src="/app/tools/excel-review/excel-review-history.js?v=1.4.3"></script>
 </body>
 </html>

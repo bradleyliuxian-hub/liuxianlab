@@ -25,6 +25,7 @@ const multer = require('multer');
 
 const repository = require('./repository');
 const { createExcelReviewRunner } = require('./parse-runner');
+const { repairMojibake } = require('./encoding');
 const {
   createExcelReviewJobFromBuffer,
   looksLikeZipBuffer,
@@ -129,7 +130,7 @@ function publicJob(job) {
   if (!job) return null;
   return {
     id: job.id,
-    originalFilename: job.originalFilename,
+    originalFilename: repairMojibake(job.originalFilename),
     status: job.status,
     progress: Number(job.progress || 0),
     progressMessage: job.progressMessage || '',
@@ -170,6 +171,7 @@ function createExcelReviewRouter(options = {}) {
   // Memory storage: the canonical factory owns the job directory.
   const uploadXlsx = multer({
     storage: multer.memoryStorage(),
+    defParamCharset: 'utf8',
     limits: { files: 1, fields: 8, fileSize: MAX_FILE_SIZE },
     fileFilter(_req, file, callback) {
       if (!isXlsxName(file.originalname) || !ACCEPTED_MIME.has(file.mimetype)) {
@@ -184,6 +186,7 @@ function createExcelReviewRouter(options = {}) {
 
   const uploadZip = multer({
     storage: multer.memoryStorage(),
+    defParamCharset: 'utf8',
     limits: { files: 1, fields: 8, fileSize: MAX_ARCHIVE_SIZE },
     fileFilter(_req, file, callback) {
       if (!isArchiveName(file.originalname) || !ARCHIVE_MIME.has(file.mimetype)) {
@@ -232,7 +235,7 @@ function createExcelReviewRouter(options = {}) {
         root,
         storageRoot,
         ownerUsername: owner,
-        originalFilename: safeOriginalName(req.file.originalname),
+        originalFilename: safeOriginalName(repairMojibake(req.file.originalname)),
         buffer: req.file.buffer,
         fromArchive: false
       });
@@ -275,7 +278,7 @@ function createExcelReviewRouter(options = {}) {
           root,
           storageRoot,
           ownerUsername: owner,
-          originalFilename: safeOriginalName(entry.base),
+          originalFilename: safeOriginalName(repairMojibake(entry.base)),
           buffer: entry.data,
           fromArchive: true
         });
@@ -375,7 +378,7 @@ function createExcelReviewRouter(options = {}) {
         return res.status(404).json({ ok: false, code: 'FILE_MISSING', message: '复核文件不存在。' });
       }
       res.set('Cache-Control', 'private, no-store');
-      return res.download(file, `${downloadBase(job.originalFilename)}-review.xlsx`);
+      return res.download(file, `${downloadBase(repairMojibake(job.originalFilename))}-review.xlsx`);
     } catch (error) {
       console.error('[excel-review review-file]', error);
       return res.status(500).json({ ok: false, code: 'INTERNAL_ERROR', message: '无法下载复核文件。' });

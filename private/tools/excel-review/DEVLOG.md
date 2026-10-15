@@ -3,7 +3,7 @@
 > 工具：Excel Review Assistant
 > 入口：`/tools/excel-review`
 > 产品定位：**只读抽取** Excel 批注并生成可 F5 定位的复核清单；不回写原文件。
-> 当前 UI 版本：`v1.4.2`（工具卡片 badge：Beta）
+> 当前 UI 版本：`v1.4.3`（工具卡片 badge：Beta）
 > 最近更新：2026-10-15
 
 本文件记录该工具的**版本功能**与**版本修改**，供开发者（AI 接手）与使用者查阅。
@@ -28,6 +28,16 @@ Address（F5 / Ctrl+G 可跳转）与 Source Reference。
 ---
 
 ## 2. 版本历史（功能 + 修改）
+
+### V1.4.3（2026-10-15）— 上传文件名 UTF-8 编码修复
+
+**根因**：multipart/form-data 的 filename 参数由 busboy 默认按 **latin1** 解码，UTF-8 字节被单字节解码 → `【`(E3 80 90) 变成 `â€‹`（Windows-1252 渲染），再原样入库/显示。
+
+- **修复（根因）**：两处 `multer(...)` 增加 `defParamCharset: 'utf8'`（multer 2.4.0 → busboy 1.6 支持），`req.file.originalname` 直接为正确 UTF-8。
+- **历史数据修复**：新增 `server/excel-review/encoding.js#repairMojibake()`，对**已是乱码**的存量文件名在读取时还原（ASCII/正常中文/西文原名不动；仅当可无损按单字节回退为合法 UTF-8 时生效）；用于 `publicJob.originalFilename`、下载名、Control Log 的 Source File。
+- **未改**：HTML/JS/CSS/JSON 编码（本就 UTF-8）、DB（UTF8）、二进制下载（xlsx/zip 仍按 binary stream）。
+- 测试：`tests/excel-review/encoding.test.js`（latin1 与 Windows-1252 两种乱码还原、正常文本不动）+ `upload-pipeline.test.js` 增加 UTF-8 文件名往返；`npm test` 147 pass。
+
 
 ### V1.4.2（2026-10-15）— 上传主链路 Regression Fix（单 XLSX / ZIP）
 

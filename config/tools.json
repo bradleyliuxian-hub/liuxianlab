@@ -60,7 +60,7 @@
     "description": "提取传统备注与 Microsoft 365 新版批注，生成可 F5 定位的复核清单与 Dashboard；支持多文件汇总 Control Log。",
     "category": "数据",
     "status": "ready",
-    "version": "v1.4.2",
+    "version": "v1.4.3",
     "icon": "VRF",
     "keywords": [
       "excel",

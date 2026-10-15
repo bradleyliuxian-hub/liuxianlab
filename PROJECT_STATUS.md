@@ -1,59 +1,48 @@
 # PROJECT STATUS
 
 ## Current Goal
-Excel Review Assistant V1.4.2 — 上传主链路 Regression Fix：单 `.xlsx` / 多 `.xlsx` / `.zip` 统一走同一个 canonical Job 创建实现；失败时给出准确原因（区分数据库不可用等），不再显示笼统错误。
+Excel Review Assistant V1.4.3 — 修复生产端上传文件名 UTF-8 乱码（`【NEW】 23-26331 …` → `â€‹ NEWâ€‹ 23-26331 …`）。仅修编码链路，不加新功能。
 
 ## Current Task
-完成 `job-factory.js`（唯一建 Job 实现）、`routes.js` 改造（内存上传 + 精确错误码 + 新路由 `/archive`）、前端错误码映射、ZIP 解压体积上限、契约回归测试。**未 commit / 未 push / 未 deploy / 未跑生产 migration。**
+完成根因修复（multipart 文件名按 UTF-8 解码）+ 存量乱码读取还原 + 测试。**未 commit / 未 push / 未 deploy。**
 
-## Root Cause（诊断结论）
-单文件与 ZIP 失败**同一根因**：`repository.createJob` 无法连接 PostgreSQL。
-**真实定位**：`.env` `DATABASE_URL`（本机 127.0.0.1:5432 的库），但本机 **PostgreSQL 未运行**；PostgreSQL 数据目录下的 `postmaster.pid` 是上次非正常关机遗留的**陈旧锁**（PID 被无关进程复用）导致无法自启。**已处理**：删除陈旧锁 → 启动 PG 16 → 以应用凭据应用 `002`（此前仅 001）→ 重启 dev server。`createJob` 往返验证通过，dev 日志不再 `ECONNREFUSED 5432`。
-- `POST /api/excel-reviews` 命中 catch → 500 `无法创建 Excel 复核任务。`
-- `/archive` 对每个成员同样失败并被 catch → 400 `压缩包内没有可处理的 .xlsx 文件。`
-HTTP → Multer → 校验 → 存储 → Python worker 链路**未回归**：用真实 PostgreSQL（临时集群，应用 001+002）+ 真实文件验证，单文件、多文件、ZIP 全部成功。
+## Root Cause
+`multipart/form-data` 的 filename 参数由 **busboy 默认按 latin1 解码**，UTF-8 字节被单字节解码：`【`(E3 80 90) → `â€‹`（Windows-1252 渲染），随后原样写入 DB 与页面。
+- 发生层：**上传解析（server, multer/busboy）**，不是 HTML/JS/CSS/JSON/DB/Nginx。
+- 证据：`defParamCharset` 缺省时 `req.file.originalname` 码点为 `e3,80,90…`；加 `defParamCharset:'utf8'` 后为 `3010,4e,45…`（正确 `【NEW】`）。
 
 ## Completed
-- **Canonical Job 创建**：`server/excel-review/job-factory.js#createExcelReviewJobFromBuffer()`，唯一实现；单文件与 ZIP 每个 `.xlsx` 均调用它（含目录/`source.xlsx`/`meta.json`/建库/入队/清理）。
-- **精确错误码**：`UNAUTHENTICATED / INVALID_XLSX / INVALID_FILE_TYPE / UPLOAD_TOO_LARGE / STORAGE_WRITE_FAILED / DB_UNAVAILABLE(503) / JOB_CREATE_FAILED / WORKER_ENQUEUE_FAILED`；前端 `ERROR_MESSAGES` 映射。
-- **无 ghost job**：建库前失败清理目录；入队失败把该行标记 failed；ZIP 单成员失败隔离。
-- **ZIP 加固**：`archive vs workbook` 由路由+扩展名判定（`.xlsx` 也是 PK，绝不按 magic 分流）；`MAX_ARCHIVE_TOTAL_UNCOMPRESSED=200MB` 防 zip 炸弹；成员 ≤50、单成员 ≤20MB。
-- 未改 Contract Review；未恢复回写 / reply upload / final.xlsx。
+- **根因修复**：`server/excel-review/routes.js` 两处 `multer({...})` 增加 `defParamCharset: 'utf8'`（multer 2.4.0 转发给 busboy 1.6）→ `originalname` 直接为正确 UTF-8，落库/回显/review.xlsx/Control Log 均正确。
+- **存量数据还原**：新增 `server/excel-review/encoding.js#repairMojibake()`，对**已是乱码**的存量文件名在读取时无损还原（正常 ASCII/中文/西文原名不动）。用于 `publicJob.originalFilename`、review 下载名、Control Log 的 `sourceFile`。
+- **未改动**（本已正确）：HTML `<meta charset="utf-8">`；JS/CSS/JSON 文件均 UTF-8；Express `res.json` / static 均 `charset=utf-8`；PostgreSQL `server_encoding/client_encoding = UTF8`；xlsx/zip 二进制下载不做字符转码；前端用 `textContent`（无 `innerHTML`，无 XSS 回归）。
+- 版本 → v1.4.3（缓存 bust）；changelog/DEVLOG 更新。
 
-## Changed Files
-- 新增：`server/excel-review/job-factory.js`、`tests/excel-review/upload-pipeline.test.js`（+ 既有 `tests/excel-review/archive.test.js`）。
-- 修改：`server/excel-review/routes.js`（内存上传、canonical helper、错误码、archive 路由健壮化）、`server.js`（挂载 control-log 路由，V1.4）、`private/tools/excel-review/{index.html,script.js,excel-review-history.js,styles.css,DEVLOG.md}`、`package.json`、`config/tools.json`（v1.4.2）、`PROJECT_STATUS.md`。
-- V1.4 其余新增（control-log-*、control_log.py/worker、migration 002）保持不变。
-
-## Verification（本地真实链路）
-- 临时本地 PostgreSQL 16（端口 5433，应用 `001`+`002`）+ 本地 harness（session stub）：
-  - 单文件小 xlsx → 202 → `review_ready`，Q=2。
-  - 单文件真实 4.9MB `Spreadsheet_Vision Star.xlsx` → 202 → `review_ready`，Q=28；`source.xlsx` SHA256 与上传文件一致。
-  - ZIP（legacy + threaded + no_comment + notes.txt）→ 202 → 3 jobs → `review_ready` Q=2 / 27 / 0；忽略 txt。
-  - `.xlsx` 投递到 `/archive` → 400 `INVALID_FILE_TYPE`（**证明不按 PK magic 误判**）。
-  - 停库后：单文件 `/` 与 `/archive` 均返回 **503 `DB_UNAVAILABLE`**（即原“无法创建任务”的真实原因）。
-  - Control Log：5 个已完成 Job → `review_ready`，files=5 / questions=59；`control_log.xlsx` 可重开（Dashboard/Control Log/Source Files/_Mapping）。
-- `npm test`：**143 pass / 0 fail**（含 upload-pipeline 6 + archive 5）。
-- Python：`services/excel_review` **79 pass / 0 fail**。
-- Contract Review：**99 pass / 2 import errors**（`psycopg` 缺失，环境问题、与本次无关）。
-- `node --check` 全过；`git diff --check` 干净。
+## Verification
+- 单测/集成：`tests/excel-review/encoding.test.js`（latin1 与 Windows-1252 乱码还原、正常文本不动，3 条）+ `upload-pipeline.test.js` UTF-8 文件名往返（1 条）。`npm test` **147 pass / 0 fail**。
+- 真机（本地 PG `liuxianlab`，应用凭据 + 真实 repository）：POST `【NEW】 财务复核测试.xlsx` → HTTP 202，response `job.originalFilename` 与 DB `original_filename` 均为 `【NEW】 财务复核测试.xlsx`（无乱码）。
+- Python `services/excel_review` **79 pass**；`git diff --check` 干净；`node --check` 全过。
+- 未触碰二进制下载与 Contract Review。
 
 ## Known Issues
-- 生产需 PostgreSQL 可达（否则现在会明确返回 503 DB_UNAVAILABLE）；生产还需应用 migration `002` 并重启 Node。
-- 仅后缀 `.xlsx`（ZIP 内成员亦须 `.xlsx`）。
+- 已存在（乱码入库）的旧任务：**页面显示**已由 `repairMojibake` 修复；其 review.xlsx / Control Log 快照在生成时已写入乱码，如需完全一致需**重新上传**（或对历史产物做一次性重建）。
+- 生产 Nginx 配置不在本仓库；`charset utf-8;` 建议（对 text/* 生效，勿作用于 xlsx/zip）——需按部署环境单独确认。
+
+## Changed Files
+- 新增：`server/excel-review/encoding.js`、`tests/excel-review/encoding.test.js`。
+- 修改：`server/excel-review/routes.js`、`server/excel-review/control-log-routes.js`、`tests/excel-review/upload-pipeline.test.js`、`private/tools/excel-review/{index.html,DEVLOG.md}`、`config/tools.json`。
+- 未改：前端 `script.js`/`excel-review-history.js`（本就用 `textContent`）、DB schema、Contract Review。
 
 ## Git State
-- branch: main；HEAD `ec3df9d`（未 commit）。
-- 详见报告 `~/Downloads/excel-review-v1.4.2-regression-fix-report.md`。
+- branch: main；HEAD `6cf772b`（已推送）；本轮改动未 commit。
 
 ## Deployment Impact
-- 无新依赖 / 无 env；生产需应用 `002_excel_review_control_logs.sql` 并重启 Node（PM2）以加载新路由。
+- 纯服务端代码 + 版本号；无新依赖 / 无 env / 无 migration。**生效需重启 Node（PM2）**。前端资源版本 v1.4.3。
 
 ## Next Action
-- 人工评审；生产 preflight（PG 可达校验、migration、PM2 重启审批）。等待批准：不 commit / push / deploy。
+- 生产部署（另行批准）：重启 Node → 验证 `curl -I` charset、API JSON、页面文件名。等待批准：不 commit / push / deploy。
 
 ## Session Log
-- 2026-10-15：V1.4.2 上传回归修复（canonical job-factory + 错误码 + ZIP 加固 + 契约测试）；真实 PG 链路验证通过；npm test 143 pass。
+- 2026-10-15：V1.4.3 上传文件名 UTF-8 编码修复（defParamCharset + repairMojibake）；npm test 147 pass；本地真机 DB 往返验证通过。
 
 ## Last Updated
 2026-10-15

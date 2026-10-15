@@ -22,6 +22,7 @@ const express = require('express');
 
 const controlRepository = require('./control-log-repository');
 const jobRepository = require('./repository');
+const { repairMojibake } = require('./encoding');
 const { createControlLogRunner } = require('./control-log-runner');
 
 const MAX_JOBS = 50;
@@ -227,7 +228,7 @@ function createExcelReviewControlLogRouter(options = {}) {
           const snapshot = JSON.parse(fs.readFileSync(snapshotFile, 'utf8'));
           payload.statistics = snapshot.statistics || null;
           payload.sourceJobs = (snapshot.sourceJobs || []).map((job) => ({
-            sourceFile: job.sourceFile,
+            sourceFile: repairMojibake(job.sourceFile),
             questionCount: job.questionCount,
             threadedCount: job.threadedCount,
             legacyCount: job.legacyCount
