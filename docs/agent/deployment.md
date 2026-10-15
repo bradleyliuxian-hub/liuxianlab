@@ -24,6 +24,35 @@ Set in `.env` (never commit, never print values):
 - PostgreSQL reachable and migrations applied (`server/contracts/migrations/`).
 - `data/users.json` present with real users (admin-created).
 
+## Deployment invariants (policy)
+
+Stable rules, independent of the current deployer implementation. An archived
+deploy script is reference evidence only, never the confirmed active deployer.
+
+- **Active-work protection** — a deploy must refuse to restart while active work
+  could be interrupted. Coverage: Contract Review jobs, Excel Review jobs, and
+  running parser/worker processes. Items merely waiting on human review are not
+  active compute and need not block.
+- **Single deployment at a time** — only one deployment may run against
+  production concurrently.
+- **Dependency consistency** — a `package.json` dependency-section change
+  requires a matching `package-lock.json` change, else NO-GO. Any Python
+  dependency manifest change (e.g. `requirements.txt`, `pyproject.toml`,
+  `poetry.lock`, `services/*/requirements.txt`) requires explicit
+  dependency/environment review before deploy.
+- **Migration safety** — historical migrations are immutable (never modify,
+  rename, or delete an applied migration; add a new one). Automation may apply
+  only newly added migration files. Destructive patterns (`DROP TABLE`,
+  `DROP COLUMN`, `TRUNCATE`, `DELETE FROM`) require a manual stop and a reviewed
+  plan; a pattern scan alone does not prove a migration is safe. Additive /
+  backward-compatible remains the project default.
+- **Rollback boundary** — rollback is primarily *code* rollback (return to the
+  previous commit; reinstall deps if the lock changed; restart). It does not
+  reverse schema: additive DB migrations are a separate, manual operation.
+- **Health gating** — local service health must pass before a deploy is called
+  successful; public/external health is an additional signal and must not
+  substitute for local service health.
+
 ## Preflight checklist (produce, do not execute)
 
 1. Target branch + candidate commit.

@@ -17,13 +17,18 @@ migrations without explicit user approval.
 
 1. **Production clean** — target release has no uncommitted/unintended changes.
 2. **Current health** — `GET /health` -> `{"ok":true}`; app reachable.
-3. **Active jobs** — no in-flight Excel/contract jobs that a restart would kill.
+3. **Active work** — no queued/processing Contract Review or Excel Review jobs
+   and no running parser/worker processes; refuse a restart while active work
+   could be interrupted (human-review-pending items do not block).
 4. **Git ancestry** — the candidate commit is the intended one and is on `main`
    (verify against origin; do not assume).
-5. **Dependency consistency** — `package.json`/lock unchanged or intentional;
-   no new native deps; Python venv consistent.
-6. **Migration safety** — enumerate pending migrations; they must be additive,
-   idempotent, `BEGIN/COMMIT`; no destructive/renamed columns; DB reachable.
+5. **Dependency consistency** — a `package.json` dependency-section change
+   requires a matching `package-lock.json` change (else NO-GO); any Python
+   dependency manifest change needs explicit environment review; no new native deps.
+6. **Migration safety** — only newly added migrations may be applied; historical
+   migrations are immutable (never edit/rename/delete); additive, idempotent,
+   `BEGIN/COMMIT`; destructive SQL (`DROP TABLE`/`COLUMN`, `TRUNCATE`,
+   `DELETE FROM`) ⇒ stop; DB reachable.
 7. **Backup** — a rollback point exists (previous release/tag or snapshot).
 8. **Syntax** — `node --check` on changed JS; `python -m py_compile` on changed Python.
 9. **Tests** — run the real suites: `npm test` (Node), excel_review unittest,
@@ -33,7 +38,10 @@ migrations without explicit user approval.
 12. **Process** — PM2 config/`ecosystem.config.js` correct; restart is the only
     step needed (config files are not hot-reloaded).
 13. **Health after** — plan the post-restart `GET /health` and a real request.
-14. **Rollback** — the exact revert + restart step if it goes wrong.
+14. **Rollback** — code rollback to the previous commit (+ dependency reinstall /
+    restart if needed); it does **not** reverse schema — additive DB migrations
+    are a separate manual operation.
+15. **Concurrency** — only one deployment may run at a time.
 
 ## Known facts to re-verify, never assume
 
