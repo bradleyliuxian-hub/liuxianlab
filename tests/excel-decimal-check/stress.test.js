@@ -128,4 +128,3 @@ test('stress: dependency graph (10k numeric + 3k formulas, cross-sheet, fan-out,
   assert.equal(j1.downstreamReferenceCount, 500);
   assert.equal(j1.directReferenceCount, 500);
 });
-

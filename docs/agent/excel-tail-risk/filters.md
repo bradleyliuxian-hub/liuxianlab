@@ -44,4 +44,3 @@ list, never `allIssues`:
 Shared-viewer API added for this (backward compatible): `viewer-core.js`
 `setFilterList(list)`, `reconcile()`, and the `cycle` option; `excel-viewer.js`
 end-aware button disabling (only when `cycle === false`).
-
