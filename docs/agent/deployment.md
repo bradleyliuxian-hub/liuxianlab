@@ -24,34 +24,27 @@ Set in `.env` (never commit, never print values):
 - PostgreSQL reachable and migrations applied (`server/contracts/migrations/`).
 - `data/users.json` present with real users (admin-created).
 
-## Deployment invariants (policy)
+## 部署不变量（策略）
 
-Stable rules, independent of the current deployer implementation. An archived
-deploy script is reference evidence only, never the confirmed active deployer.
+与当前 deployer 实现无关的稳定规则。归档的 deploy 脚本仅作参考证据，绝非已确认的当前 deployer。
 
-- **Active-work protection** — a deploy must refuse to restart while active work
-  could be interrupted. Coverage: Contract Review jobs, Excel Review jobs, and
-  running parser/worker processes. Items merely waiting on human review are not
-  active compute and need not block.
-- **Single deployment at a time** — only one deployment may run against
-  production concurrently.
-- **Dependency consistency** — a `package.json` dependency-section change
-  requires a matching `package-lock.json` change, else NO-GO. Any Python
-  dependency manifest change (e.g. `requirements.txt`, `pyproject.toml`,
-  `poetry.lock`, `services/*/requirements.txt`) requires explicit
-  dependency/environment review before deploy.
-- **Migration safety** — historical migrations are immutable (never modify,
-  rename, or delete an applied migration; add a new one). Automation may apply
-  only newly added migration files. Destructive patterns (`DROP TABLE`,
-  `DROP COLUMN`, `TRUNCATE`, `DELETE FROM`) require a manual stop and a reviewed
-  plan; a pattern scan alone does not prove a migration is safe. Additive /
-  backward-compatible remains the project default.
-- **Rollback boundary** — rollback is primarily *code* rollback (return to the
-  previous commit; reinstall deps if the lock changed; restart). It does not
-  reverse schema: additive DB migrations are a separate, manual operation.
-- **Health gating** — local service health must pass before a deploy is called
-  successful; public/external health is an additional signal and must not
-  substitute for local service health.
+- **活跃工作保护** —— 当重启可能打断正在进行的任务时，部署必须拒绝重启。覆盖：
+  Contract Review 任务、Excel Review 任务，以及正在运行的 parser/worker 进程。
+  仅等待人工审核的项不算活跃计算，无需阻塞。
+- **同一时间仅一次部署** —— 只能有一个部署并发作用于 production。
+- **依赖一致性** —— `package.json` 依赖段的变更需要 `package-lock.json` 相应
+  变更，否则 NO-GO。任何 Python 依赖清单变更（如 `requirements.txt`、
+  `pyproject.toml`、`poetry.lock`、`services/*/requirements.txt`）在部署前都需要
+  显式的依赖/环境评审。
+- **迁移安全** —— 历史 migration 不可变（绝不修改、重命名或删除已应用的
+  migration；应新增一个）。自动化只可应用新增的 migration 文件。破坏性模式
+  （`DROP TABLE`、`DROP COLUMN`、`TRUNCATE`、`DELETE FROM`）需要人工停手并评审
+  方案；仅靠模式扫描不能证明 migration 安全。additive / backward-compatible
+  仍是项目默认。
+- **回滚边界** —— 回滚主要是*代码*回滚（回到上一个 commit；如 lock 变更则重装
+  依赖；重启）。它不会回滚 schema：additive DB migration 是独立的、手动操作。
+- **健康门** —— 本地服务健康通过后，才能称部署成功；public/external 健康是
+  附加信号，不能替代本地服务健康。
 
 ## Preflight checklist (produce, do not execute)
 

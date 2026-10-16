@@ -2,57 +2,50 @@
 
 Updated: 2026-10-15
 
-> Short current-state snapshot. Overwrite each time; no history, no diffs, no secrets.
-> Source of truth is the real repo + Git; if this file disagrees, Git wins.
+> 简短当前状态快照。每次覆盖；不写历史、不写 diff、不写 secret。
+> 事实源是真实仓库 + Git；若本文件与之冲突，以 Git 为准。
 
 ## Git
 
-- Branch: `main` (query: `git branch --show-current`)
-- HEAD: `51f3ec5` (query: `git rev-parse --short HEAD`)
-- Working tree: dirty — uncommitted AI/OpenCode governance files only
-  (no business code). Query: `git status --short`.
+- 分支：`main`（查询：`git branch --show-current`）
+- HEAD：`e715557`（查询：`git rev-parse --short HEAD`）
+- 工作区：未提交的治理/文档改动（`PROJECT_STATUS.md`、
+  `docs/agent/deployment.md`、`docs/agent/deployment/runbook.md`）；无业务代码。
+  查询：`git status --short`。
 
 ## Current Focus
 
-AI / OpenCode control-plane + workspace governance cleanup. **AI / config / docs
-only; no business code changed.** Status = ready for two governance commits.
+Workspace 与 AI/OpenCode 治理已收口；项目控制面稳定，可恢复常规开发。
 
-- Active skills (exactly 7): `repo-inspector`, `development-task`,
-  `contract-review`, `excel-review`, `excel-tail-risk`, `excel-hardcode`,
-  `deployment-safety`.
-- Hygiene: mechanical backups, the generic `ui-ux-pro-max`, and the retired
-  design skills are moved out of the repo to
-  `~/AI-Workspace/backups/liuxianlab/` and `~/AI-Workspace/shared-skills/`.
-- Contract Review v1.1 knowledge distilled to
-  `docs/agent/contract-review/quality-and-cache.md`; original reports archived
-  under `docs/archive/contract-review/`.
+- Active skills（恰好 7）：`repo-inspector`、`development-task`、
+  `contract-review`、`excel-review`、`excel-tail-risk`、`excel-hardcode`、
+  `deployment-safety`。
+- Workspace 基线记录在 `~/AI-Workspace/WORKSPACE_RULES.md`
+  （workspace 根不是 Git 仓库；一个项目一个仓库）。
+- Contract Review v1.1 知识在 `docs/agent/contract-review/quality-and-cache.md`；
+  原始报告在 `docs/archive/contract-review/`。
 
 ## Known Broken
 
-- None confirmed in the app.
-- Caveat (not broken): the parent `~/AI-Workspace` has its own `.git` pointing at
-  the same origin as this repo — always confirm cwd before Git operations.
+- 应用层无已确认问题。
+- Workspace 根 `~/AI-Workspace` **不是** Git 仓库 —— 绝不要从根目录运行项目 git 命令。
 
 ## Pending Decisions
 
-- Restart OpenCode (config-time changes are not hot-reloaded).
-- Routing verification (one real bug / feature / review / deploy request) —
-  **not yet run; status UNVERIFIED**.
-- Human review, then two scoped commits (governance hygiene; contract-review
-  knowledge).
-- Later/separate: parent-repo vs sub-repo Git structure.
+- 重启 OpenCode（配置类改动不会热加载）。
+- 路由验证（一次真实的 bug / feature / review / deploy 请求）—— 尚未运行；状态 UNVERIFIED。
+- Deploy 脚本 invariant 已提炼进 `docs/agent/deployment*`；归档脚本仅为参考
+  （不是已确认的当前 deployer）。
 
 ## Next Action
 
-1. Commit governance changes (two scoped commits) after human review.
-2. Restart / new-session verification only if required.
-3. Resume normal development.
-   Do not push / deploy without explicit approval.
+1. 恢复本项目常规开发。
+2. 未经明确批准，不要 push / deploy。
 
 ## Last Verification
 
-- Batch D cleanup: `git diff --check` clean; exactly 7 active skills;
-  `.opencode/opencode.json` unchanged; no business code / tests / migrations /
-  deps touched; no mechanical backup, optional-skill, or generic-skill archive
-  remains in the repo. Business test suites **NOT RUN** this round (no business
-  code changed).
+- 治理收口：workspace 根不是 Git 仓库；项目在 `e715557` clean；恰好 7 active
+  skills / 5 agents / 9 commands；`git diff --check` clean。本轮未跑业务测试
+  （未改业务代码）。
+- 文档语言：本次治理涉及的文件已改为中文（`WORKSPACE_RULES.md`、
+  `shared-skills/README.md`、本文件、`deployment.md`/`runbook.md` 的新增段落）。

@@ -7,30 +7,28 @@ confirmed in-repo — verify it before use.
 Never push / SSH / restart PM2 / modify Nginx / run migrations without explicit
 approval after the preflight.
 
-## Operator sequence (check, then apply)
+## 操作顺序（先检查，再执行）
 
-Preflight (read-only):
+预检（只读）：
 
-1. Production clean — branch `main`, worktree clean.
-2. Local health pre-check passes before touching anything.
-3. Active-work scan — no queued/processing Contract Review or Excel Review jobs,
-   and no running parser/worker processes. Human-review-pending items do not block.
-4. Release identity — intended annotated tag, fast-forward from the current
-   commit, reachable from `origin/main`.
-5. Dependency check — Node dependency-section change requires a matching lockfile
-   change; any Python manifest change stops for manual environment review.
-6. Migration check — only newly added migration files; no historical migration
-   edited/renamed/deleted; destructive SQL stops.
-7. Backup point exists.
-8. Syntax (`node --check` / `py_compile`) and the real test suites pass.
-9. MinerU production-env and seal-patch markers intact.
+1. production 干净 —— 分支 `main`，工作区干净。
+2. 动手前本地健康预检通过。
+3. 活跃工作扫描 —— 无 queued/processing 的 Contract Review 或 Excel Review 任务，
+   且无正在运行的 parser/worker 进程。等待人工审核的项不阻塞。
+4. 发布身份 —— 预期的 annotated tag、从当前 commit 可 fast-forward、
+   可从 `origin/main` 到达。
+5. 依赖检查 —— Node 依赖段变更需要匹配的 lockfile 变更；任何 Python 清单变更
+   都停下做人工环境评审。
+6. 迁移检查 —— 仅新增的 migration 文件；无历史 migration 被修改/重命名/删除；
+   破坏性 SQL 停下。
+7. 存在备份点。
+8. 语法（`node --check` / `py_compile`）与真实测试套件通过。
+9. MinerU production-env 与 seal-patch 标记完好。
 
-Apply (with approval): install deps if the lock changed -> apply only new
-migrations -> `nginx -t` -> restart PM2 -> verify.
+执行（需批准）：如 lock 变更则安装依赖 -> 仅应用新 migration -> `nginx -t` ->
+重启 PM2 -> 验证。
 
-Verify: local health passes; then public health as an additional signal; confirm
-clean worktree and HEAD equals the target.
+验证：本地健康通过；再把 public 健康作为附加信号；确认工作区干净且 HEAD 等于目标。
 
-Rollback (operator notes): return code to the previous commit; reinstall deps if
-the lock changed; restart. Database changes are NOT rolled back automatically —
-schema rollback is a separate, reviewed operation.
+回滚（操作者备注）：把代码回退到上一个 commit；如 lock 变更则重装依赖；重启。
+数据库变更**不会**自动回滚 —— schema 回滚是独立的、需评审的操作。
