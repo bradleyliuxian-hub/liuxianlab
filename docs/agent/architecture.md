@@ -19,7 +19,7 @@ Read on demand. Keep this current; do not load it for simple tasks.
 - Authenticated: `/api/tools`, `/api/session`, `POST /api/logout`.
 - Tool routing: static `/app` -> `private/`, `/` -> `private/index.html`, `/tools/:slug` -> `private/tools/<slug>/index.html` if present else `private/tool.html` placeholder.
 - Route mounts:
-  - `/api/excel` -> `server/excel/routes.js` (`createExcelRouter`)
+  - `/api/excel` -> `server/excel-standardizer/routes.js` (`createExcelRouter`)
   - `/api/sales-income` -> `server/sales-income/inspect-routes.js` + `run-routes.js` + `routes.js`
   - `/api/contracts` -> `server/contracts/routes.js` (`createContractRouter`)
   - `/vendor/pdfjs` -> `node_modules/pdfjs-dist/build` (used by contract review UI)
@@ -34,10 +34,11 @@ Read on demand. Keep this current; do not load it for simple tasks.
 ## Backend modules
 
 - `server/contracts/` — `db.js`, `repository.js`, `review-store.js`, `parse-runner.js`, `routes.js`, `migrations/*.sql` (PostgreSQL).
-- `server/excel/` — `routes.js`, `jobs.js` (job lifecycle).
+- `server/excel-standardizer/` — `routes.js`, `jobs.js` (Excel standardizer job lifecycle).
 - `server/sales-income/` — `routes.js`, `inspect-routes.js`, `run-routes.js`.
 - `services/contract_review/` — Python: `database.py`, `mineru_service.py`, `issue_detector.py`, `issue_locator.py`, `consistency_checker.py`, `consistency_artifacts.py`, `review_artifacts.py`, `worker.py`.
-- `workers/excel/` — Python: `processor.py`, `preview.py`, `audit.py`, `job_state.py`, `rules/*` (autofit_columns, header_style, normalize_dates, remove_empty_rows, sheet_settings, trim_text), `sales_income/*`.
+- `services/excel_standardizer/` — Python: `processor.py`, `preview.py`, `audit.py`, `job_state.py`, `rules/*` (autofit_columns, header_style, normalize_dates, remove_empty_rows, sheet_settings, trim_text).
+- `workers/excel/` — Python: `sales_income/*` (sales-income analysis worker).
 
 ## Data & config
 

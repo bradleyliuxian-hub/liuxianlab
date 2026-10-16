@@ -73,7 +73,7 @@ evidence only and is not loaded by default.
 - Auth: server-side Express sessions (`requireAuth`). `public/` = login only; `private/` = authenticated dashboard + tools.
 - `config/tools.json` is the single source of truth for dashboard tool cards.
 - Tools live at `private/tools/<slug>/`.
-- Excel Standardizer & Sales/Income = Node routes + Python workers (`server/excel/`, `server/sales-income/`, `workers/excel/`).
+- Excel Standardizer = Node routes + Python worker (`server/excel-standardizer/`, `services/excel_standardizer/`). Sales/Income = (`server/sales-income/`, `workers/excel/sales_income/`).
 - Excel Review = Node routes + PostgreSQL + private server storage + Python (`server/excel-review/`, `services/excel_review/`).
 - Excel Tail-Risk (尾差检查) & Hardcode (死数检查) = **browser-local Vanilla JS** (`private/tools/excel-decimal-check/`, `private/tools/excel-hardcode-check/`, shared `private/shared/`); no server storage.
 - Contract review = Node routes + PostgreSQL + Python service/worker (`server/contracts/`, `services/contract_review/`).
@@ -133,7 +133,7 @@ Non-thinking by default for SIMPLE/MEDIUM. Extended thinking only for complex ar
 - Review (review/有没有风险): read-only; findings by severity; no edits.
 - Deploy (上线/部署/deploy): preflight only; never execute production actions without explicit approval after the preflight.
 - Explain (为什么/解释): answer/analyze without editing.
-- Shortcuts: 开始做=implement agreed plan; 继续/从上次继续=resume flow (§9); 修掉=fix the just-identified issue; 再检查一下=re-verify latest change; 可以上线了吗=deployment preflight.
+- Shortcuts: 开始做=implement agreed plan; 继续/从上次继续=resume flow (§9); 修掉=fix the just-identified issue; 再检查一下=re-verify latest change; 可以上线了吗=deployment preflight; 上传github/推送到 GitHub=run the pre-push gate then commit+push (§10, `/publish`).
 - Ambiguous: prefer inspect/explain; ask one short question only if it materially changes the implementation.
 
 ## 9. Checkpoint / Resume
@@ -152,6 +152,7 @@ Commands: `/checkpoint` (save; no commit/push/deploy), `/resume` and `/recover` 
 
 - Before staging: inspect `git status`, `git diff --check`, `git diff`. Stage only intended files; never `git add .`.
 - Never commit secrets or runtime data. Never force-push, `reset --hard`, rewrite history, delete branches, or push without explicit approval.
+- **Mandatory pre-push gate.** Before ANY `git push` (phrasing: 上传github / 推送到 GitHub / 上传 / publish / push), first run `scripts/local/pre-push-check.sh` and push ONLY if it exits 0. If it fails, do NOT push; fix the reported files (never auto-fix), re-run, then push. A push is always immediately followed by a server deploy, so it must be deploy-clean: the production deployer runs the same `git diff --check`, so trailing whitespace / blank-line-at-EOF must be caught here. Use `--full` before releases/PRs. Report the check result with the push. Prefer the `/publish` command.
 - Deployment is a separate phase: preflight (branch, candidate commit, deps, env names, migrations, PM2/Nginx, health check, rollback). Do not push / SSH / restart PM2 / modify Nginx / run migrations unless explicitly told.
 - Deploying is only ever done through the `deployment-safety` skill + `/deploy`; never improvise a production action.
 

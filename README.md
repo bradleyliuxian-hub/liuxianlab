@@ -45,7 +45,7 @@ private/tools/<slug>/
 
 ## 已实现工具
 
-- `excel-standardizer` — Excel 标准化（Node 路由 + Python worker：`server/excel/`、`workers/excel/`）
+- `excel-standardizer` — Excel 标准化（Node 路由 + Python worker：`server/excel-standardizer/`、`services/excel_standardizer/`）
 - `sales-income-analysis` — 销售收入分析（`server/sales-income/`、`workers/excel/sales_income/`）
 - `contract-review` — 合同数字化审阅（Node 路由 + PostgreSQL + Python worker：`server/contracts/`、`services/contract_review/`、迁移在 `server/contracts/migrations/`）
 - `excel-review` — Excel 复核意见（逻辑在 `services/excel_review/`、`server/excel-review/`）
@@ -64,10 +64,12 @@ liuxianlab-online/
 ├── server.js                 # Express 入口
 ├── server/                   # 各工具的 Node 路由与持久化
 │   ├── contracts/            #   合同审阅（PostgreSQL + PDF 解析）
-│   ├── excel/                #   Excel 标准化
+│   ├── excel-standardizer/   #   Excel 标准化
 │   └── sales-income/         #   销售收入分析
-├── services/contract_review/ # 合同审阅 Python 服务 / worker
-├── workers/excel/            # Excel / 销售分析 Python worker
+├── services/                 # Python 服务 / worker
+│   ├── contract_review/      #   合同审阅
+│   └── excel_standardizer/   #   Excel 标准化
+├── workers/excel/            # 销售分析 Python worker（sales_income/）
 ├── private/                  # 需登录的工作台与工具页面
 │   ├── index.html            #   工作台
 │   └── tools/<slug>/         #   各工具

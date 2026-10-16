@@ -1,6 +1,6 @@
 # Project Status
 
-Updated: 2026-10-15
+Updated: 2026-10-16
 
 > 简短当前状态快照。每次覆盖；不写历史、不写 diff、不写 secret。
 > 事实源是真实仓库 + Git；若本文件与之冲突，以 Git 为准。
@@ -8,44 +8,47 @@ Updated: 2026-10-15
 ## Git
 
 - 分支：`main`（查询：`git branch --show-current`）
-- HEAD：`e715557`（查询：`git rev-parse --short HEAD`）
-- 工作区：未提交的治理/文档改动（`PROJECT_STATUS.md`、
-  `docs/agent/deployment.md`、`docs/agent/deployment/runbook.md`）；无业务代码。
-  查询：`git status --short`。
+- HEAD：`ce6876c`（查询：`git rev-parse --short HEAD`）
+- 工作区（未提交）：本地 pre-push 检查器；以及 Excel 标准化两项改动——
+  (a) 运行时修复 `server/excel-standardizer/jobs.js`（Python 解释器回落到 `.venv`）；
+  (b) 目录迁移 `server/excel/`→`server/excel-standardizer/`、
+  `workers/excel/*`→`services/excel_standardizer/*`（`git mv`，保留历史），并同步
+  `server.js` 与文档。查询：`git status --short`。
 
 ## Current Focus
 
-Workspace 与 AI/OpenCode 治理已收口；项目控制面稳定，可恢复常规开发。
-
-- Active skills（恰好 7）：`repo-inspector`、`development-task`、
-  `contract-review`、`excel-review`、`excel-tail-risk`、`excel-hardcode`、
-  `deployment-safety`。
-- Workspace 基线记录在 `~/AI-Workspace/WORKSPACE_RULES.md`
-  （workspace 根不是 Git 仓库；一个项目一个仓库）。
-- Contract Review v1.1 知识在 `docs/agent/contract-review/quality-and-cache.md`；
-  原始报告在 `docs/archive/contract-review/`。
+1. 「本地 pre-push / pre-deploy 检查器」（DEV TOOLING）：与生产部署器同源，本地提前
+   拦截 `git diff --check`（trailing whitespace / EOF 空行）、Node/Python 语法、敏感文件；
+   默认 QUICK，`--full` 条件回归。任何 push（含「上传github」）前必须先跑
+   `scripts/local/pre-push-check.sh`（AGENTS.md §10，`/publish`）。
+2. Excel 标准化：修复“无法运行”（默认 `python3` 无 openpyxl → 现回落 `.venv/bin/python`，
+   与 excel-review 一致）；后端迁移到 `server/excel-standardizer/` + `services/excel_standardizer/`
+   以对齐 excel-review 布局。前端 `private/tools/excel-standardizer/` 不变；
+   `config/excel_profiles/` 暂留原位。修复上传文件名乱码（multer `defParamCharset:'utf8'`
+   + `server/excel-standardizer/encoding.js` 的 repairMojibake，与 excel-review 同源）。
 
 ## Known Broken
 
-- 应用层无已确认问题。
+- 应用层无已确认问题（标准化已完成端到端验证）。
 - Workspace 根 `~/AI-Workspace` **不是** Git 仓库 —— 绝不要从根目录运行项目 git 命令。
 
 ## Pending Decisions
 
-- 重启 OpenCode（配置类改动不会热加载）。
-- 路由验证（一次真实的 bug / feature / review / deploy 请求）—— 尚未运行；状态 UNVERIFIED。
-- Deploy 脚本 invariant 已提炼进 `docs/agent/deployment*`；归档脚本仅为参考
-  （不是已确认的当前 deployer）。
+- 是否提交并推送以上改动（等待用户确认）。
+- `config/excel_profiles/` 是否一并移入服务目录（现暂留）。
+- 生产服务器 `.venv` 是否含 openpyxl（本地已确认；生产 `.env` 受保护未读，UNVERIFIED）。
 
 ## Next Action
 
-1. 恢复本项目常规开发。
-2. 未经明确批准，不要 push / deploy。
+1. 等待用户审查标准化迁移与运行时修复。
+2. 确认后通过 `/publish` 提交并推送（先跑 `scripts/local/pre-push-check.sh`）。
 
 ## Last Verification
 
-- 治理收口：workspace 根不是 Git 仓库；项目在 `e715557` clean；恰好 7 active
-  skills / 5 agents / 9 commands；`git diff --check` clean。本轮未跑业务测试
-  （未改业务代码）。
-- 文档语言：本次治理涉及的文件已改为中文（`WORKSPACE_RULES.md`、
-  `shared-skills/README.md`、本文件、`deployment.md`/`runbook.md` 的新增段落）。
+- 标准化修复：worker 端到端（隔离任务目录）从 `ModuleNotFoundError` 失败 → `completed`
+  （总修改 7~8 项）；新路径 `server/excel-standardizer/jobs.js` 调度成功。
+- 服务器可启动，`/health`=200，`/api/excel/meta` 需鉴权（302→/login）。
+- `npm test` = 216 pass / 0 fail；`node --check` 3 个 JS 通过；
+  `scripts/local/pre-push-check.sh` QUICK PASSED（12 个 Python 语法检查通过）。
+- 文件名修复：raw UTF-8 中文文件名上传后 `originalName`/`outputName` 正确
+  （`测试_报价表 …-standardized.xlsx`），任务 `completed`；旧乱码串 repair 往返 OK。

@@ -7,6 +7,7 @@ const readline = require('readline');
 const express = require('express');
 const multer = require('multer');
 const { createJobManager } = require('./jobs');
+const { repairMojibake } = require('./encoding');
 
 function safeOriginalName(value) {
   const base = path.basename(String(value || 'workbook.xlsx'));
@@ -101,6 +102,7 @@ function createExcelRouter({ root, requireAuth, sameOriginForStateChange }) {
   // Deliberately no fileSize limit. Uploads stream directly to disk, not memory.
   const upload = multer({
     storage,
+    defParamCharset: 'utf8',
     limits: { files: 1, fields: 8 }
   }).single('file');
 
@@ -119,7 +121,7 @@ function createExcelRouter({ root, requireAuth, sameOriginForStateChange }) {
         return res.status(400).json({ ok: false, message: '请选择一个 Excel 文件。' });
       }
 
-      const originalName = safeOriginalName(req.file.originalname);
+      const originalName = safeOriginalName(repairMojibake(req.file.originalname));
       if (!isXlsxName(originalName)) {
         fs.rmSync(dir, { recursive: true, force: true });
         return res.status(400).json({ ok: false, message: '当前版本只支持 .xlsx 文件。' });

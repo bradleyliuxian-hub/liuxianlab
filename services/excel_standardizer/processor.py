@@ -12,10 +12,10 @@ if str(ROOT) not in sys.path:
 
 from openpyxl import load_workbook  # noqa: E402
 
-from workers.excel.audit import AuditLog  # noqa: E402
-from workers.excel.job_state import read_job, update_job  # noqa: E402
-from workers.excel.preview import build_preview  # noqa: E402
-from workers.excel.rules import (  # noqa: E402
+from services.excel_standardizer.audit import AuditLog  # noqa: E402
+from services.excel_standardizer.job_state import read_job, update_job  # noqa: E402
+from services.excel_standardizer.preview import build_preview  # noqa: E402
+from services.excel_standardizer.rules import (  # noqa: E402
     autofit_columns,
     header_style,
     normalize_dates,

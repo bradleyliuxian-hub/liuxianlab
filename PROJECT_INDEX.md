@@ -60,8 +60,8 @@ Frontend tools are Vanilla HTML/CSS/JS. Do not introduce React/Vue/Tailwind with
 
 | Item | Location |
 |---|---|
-| Node | `server/excel/` (routes, jobs), `server/sales-income/` |
-| Python | `workers/excel/` (processor, preview, audit, rules/*, sales_income/*) |
+| Node | `server/excel-standardizer/` (routes, jobs), `server/sales-income/` |
+| Python | `services/excel_standardizer/` (processor, preview, audit, job_state, rules/*), `workers/excel/sales_income/*` |
 | Frontend | `private/tools/excel-standardizer/`, `private/tools/sales-income-analysis/` |
 | Config | `config/excel_profiles/default.json` |
 | Docs | `docs/agent/excel-and-sales.md` |

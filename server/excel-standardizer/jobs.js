@@ -5,7 +5,7 @@ const path = require('path');
 const { spawn } = require('child_process');
 
 function createJobManager({ root, storageRoot }) {
-  const workerPath = path.join(root, 'workers', 'excel', 'processor.py');
+  const workerPath = path.join(root, 'services', 'excel_standardizer', 'processor.py');
   const maxConcurrent = Math.max(1, Number(process.env.MAX_CONCURRENT_EXCEL_JOBS || 2));
   const retentionHours = Math.max(1, Number(process.env.EXCEL_RETENTION_HOURS || 24));
   const queue = [];
@@ -65,11 +65,17 @@ function createJobManager({ root, storageRoot }) {
   }
 
   function resolvePythonBin() {
-    const configured = process.env.PYTHON_BIN || 'python3';
-    if (configured.startsWith('./') || configured.startsWith('../')) {
-      return path.resolve(root, configured);
+    const configured = process.env.PYTHON_BIN;
+    if (configured) {
+      if (configured.startsWith('./') || configured.startsWith('../')) {
+        return path.resolve(root, configured);
+      }
+      return configured;
     }
-    return configured;
+    // Fall back to the project virtualenv (has openpyxl), matching excel-review.
+    const venvPython = path.join(root, '.venv', 'bin', 'python');
+    if (fs.existsSync(venvPython)) return venvPython;
+    return 'python3';
   }
 
   function runNext() {

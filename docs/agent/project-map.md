@@ -10,7 +10,7 @@ need to know where a module lives before reading code.
 - 死数检查: `private/tools/excel-hardcode-check/` (browser-local).
 - 尾差检查: `private/tools/excel-decimal-check/` (browser-local).
 - Shared viewer/highlight: `private/shared/**`, vendored `private/vendor/**`.
-- Excel 标准化 / 销售: `server/excel/`, `server/sales-income/`, `workers/excel/`.
+- Excel 标准化: `server/excel-standardizer/`, `services/excel_standardizer/`. 销售分析: `server/sales-income/`, `workers/excel/sales_income/`.
 - 合同审阅: `server/contracts/`, `services/contract_review/`, migrations in `server/contracts/migrations/`.
 - Runtime (gitignored): `sessions/`, `storage/`, `logs/`, `data/`, `.mineru/`.
 

@@ -20,7 +20,7 @@ Set in `.env` (never commit, never print values):
 
 ## Preconditions for production
 
-- Python workers available: MinerU environment (`.mineru/`) + `workers/excel/requirements.txt` installed.
+- Python workers available: MinerU environment (`.mineru/`) + worker deps installed (`services/excel_standardizer/requirements.txt`, `workers/excel/requirements.txt`).
 - PostgreSQL reachable and migrations applied (`server/contracts/migrations/`).
 - `data/users.json` present with real users (admin-created).
 

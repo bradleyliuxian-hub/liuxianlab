@@ -5,8 +5,8 @@ Read on demand. Both tools are Node routes + Python workers.
 ## Excel standardizer
 
 - UI: `private/tools/excel-standardizer/` (`index.html`, `script.js`, `styles.css`).
-- API: `/api/excel` -> `server/excel/routes.js` (`createExcelRouter`), job lifecycle in `server/excel/jobs.js`.
-- Worker: `workers/excel/`
+- API: `/api/excel` -> `server/excel-standardizer/routes.js` (`createExcelRouter`), job lifecycle in `server/excel-standardizer/jobs.js`.
+- Worker: `services/excel_standardizer/`
   - `processor.py` — main processing entry.
   - `job_state.py` — job state persistence.
   - `preview.py` — preview generation.
