@@ -8,12 +8,14 @@ Updated: 2026-10-16
 ## Git
 
 - 分支：`main`（查询：`git branch --show-current`）
-- HEAD：`ce6876c`（查询：`git rev-parse --short HEAD`）
-- 工作区（未提交）：本地 pre-push 检查器；以及 Excel 标准化两项改动——
-  (a) 运行时修复 `server/excel-standardizer/jobs.js`（Python 解释器回落到 `.venv`）；
-  (b) 目录迁移 `server/excel/`→`server/excel-standardizer/`、
-  `workers/excel/*`→`services/excel_standardizer/*`（`git mv`，保留历史），并同步
-  `server.js` 与文档。查询：`git status --short`。
+- HEAD：`ffb2935`（查询：`git rev-parse --short HEAD`）
+- 工作区：干净（已全部提交并推送至 `origin/main`）。
+- 已上线内容：本地 pre-push 检查器；Excel 标准化修复（解释器回落 `.venv`、
+  中文文件名乱码 `defParamCharset:utf8`+`repairMojibake`）与后端迁移
+  （`server/excel/`→`server/excel-standardizer/`、`workers/excel/*`→`services/excel_standardizer/*`）。
+- 部署踩坑：新增 `services/excel_standardizer/requirements.txt` 触发服务器 deployer 的
+  DEPENDENCY CHECK（任何 Python 依赖清单变更需人工评审）→ 已移除（openpyxl 已由
+  `workers/excel/requirements.txt` 声明）。见 `docs/agent/deployment.md` 部署不变量。
 
 ## Current Focus
 
