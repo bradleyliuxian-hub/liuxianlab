@@ -101,9 +101,12 @@
     root.appendChild(control);
 
     const panel = document.createElement('div');
-    panel.className = 'ms-panel';
+    panel.className = 'ms-panel ms-panel--portal';
     panel.hidden = true;
-    root.appendChild(panel);
+    // Portal: render the dropdown at <body> level and position it with fixed
+    // coordinates so it is never clipped by an ancestor's overflow and never
+    // affects the layout of the risk list / Excel viewer.
+    document.body.appendChild(panel);
 
     let search = null;
     if (config.searchable) {
@@ -212,19 +215,43 @@
       }
     }
 
+    function positionPanel() {
+      const rect = control.getBoundingClientRect();
+      const gap = 6;
+      const margin = 8;
+      const width = Math.max(rect.width, 260);
+      panel.style.minWidth = `${width}px`;
+      panel.style.left = `${Math.min(Math.max(margin, rect.left), Math.max(margin, window.innerWidth - width - margin))}px`;
+      // Measure after it is visible, then flip above when there is no room below.
+      const panelHeight = panel.offsetHeight || 280;
+      let top = rect.bottom + gap;
+      if (top + panelHeight > window.innerHeight - margin) {
+        const above = rect.top - panelHeight - gap;
+        top = above >= margin ? above : Math.max(margin, window.innerHeight - panelHeight - margin);
+      }
+      panel.style.top = `${top}px`;
+    }
+
     function open() {
       panel.hidden = false;
       control.classList.add('is-open');
       renderList();
+      positionPanel();
       if (search) setTimeout(() => search.focus(), 0);
     }
     function close() {
       panel.hidden = true;
       control.classList.remove('is-open');
     }
+    function onViewportChange() { if (!panel.hidden) positionPanel(); }
 
     control.addEventListener('click', () => { if (panel.hidden) open(); else close(); });
-    document.addEventListener('click', (event) => { if (!root.contains(event.target)) close(); });
+    document.addEventListener('click', (event) => {
+      if (!root.contains(event.target) && !panel.contains(event.target)) close();
+    });
+    document.addEventListener('keydown', (event) => { if (event.key === 'Escape') close(); });
+    window.addEventListener('resize', onViewportChange);
+    window.addEventListener('scroll', onViewportChange, true);
     if (search) search.addEventListener('input', renderList);
     selectAllBtn.addEventListener('click', () => {
       store.options.forEach((o) => store.values.add(o.value));

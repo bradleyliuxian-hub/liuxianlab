@@ -155,20 +155,18 @@
       const viewW = body.clientWidth || 800;
       const needRows = Math.ceil(viewH / APPROX_ROW_PX) + core.OVERSCAN_ROWS;
       const needCols = Math.ceil(viewW / APPROX_COL_PX) + core.OVERSCAN_COLS;
-      // Rows/cols already scrolled past (approx) so scrolling extends the range.
-      const scrollRow = Math.floor((body.scrollTop || 0) / APPROX_ROW_PX);
-      const scrollCol = Math.floor((body.scrollLeft || 0) / APPROX_COL_PX);
+      // Stable bounds: do NOT grow with scroll. Growing the canvas while the
+      // user scrolls changes the scroll range on every frame (scroll jump /
+      // flicker). A fixed generous margin past the used range is enough.
       let maxRow = Math.max(
         b.maxRow + VIEWER_EXTRA_ROWS,
         b.minRow + needRows - 1,
-        sel ? sel.row : b.minRow,
-        scrollRow + needRows + VIEWER_EXTRA_ROWS
+        sel ? sel.row : b.minRow
       );
       let maxCol = Math.max(
         b.maxCol + VIEWER_EXTRA_COLS,
         b.minCol + needCols - 1,
-        sel ? sel.col : b.minCol,
-        scrollCol + needCols + VIEWER_EXTRA_COLS
+        sel ? sel.col : b.minCol
       );
       maxRow = Math.min(maxRow, b.minRow + MAX_ROWS - 1);
       return { minRow: b.minRow, maxRow, minCol: b.minCol, maxCol };
@@ -265,11 +263,13 @@
         lastSheetName = state.sheetName;
         const reveal = Boolean(state.selected) && (tokenChanged || modeChanged);
         if (sheetChanged && !tokenChanged) { body.scrollTop = 0; body.scrollLeft = 0; }
-        if (state.mode === 'focus' && state.selected) {
-          renderFocus(state, ws, meta, merge, reveal);
-        } else {
-          renderSheet(state, ws, meta, merge, reveal);
-        }
+        // Single scroll engine for BOTH modes: the canvas always spans the full
+        // worksheet range and only the visible window of cells is rendered at
+        // their absolute offsets. "focus" vs "sheet" only changes the initial
+        // reveal behaviour (centred on the selection vs top-left); it no longer
+        // swaps in a viewport-sized canvas, which used to make leading columns
+        // (A..) and leading rows (…1) unreachable.
+        renderSheet(state, ws, meta, merge, reveal);
       } finally {
         rendering = false;
       }
@@ -356,10 +356,14 @@
     }
 
     function setCanvas(totalWidth, totalHeight) {
-      canvas.style.width = totalWidth + 'px';
-      canvas.style.height = totalHeight + 'px';
-      colHeadCanvas.style.width = totalWidth + 'px';
-      rowHeadCanvas.style.height = totalHeight + 'px';
+      // Only write when the size actually changed: repeated style writes on the
+      // canvas would force extra layout and can feed back into ResizeObserver.
+      const w = totalWidth + 'px';
+      const h = totalHeight + 'px';
+      if (canvas.style.width !== w) canvas.style.width = w;
+      if (canvas.style.height !== h) canvas.style.height = h;
+      if (colHeadCanvas.style.width !== w) colHeadCanvas.style.width = w;
+      if (rowHeadCanvas.style.height !== h) rowHeadCanvas.style.height = h;
     }
 
     function syncHeaders() {
@@ -375,46 +379,6 @@
       s = Math.max(min, s);
       e = Math.min(max, e);
       return { start: s, end: e };
-    }
-
-    // Focus window: centred on the selection but sized to at least fill the
-    // viewport (with a small buffer), so the card shows a full worksheet grid
-    // instead of a small preview floating in blank space.
-    function focusWindow(sel, bounds) {
-      const viewH = body.clientHeight || 400;
-      const viewW = body.clientWidth || 800;
-      const fillRows = Math.max(2 * 8 + 1, Math.ceil(viewH / APPROX_ROW_PX) + 4);
-      const fillCols = Math.max(2 * 5 + 1, Math.ceil(viewW / APPROX_COL_PX) + 3);
-      const halfR = Math.floor(fillRows / 2);
-      const halfC = Math.floor(fillCols / 2);
-      const rows = clampWindowToBounds(sel.row - halfR, sel.row - halfR + fillRows - 1, bounds.minRow, bounds.maxRow);
-      const cols = clampWindowToBounds(sel.col - halfC, sel.col - halfC + fillCols - 1, bounds.minCol, bounds.maxCol);
-      return { rowStart: rows.start, rowEnd: rows.end, colStart: cols.start, colEnd: cols.end };
-    }
-
-    function renderFocus(state, ws, meta, merge, reveal) {
-      const bounds = viewBounds(meta, state);
-      const focus = focusWindow(state.selected, bounds);
-      const rows = core.rangeList(focus.rowStart, focus.rowEnd);
-      const cols = core.rangeList(focus.colStart, focus.colEnd);
-      const rowOffsets = core.buildOffsets(focus.rowStart, focus.rowEnd, (r) => core.rowHeightPx(meta, r));
-      const colOffsets = core.buildOffsets(focus.colStart, focus.colEnd, (c) => core.colWidthPx(meta, c));
-      const rowOffsetOf = (r) => rowOffsets[r - focus.rowStart];
-      const colOffsetOf = (c) => colOffsets[c - focus.colStart];
-      const totalW = colOffsets[colOffsets.length - 1];
-      const totalH = rowOffsets[rowOffsets.length - 1];
-      setCanvas(totalW, totalH);
-      renderHeaders(rows, cols, rowOffsetOf, colOffsetOf, meta);
-      putCells(state, ws, meta, merge, rows, cols, rowOffsetOf, colOffsetOf);
-      // Only (re)position on an explicit reveal; a plain render leaves the
-      // user's scroll position untouched so the viewport stays free.
-      if (reveal) {
-        const viewH = body.clientHeight || 400;
-        const viewW = body.clientWidth || 800;
-        body.scrollTop = Math.max(0, rowOffsetOf(state.selected.row) - viewH / 2 + core.rowHeightPx(meta, state.selected.row) / 2);
-        body.scrollLeft = Math.max(0, colOffsetOf(state.selected.col) - viewW / 2 + core.colWidthPx(meta, state.selected.col) / 2);
-      }
-      syncHeaders();
     }
 
     function renderSheet(state, ws, meta, merge, reveal) {
@@ -469,7 +433,14 @@
       const state = model.state();
       nameBox.value = state.selected ? core.encodeAddress(state.selected.row, state.selected.col) : '';
     });
-    body.addEventListener('scroll', () => { syncHeaders(); schedule(); });
+    body.addEventListener('scroll', () => {
+      // The canvas spans the full worksheet, so scrolling must re-render the
+      // visible window (both axes) to keep cells filling the viewport. The
+      // window is virtualised, so this stays cheap; the scroll position itself
+      // is never reset here.
+      syncHeaders();
+      schedule();
+    });
     body.addEventListener('click', (event) => {
       const cell = event.target.closest('.vwr-cell');
       if (!cell) return;
@@ -490,11 +461,22 @@
     const unsubscribe = model.subscribe(schedule);
     const onResize = () => schedule();
     window.addEventListener('resize', onResize);
-    // Re-fill the grid when the viewer (or its container / splitter) resizes.
+    // Re-fill the grid when the viewer frame resizes. Observe the FRAME (fixed
+    // outer size), not the scroll body: observing the scroll container reacts to
+    // scrollbar appearance/disappearance and can oscillate. Also ignore
+    // same-size notifications to avoid redundant renders.
     let resizeObserver = null;
     if (typeof ResizeObserver !== 'undefined') {
-      resizeObserver = new ResizeObserver(() => schedule());
-      resizeObserver.observe(body);
+      let lastObservedSize = '';
+      resizeObserver = new ResizeObserver((entries) => {
+        const rect = entries[0] && entries[0].contentRect;
+        if (!rect) return;
+        const sizeKey = `${Math.round(rect.width)}x${Math.round(rect.height)}`;
+        if (sizeKey === lastObservedSize) return;
+        lastObservedSize = sizeKey;
+        schedule();
+      });
+      resizeObserver.observe(frame);
     }
 
     // initial paint
@@ -502,6 +484,7 @@
 
     return {
       refresh: schedule,
+      render: () => render(),
       focus: () => rootEl.focus(),
       destroy() {
         unsubscribe();

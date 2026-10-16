@@ -36,7 +36,9 @@ const logoutButton = $('#logoutButton');
 const themeToggle = $('#themeToggle');
 const topThemeToggle = $('#topThemeToggle');
 const railThemeToggle = $('#railThemeToggle');
+const topAvatar = $('#topAvatar');
 const navCollapseButton = $('#navCollapseButton');
+const navCollapseButtonRail = $('#navCollapseButtonRail');
 const sidebar = $('#sidebar');
 const mobileMenuButton = $('#mobileMenuButton');
 const sidebarBackdrop = $('#sidebarBackdrop');
@@ -65,8 +67,13 @@ function initNavigationState() {
 
 function updateCollapseButton() {
   const collapsed = body.classList.contains('nav-collapsed');
-  navCollapseButton?.setAttribute('aria-label', collapsed ? '展开侧边栏' : '折叠侧边栏');
-  navCollapseButton?.setAttribute('title', collapsed ? '展开侧边栏' : '折叠侧边栏');
+  const label = collapsed ? '展开侧边栏' : '折叠侧边栏';
+  [navCollapseButton, navCollapseButtonRail].forEach((button) => {
+    if (!button) return;
+    button.setAttribute('aria-label', label);
+    button.setAttribute('title', label);
+    button.setAttribute('aria-expanded', String(!collapsed));
+  });
 }
 
 function toggleNavigation() {
@@ -103,6 +110,7 @@ async function loadSession() {
     $('#greetingUsername').textContent = username;
     $('#greetingText').textContent = getGreeting();
     $('#userAvatar').textContent = username.slice(0, 1).toUpperCase();
+    if (topAvatar) topAvatar.textContent = username.slice(0, 1).toUpperCase();
   } catch (_error) {
     window.location.replace('/login');
   }
@@ -321,12 +329,14 @@ function openSidebar() {
   if (window.innerWidth > 820) return;
   sidebar.classList.add('open');
   sidebarBackdrop.hidden = false;
+  body.classList.add('drawer-open');
   mobileMenuButton.setAttribute('aria-expanded', 'true');
 }
 
 function closeSidebar() {
   sidebar.classList.remove('open');
   sidebarBackdrop.hidden = true;
+  body.classList.remove('drawer-open');
   mobileMenuButton.setAttribute('aria-expanded', 'false');
 }
 
@@ -350,6 +360,7 @@ document.addEventListener('click', (event) => {
 
 [themeToggle, topThemeToggle, railThemeToggle].forEach((button) => button?.addEventListener('click', toggleTheme));
 navCollapseButton?.addEventListener('click', toggleNavigation);
+navCollapseButtonRail?.addEventListener('click', toggleNavigation);
 
 logoutButton?.addEventListener('click', async () => {
   logoutButton.disabled = true;

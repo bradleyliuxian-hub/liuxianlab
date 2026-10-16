@@ -13,7 +13,7 @@ if (savedTheme === 'dark' || (!savedTheme && systemDark)) body.classList.add('da
 
 function syncThemeColor() {
   const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.setAttribute('content', body.classList.contains('dark') ? '#10120f' : '#f5f4ef');
+  if (meta) meta.setAttribute('content', body.classList.contains('dark') ? '#06101F' : '#061A3A');
 }
 syncThemeColor();
 

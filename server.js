@@ -225,6 +225,16 @@ app.get('/login.js', (_req, res) => {
   return res.sendFile(path.join(PUBLIC_DIR, 'login.js'));
 });
 
+/*
+ * Public design tokens: a static, non-authenticated asset shared by the public
+ * login page and the authenticated app (single brand colour source). Contains
+ * only CSS variables — no business data and no auth logic.
+ */
+app.get('/design-tokens.css', (_req, res) => {
+  res.set('Cache-Control', 'no-store');
+  return res.sendFile(path.join(PUBLIC_DIR, 'design-tokens.css'));
+});
+
 app.post('/api/login', sameOriginForStateChange, loginLimiter, async (req, res) => {
   const username = normalizeUsername(req.body.username);
   const password = String(req.body.password || '');

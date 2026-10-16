@@ -4,10 +4,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="color-scheme" content="light dark">
-  <meta name="theme-color" content="#f5f4ef">
-  <title>登录 · Liuxian Lab</title>
-  <meta name="description" content="Liuxian Lab 团队工作台登录入口。账号由管理员统一创建与分配。">
-  <link rel="stylesheet" href="/login.css?v=2.1.0">
+  <meta name="theme-color" content="#061A3A">
+  <title>登录 · LIUXIAN LAB</title>
+  <meta name="description" content="LIUXIAN LAB 内部工作平台登录入口。账号由管理员统一创建与分配。">
+  <link rel="stylesheet" href="/design-tokens.css?v=1.0.0">
+  <link rel="stylesheet" href="/login.css?v=4.0.0">
 </head>
 <body>
   <main class="login-shell">
@@ -19,26 +20,25 @@
             <path d="M14 27.5 22 12l8 15.5M17.2 22h9.6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
         </span>
-        <span class="brand-name"><strong>Liuxian</strong><small>LAB</small></span>
+        <span class="brand-name"><strong>LIUXIAN</strong><small>LAB</small></span>
       </a>
 
       <div class="brand-copy">
-        <div class="eyebrow"><span></span> Private workspace</div>
-        <h1>只让被授权的人，<br>进入你的工作空间。</h1>
-        <p>Liuxian Lab 是面向团队成员的内部工作台。账号由管理员统一创建，不开放自助注册。</p>
+        <div class="eyebrow"><span></span> LIUXIAN LAB · PRIVATE WORKSPACE</div>
+        <h1>专注专业工作，<br>洞察从这里开始</h1>
       </div>
 
-      <div class="security-card" aria-label="访问说明">
+      <div class="security-card" aria-label="工作环境说明">
         <div class="security-icon" aria-hidden="true">
           <svg viewBox="0 0 24 24"><path d="M7 10V8a5 5 0 0 1 10 0v2"/><rect x="5" y="10" width="14" height="11" rx="3"/><path d="M12 14v3"/></svg>
         </div>
         <div>
-          <strong>受保护的团队空间</strong>
-          <p>账号密码由服务器端验证，密码只保存为哈希值，不会写入网页代码。</p>
+          <strong>企业级工作环境</strong>
+          <p>数据、工具与工作流程均在受控空间内运行。</p>
         </div>
       </div>
 
-      <p class="brand-foot">© <span id="brandYear"></span> Liuxian Lab · Internal use only</p>
+      <p class="brand-foot">© <span id="brandYear"></span> LIUXIAN LAB · Internal use only</p>
     </section>
 
     <section class="form-panel">
@@ -57,8 +57,8 @@
         <div class="form-heading">
           <span class="mini-mark">L</span>
           <p class="kicker">MEMBER ACCESS</p>
-          <h2>欢迎回来</h2>
-          <p>请输入管理员提供给你的账号和密码。</p>
+          <h2>进入你的专业工作空间</h2>
+          <p>请使用管理员提供的账号和密码登录。</p>
         </div>
 
         <form class="login-form" id="loginForm" novalidate>
@@ -103,14 +103,14 @@
 
         <div class="access-note">
           <span aria-hidden="true">i</span>
-          <p><strong>没有账号？</strong> Liuxian Lab 不开放注册。请向管理员申请账号。</p>
+          <p><strong>没有账号？</strong> LIUXIAN LAB 不开放自主注册，请向管理员申请账号。</p>
         </div>
       </div>
 
-      <p class="mobile-foot">© <span id="mobileYear"></span> Liuxian Lab</p>
+      <p class="mobile-foot">© <span id="mobileYear"></span> LIUXIAN LAB</p>
     </section>
   </main>
 
-  <script src="/login.js?v=2.1.0"></script>
+  <script src="/login.js?v=4.0.0"></script>
 </body>
 </html>

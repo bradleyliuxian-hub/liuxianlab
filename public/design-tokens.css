@@ -1,0 +1,155 @@
+/* ============================================================================
+ * LIUXIAN LAB — Design Tokens (single source of truth) · v1.0
+ * Implements docs/design-tokens.md as CSS variables for the WHOLE project,
+ * including the public login page. Served publicly at /design-tokens.css
+ * (static asset only — no authentication logic involved).
+ *
+ * Semantic tokens use the --color-* vocabulary; all legacy project variable
+ * names (App Shell, tool shell, login) are aliased to them so there is ONE
+ * brand source, not two. Light on :root, dark on body.dark / [data-theme=dark].
+ * ========================================================================== */
+
+:root {
+  /* ---- Brand ---- */
+  --color-brand-primary: #0B5BD3;
+  --color-brand-primary-hover: #0847A6;
+  --color-brand-primary-active: #063B8C;
+  --color-brand-primary-soft: #E8F1FF;
+  --color-brand-navy: #061A3A;
+  --color-brand-navy-2: #0B2852;
+
+  /* ---- Surfaces / text / borders (light) ---- */
+  --color-bg: #F6F8FB;
+  --color-bg-subtle: #F1F5F9;
+  --color-surface: #FFFFFF;
+  --color-surface-raised: #FFFFFF;
+  --color-surface-muted: #F8FAFC;
+  --color-text-primary: #0F172A;
+  --color-text-secondary: #475569;
+  --color-text-tertiary: #64748B;
+  --color-text-disabled: #94A3B8;
+  --color-border: #D9E2EC;
+  --color-border-strong: #CBD5E1;
+  --color-divider: #E2E8F0;
+  --color-overlay: rgba(15, 23, 42, 0.45);
+
+  /* ---- Status ---- */
+  --color-success: #059669;
+  --color-success-soft: #ECFDF5;
+  --color-warning: #D97706;
+  --color-warning-soft: #FFF7ED;
+  --color-danger: #DC2626;
+  --color-danger-soft: #FEF2F2;
+  --color-info: #2563EB;
+  --color-info-soft: #EFF6FF;
+
+  /* ---- Radius / Shadow / Spacing / Type ---- */
+  --radius-xs: 4px; --radius-sm: 8px; --radius-md: 12px; --radius-lg: 16px;
+  --radius-xl: 20px; --radius-2xl: 24px; --radius-pill: 999px;
+  --shadow-xs: 0 1px 2px rgba(15, 23, 42, .05);
+  --shadow-sm: 0 2px 8px rgba(15, 23, 42, .06);
+  --shadow-md: 0 8px 24px rgba(15, 23, 42, .08);
+  --shadow-lg: 0 16px 40px rgba(15, 23, 42, .10);
+  --shadow-sidebar: 0 12px 32px rgba(2, 16, 42, .18);
+  --shadow-focus: 0 0 0 3px rgba(11, 91, 211, .16);
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px;
+  --space-5: 20px; --space-6: 24px; --space-8: 32px; --space-10: 40px;
+  --space-12: 48px; --space-16: 64px; --space-20: 80px; --space-24: 96px;
+  --font-sans: Inter, "PingFang SC", "Microsoft YaHei", "Noto Sans SC", system-ui,
+    -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --text-display: 48px; --text-h1: 36px; --text-h2: 28px; --text-h3: 22px;
+  --text-h4: 18px; --text-body-lg: 16px; --text-body: 14px; --text-small: 13px;
+  --text-caption: 12px; --text-micro: 11px;
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+body.dark,
+[data-theme="dark"] {
+  --color-brand-primary: #3B82F6;
+  --color-brand-primary-hover: #60A5FA;
+  --color-brand-primary-active: #93C5FD;
+  --color-brand-primary-soft: #102B52;
+  --color-brand-navy: #06101F;
+  --color-brand-navy-2: #071426;
+
+  --color-bg: #06101F;
+  --color-bg-subtle: #071426;
+  --color-surface: #0B1B31;
+  --color-surface-raised: #10233D;
+  --color-surface-muted: #0F2037;
+  --color-text-primary: #F8FAFC;
+  --color-text-secondary: #CBD5E1;
+  --color-text-tertiary: #94A3B8;
+  --color-text-disabled: #64748B;
+  --color-border: #203653;
+  --color-border-strong: #35506F;
+  --color-divider: #1E3450;
+  --color-overlay: rgba(2, 8, 23, 0.68);
+
+  --color-warning-soft: #2A2110;
+  --color-success-soft: #0C2A22;
+  --color-danger-soft: #2A1516;
+  --color-info-soft: #102A4C;
+
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, .24);
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, .30);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, .38);
+  --shadow-lg: 0 16px 40px rgba(0, 0, 0, .46);
+  --shadow-sidebar: 0 12px 32px rgba(0, 0, 0, .46);
+  --shadow-focus: 0 0 0 3px rgba(59, 130, 246, .28);
+
+  --navy-3: #123867;
+  --text-strong: #FFFFFF;
+}
+
+/* Theme-aware alias layer: declared for BOTH themes so that aliasing
+   resolves --color-* on the themed element (light on :root, dark on
+   body.dark / [data-theme=dark]). */
+:root,
+body.dark,
+[data-theme="dark"] {
+  /* ---- Legacy aliases → semantic (App Shell / tool shell / login) ---- */
+  --page: var(--color-bg);
+  --bg: var(--color-bg);
+  --canvas: var(--color-bg-subtle);
+  --surface: var(--color-surface);
+  --surface-strong: var(--color-surface-raised);
+  --surface-soft: var(--color-surface-muted);
+  --soft: var(--color-surface-muted);
+  --surface-blue: var(--color-brand-primary-soft);
+  --text: var(--color-text-primary);
+  --text-strong: var(--color-text-primary);
+  --text-2: var(--color-text-secondary);
+  --text-3: var(--color-text-tertiary);
+  --text-tertiary: var(--color-text-tertiary);
+  --muted: var(--color-text-secondary);
+  --muted-2: var(--color-text-tertiary);
+  --placeholder: var(--color-text-tertiary);
+  --line: var(--color-border);
+  --line-strong: var(--color-border-strong);
+  --border: var(--color-border);
+  --border-strong: var(--color-border-strong);
+  --input-border: var(--color-border-strong);
+  --navy: var(--color-brand-navy);
+  --navy-2: var(--color-brand-navy-2);
+  --navy-3: #103264;
+  --primary: var(--color-brand-primary);
+  --primary-dark: var(--color-brand-primary-hover);
+  --primary-light: var(--color-brand-primary-soft);
+  --blue: var(--color-brand-primary);
+  --blue-soft: var(--color-brand-primary-soft);
+  --blue-ring: var(--shadow-focus);
+  --accent: var(--color-brand-primary);
+  --accent-strong: var(--color-brand-navy);
+  --accent-soft: var(--color-brand-primary-soft);
+  --dark: var(--color-brand-navy);
+  --warn: var(--color-warning);
+  --warning: var(--color-warning);
+  --warn-soft: var(--color-warning-soft);
+  --danger: var(--color-danger);
+  --error: var(--color-danger);
+  --success: var(--color-success);
+  --info: var(--color-info);
+  --radius: var(--radius-md);
+}
