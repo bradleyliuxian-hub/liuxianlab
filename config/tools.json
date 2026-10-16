@@ -74,23 +74,27 @@
   },
   {
     "slug": "excel-decimal-check",
-    "name": "Excel尾差检查",
-    "description": "检查并修正超过两位小数的单元格；支持网页内定位复核，导出修正文件与问题清单。",
+    "name": "Excel尾差风险检查",
+    "description": "识别可能导致最终展示结果出现尾差的多位小数、公式结果、隐藏区域、百分比与汇率数据；支持公式引用分析、业务类型识别与风险分级，仅发现问题、不改原文件。",
     "category": "数据",
     "status": "ready",
-    "version": "v1.2.0",
+    "version": "v1.3.0",
     "icon": "2DP",
     "keywords": [
       "excel",
       "xlsx",
+      "尾差",
       "小数",
       "小数位",
       "两位小数",
-      "四舍五入",
-      "检查",
-      "修正",
+      "风险",
+      "隐藏",
+      "百分比",
+      "汇率",
+      "引用",
       "decimal",
-      "round"
+      "round",
+      "exchange rate"
     ]
   },
   {

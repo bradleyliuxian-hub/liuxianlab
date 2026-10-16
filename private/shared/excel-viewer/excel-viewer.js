@@ -211,8 +211,12 @@
       const list = model.filteredIssues();
       const pos = state.listIndex >= 0 && list.length ? state.listIndex + 1 : 0;
       navLabel.textContent = `${pos} / ${list.length}`;
-      prevBtn.disabled = list.length === 0;
-      nextBtn.disabled = list.length === 0;
+      const cycle = state.cycle !== false;
+      const emptyList = list.length === 0;
+      const atStart = emptyList || (!cycle && state.listIndex <= 0);
+      const atEnd = emptyList || (!cycle && (state.listIndex < 0 || state.listIndex >= list.length - 1));
+      prevBtn.disabled = atStart;
+      nextBtn.disabled = atEnd;
 
       overlayCheck.checked = state.overlay;
       modeBtn.textContent = state.mode === 'sheet' ? '问题聚焦' : '查看完整工作表';

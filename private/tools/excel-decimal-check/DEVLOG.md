@@ -1,10 +1,10 @@
-# Excel 小数检查 · 开发日志（DEVLOG）
+# Excel 尾差风险检查 · 开发日志（DEVLOG）
 
-> 工具：Excel Decimal Check
+> 工具：Excel Tail-Risk Check（slug：`excel-decimal-check`）
 > 入口：`/tools/excel-decimal-check`
-> 产品定位：**纯浏览器本地只读复核**，扫描超过两位小数的单元格，网页内定位复核，导出标黄对比文件与问题清单（不修改原文件）。
-> 当前 UI 版本：`v1.2.0`（工具卡片 badge：可用；页面标记 Decimal v1.2）
-> 最近更新：2026-10-15
+> 产品定位：**纯浏览器本地、只读的尾差风险分析工具**——识别可能导致最终展示/交付/打印结果出现非预期尾差的多位小数、公式结果、隐藏区域与百分比数据，结合公式引用关系做风险分级，仅发现问题、F5 定位与问题清单导出（不改原文件）。
+> 当前 UI 版本：`v1.3.0`（尾差风险分析版）
+> 最近更新：2026-10-16
 
 本文件记录该工具的**版本功能**与**版本修改**，供开发者（AI 接手）与使用者查阅。
 
@@ -12,41 +12,65 @@
 
 ## 1. 功能概述
 
-检查 Excel 中**实际数值超过两位小数**的单元格，并生成两类结果：
+不再以“找出所有超过两位小数的单元格”为目标，而是识别**真正可能导致最终结果出现尾差**的数据，并结合“是否隐藏、是否百分比、是否被公式引用、引用次数”区分风险：
 
-1. **标黄对比文件**：基于原始文件生成副本，仅对问题单元格添加黄色填充；公式、外部链接、结构不变，原文件不受影响。
-2. **问题清单 Excel**：仅含异常单元格及 **Excel F5 定位地址**，便于人工逐项核对。
+```
+多位小数
+↓ 识别业务类型：普通数值 / 汇率 / 疑似汇率 / 百分比
+↓ 识别类型：普通数值 / 公式结果 / 公式不可判定 / 百分比 / 汇率
+↓ 是否隐藏
+↓ 是否被引用（直接引用次数 + 下游引用数）
+↓ 是否可能是输出终点
+↓ 风险等级：高 / 中 / 低 / 单独观察
+↓ F5 定位 + 人工处理
+```
 
-（原「修正后的 Excel」与「处理状态」已于 v1.2.0 移除：工具只读、只定位与标黄，不自动修改。）
+只读、只发现，**不自动修改**：
+
+- 不修改普通数值 / 公式 / 百分比；
+- 不自动包 ROUND；
+- 不生成修正版 Excel、不覆盖原文件。
+
+输出（两个相互独立、均不改原文件）：
+
+1. **下载标黄对比文件**：基于原始文件的最小 OOXML 样式补丁（仅标黄问题单元格，公式/结构不变）。
+2. **下载问题清单 Excel**：6 个工作表（见 §4）。
 
 **关键设计**：
 
-- **浏览器本地处理**，文件不上传服务器；下载为新建文件，绝不覆盖原文件。
-- 检查的是单元格**实际数值**，而非显示格式。因此「实际 1.23456、显示 1.23」仍判为异常。
-- **尾随 0 不误报**（`10.120` 视为 `10.12`）；**JS 浮点误差不误报**（`0.1+0.2` 视为 `0.3`）。
+- 浏览器本地处理，文件不上传服务器。
+- 检查单元格**实际数值**（含公式缓存结果），而非显示格式。
+- 尾随 0 不误报；JS 浮点误差不误报。
+- 日期格式的数值单元格不参与小数检查。
 
 ---
 
 ## 2. 版本历史（功能 + 修改）
 
-### v1.2.0（2026-10-15）— 只读复核 + 标黄对比（移除自动修正/状态）
+### v1.3.0（2026-10-16）— 尾差风险分析版
 
-- **移除自动修正与处理状态**：不再提供「下载修正后的 Excel」；issue 不再有 `status/fixedValue/fixedFormula`，问题清单去掉「修正后值 / 修正后公式 / 自动处理状态 / 备注」四列（列数 12 → 8）。
-- **Viewer 只读**：扫描不再改写工作簿（`scanWorkbook` 纯读取），网页内展示**原始**工作簿 + 问题黄标。
-- **新增「下载标黄对比文件」**：复用共享 `private/shared/excel-highlight/ooxml-highlight.js` + `fflate`，对原始文件做最小 OOXML 样式补丁，仅标黄问题单元格；公式/外部链接/命名范围/隐藏状态/图表等不变，原文件不改。仅支持 `.xlsx` / `.xlsm` 原文件，其余扩展名禁用该按钮并提示。
-- **共享模块**：`ooxml-highlight.js` 迁至 `private/shared/excel-highlight/`（新增中立别名 `ExcelOoxmlHighlight`）；其严重级别默认改为「高亮全部非 IGNORE」，可用 `options.severities` 覆盖（死数检查行为不变）。
-- 未改扫描/检测逻辑；未改 workbook。
+- **隐藏区域可选扫描**：新增扫描选项「检查隐藏区域」（默认关闭）。未勾选时隐藏行 / 隐藏列 / 隐藏工作表不进入常规结果；勾选后单独进入「隐藏区域检查」类别，绝不与普通问题混排。隐藏值仍可因被可见公式引用而判为**高风险**。
+- **百分比独立分类**：按 Number Format 识别百分比语义（`0%` / `0.00%` / `#,##0.00%` / 自定义百分比等；转义 `\%`、`"%"` 字面量不识别）。百分比单元格**永不进入普通数值问题**，单独进入「百分比检查」；默认「单独观察」，被引用则中风险，被可见公式引用则高风险。
+- **业务类型与差异精度标准**：`normal_number` 允许 2 位、`exchange_rate` 允许 4 位、`percentage` 单独分析。汇率**按上下文识别**（同行/同列标题含 汇率/兑换率/exchange rate 等、标题含币种对、命名范围、引用来源标题），**不依赖数值范围或小数位数**。精度不足只会「疑似汇率」并进入单独观察，绝不静默豁免。汇率单元格即使精度正常也仍计算直接/下游引用数；影响面大的记为「高影响基础参数」。独立「汇率检查」Sheet 按下游引用数排序。
+- **汇率血缘（纯引用继承）**：公式主体若恰好是**单个单元格/Named Range 引用**（`=B2` / `=$B$2` / `='汇率表'!$B$2` / `=USD_CNY_RATE`），则继承上游汇率类型、允许 4 位、**不进入公式结果问题**；可跨多层、跨表传播（`汇率直接引用`）。一旦对汇率做了运算（`+` `*` `ROUND` `ABS` `SUM` …，含 `+0`/`*1`）即变为 `exchange_rate_derived`（**不再享受 4 位豁免**，按结果类型评估）；仅当派生单元格自身上下文明确为汇率（如 `CNY/USD` 标题）才重新判定为汇率。「引用了汇率」≠「结果是汇率」。
+- **公式引用关系分析**（默认开启）：直接引用数 + **下游引用数**（从该单元格出发、经正向依赖图递归可达的**去重**节点数）。支持同表 / 跨表 / 绝对 / 相对 / 中文 / 带空格 / 带单引号的 Sheet 名；循环引用安全（不递归死循环、节点不重复计数）。
+- **风险分级 + 下游优先排序**：高风险 / 中风险 / 低风险 / 单独观察。默认风险等级优先，同一等级内按**下游引用数降序**，其次直接引用数。网页可切换排序（风险优先 / 下游引用最多 / 直接引用最多 / 工作表顺序）；问题清单与此排序一致。
+- **多选筛选**：风险等级 / 问题类型 / 工作表 / 业务类型 / 隐藏类型 / 精度状态 均为可多选下拉（字段内 OR、字段间 AND、空=不过滤）；工作表支持搜索；支持全选 / 单框清空 / 统一「清空筛选」；结果计数显示「当前 / 总数」。筛选与排序相互独立，**不影响导出范围**（导出始终为完整问题清单）。
+- **上一个 / 下一个基于当前筛选结果**：Excel 预览内的导航（`← 上一个 / 下一个 →`，显示 `当前位次 / 筛选数量`）严格按**筛选后的排序结果**移动，不跳到被过滤掉的问题；筛选/排序变化时，当前问题若仍在列表则保持选中、仅重算位次，否则跳到第一条；0 条或 1 条时按钮禁用，首/尾分别禁用上一个/下一个，且**不循环**。共享 viewer 新增 `setFilterList` / `reconcile` 与 `cycle:false`（不循环）选项，向后兼容（死数检查未受影响）。
+- **问题清单 7 工作表**：高风险尾差 / 普通数值问题 / 公式结果问题 / 隐藏区域检查 / 百分比检查 / 公式不可判定 / 汇率检查，均含直接引用数 / 下游引用数两列。
+- **移除自动修正链路**：删除 `decimal-core.js` 中的 `roundToTwo` / `isAlreadyRoundedFormula` / `wrapFormulaWithRound`（及随附括号解析工具）与对应测试；issue 模型不含任何修正字段。
+- 新增纯函数模块：`business-type.js`（业务类型识别）、`reference-map.js`（引用提取 + 引用图）、`risk-core.js`（百分比格式、隐藏类型、风险模型 + 排序）。
+- 保留「下载标黄对比文件」（只读副本，非修正版）。
+
+### v1.1.1（2026-10-15）— 只读复核 + 标黄对比（移除自动修正/状态）
+
+- **移除自动修正与处理状态**：不再提供「下载修正后的 Excel」；issue 不再有 `status/fixedValue/fixedFormula`，问题清单去掉修正相关列。
+- **Viewer 只读**：网页内展示**原始**工作簿 + 问题黄标。
+- **新增「下载标黄对比文件」**：复用共享 `private/shared/excel-highlight/ooxml-highlight.js` + `fflate`，最小 OOXML 样式补丁，仅标黄问题单元格。
 
 ### v1.1.0（2026-10-15）— 网页内定位复核（两栏工作台）
 
-参照「Excel 死数检查」的复核体验，在结果页加入只读 **Excel Viewer**，与问题列表组成两栏：
-
-- **布局**：页面近全宽；两栏 = 左侧问题列表（sticky、内部滚动）+ 可拖动分隔条 + 右侧 Excel Viewer（占主体，高 `clamp(650px,68vh,82vh)`）。
-- **定位**：点击问题卡片或「定位」→ 切换 Sheet、定位单元格、聚焦窗口、公式栏显示原公式；上一个/下一个基于当前筛选；名称框可输入（如 `E163`）回车定位；「回到当前问题」按钮。
-- **标记**：问题单元格浅黄 `#FFF2CC`（“显示问题标记”开关控制）；当前选中单元格淡蓝 `#DCEEFF` + 蓝框；选中且为问题时叠加黄色角标。`selected` 与 `viewport` 解耦——定位只移动一次，之后自由滚动。
-- **模式**：问题聚焦（按视口铺满并居中）/ 完整工作表（虚拟滚动，随滚动持续扩展；ResizeObserver/分栏拖动自动补足）。空白行列照常显示行号/列头。
-- **数据映射**：`decimal` issue 追加 `cellAddress=cell`、`severity=type`、`ruleType` 等字段后交给共享 viewer；原始字段（type/typeLabel/goto/originalValue/decimals/...）不动，报告与修正导出不受影响。
-- **共享模块**：新增 `private/shared/excel-viewer/{viewer-core.js,excel-viewer.js}`（从死数检查抽出的通用 Viewer），死数检查与小数检查共用；死数检查仅改脚本引用路径。
+参照「Excel 死数检查」的复核体验，加入只读 Excel Viewer：点击问题 → 切换 Sheet、定位单元格、聚焦窗口、公式栏显示原公式；上一个/下一个、名称框、左右拖动调宽。共享 `private/shared/excel-viewer/*`。
 
 ### v1.0.2（2026-10-14）— 版本号展示与迭代记录
 
@@ -54,76 +78,87 @@
 
 ### v1.0（2026-10-13）— 首个版本
 
-单一提交：`8f267d6 feat: add Excel decimal check tool`（作者 bradleyliuxian-hub）。
+单一提交：`8f267d6 feat: add Excel decimal check tool`。
 
-**新增文件**
-
-```
-config/tools.json                                  新增工具卡片
-package.json                                       新增 npm test 脚本
-private/tools/excel-decimal-check/decimal-core.js  纯函数核心（无 DOM / 无 XLSX 依赖）
-private/tools/excel-decimal-check/decimal-workbook.js  扫描 + 修正 + 导出（XLSX 引擎外置注入）
-private/tools/excel-decimal-check/index.html        页面
-private/tools/excel-decimal-check/script.js         交互 / 渲染 / 下载
-private/tools/excel-decimal-check/styles.css        样式
-private/vendor/xlsx/LICENSE                         SheetJS 许可证
-private/vendor/xlsx/xlsx.full.min.js                本地 vendored SheetJS（无 CDN）
-tests/excel-decimal-check/decimal-core.test.js      node:test 单测
-tests/excel-decimal-check/decimal-workbook.test.js  node:test 单测
-```
-
-**核心能力**
-
-- 支持 `.xlsx` / `.xlsm` / `.xlsb` / `.xls` 上传（单文件）。
-- 遍历**所有工作表**，扫描每个单元格的**实际数值**（含公式的缓存结果）。
-- 异常分三类：
-  - `raw` 原始数据异常 —— 直接存储的数字 > 两位小数
-  - `formula` 公式结果异常 —— 公式计算结果 > 两位小数
-  - `unknown` 公式不可判定 —— 公式缺少可读取的缓存结果（不猜、不当作正常）
-- **只读**：不修正、不改写工作簿；`scanWorkbook` 产出问题记录，供页面展示与问题清单导出共用（同一份口径）。
-- **标黄对比文件**：`buildHighlightedWorkbook`（共享 `private/shared/excel-highlight/ooxml-highlight.js`）对原始文件做 OOXML 最小样式补丁，仅标黄问题单元格。
-- 问题清单列：`序号 / 异常类型 / 工作表 / 单元格 / F5定位地址 / 原值 / 有效小数位 / 原公式`，含自动筛选。
-- Excel F5 定位地址由 `buildExcelGotoReference()` 生成，按需加引号并转义单引号
-  （`销售明细 10月` → `'销售明细 10月'!C18`；`Brad's Data` → `'Brad''s Data'!C18`）。
-- 页面：拖拽 / 选择文件、进度、六项汇总指标（工作表 / 扫描单元格 / 原始异常 / 公式异常 /
-  不可判定 / 问题总数）、按工作表与类型筛选、分页「显示更多」、两种下载按钮、Toast 提示。
-- 继承现有 `/app/...` 静态资源路径与登录保护；`config/tools.json` 中的卡片自动出现在工作台。
-- SheetJS **本地 vendored**（`private/vendor/xlsx/`），不依赖 CDN，保证内网 / 生产可用。
-
-**未改动**：`server.js`、`server/`、`services/`、contract 与 excel-review、数据库、`.env`（无服务端逻辑）。
+**核心能力**：`.xlsx` / `.xlsm` / `.xlsb` / `.xls` 上传（单文件）；遍历所有工作表扫描实际数值；区分原始数据 / 公式结果 / 不可判定；导出问题清单；Excel F5 定位地址；SheetJS 本地 vendored。
 
 ---
 
 ## 3. 技术要点
 
-- `decimal-core.js`：UMD 风格，浏览器挂 `window.DecimalCheckCore`，Node 走 `module.exports`；纯函数、可单测。
-  - `effectiveDecimalPlaces()`：计算**有效**小数位（去尾随 0、容忍浮点噪声），0..15，超范围返回 `null`。
-  - `roundToTwo()`：15 位有效数字字符串法，`1.005` 仍正确进位为 `1.01`。
-  - `isAlreadyRoundedFormula()` / `wrapFormulaWithRound()`：解析括号与顶层参数，避免生成
-    `ROUND((ROUND(...)),2)` 之类的嵌套。
-- `decimal-workbook.js`：SheetJS 命名空间作为参数注入，浏览器与 Node 共用同一实现
-  （测试用真实 SheetJS 跑扫描 + 修正 + 导出）。
-- 输出类型：`.xlsm` → `xlsm`、`.xlsb` → `xlsb`，其余回退 `xlsx`。
+- `decimal-core.js`：UMD；纯函数、可单测。
+  - `effectiveDecimalPlaces()`：有效小数位（去尾随 0、容忍浮点噪声），0..15，超范围返回 `null`。
+  - `parseCellAddress()`：A1 地址 → 0-based `{row,col}`。
+  - `buildExcelGotoReference()`：F5 地址，按需加引号并转义单引号。
+  - 无任何修正 / ROUND helper。
+- `business-type.js`：UMD；无依赖。`classify({labels,names,referencedLabels})` 按上下文判定业务类型（汇率强证据：汇率字样 / 币种对 / 命名范围 / 引用来源；弱证据：邻近币种代码 → 疑似汇率）。`pureReference(formula)` 判定“纯引用”；`allowedDecimalsFor()` 给出允许小数位（普通 2 / 汇率 4 / 派生与疑似 2）。
+- `reference-map.js`：UMD；无依赖。
+  - `extractReferences(formula, currentSheet, definedNames)`：解析单元格 / 区域引用，支持带引号、双单引号转义、跨表、绝对 `$`。
+  - `buildReferenceMap(workbook, options)`：一次遍历所有公式建立正向依赖图 `adjacency: target → Set(referrer)`；`lookup()` 给出直接引用数与引用者样本；`downstream(key)` 用迭代 DFS + 着色给出**去重、循环安全**的下游可达数（受 `downstreamCap` / `downstreamBudget` 约束）。区域在预算内展开，超预算的区域保留为“大区域”。**不随问题数 × 公式数膨胀。**
+- `risk-core.js`：UMD；无依赖。
+  - `isPercentageFormat()`：识别 `%` 语义，跳过转义与引号字面量。
+  - `hiddenTypeFor()`：`none/row/column/sheet/veryHidden/row+column`。
+  - `computeRisk()` / `suggestionFor()`：确定性、可解释，无伪造置信度。
+- `decimal-workbook.js`：SheetJS 命名空间参数注入，浏览器与 Node 共用。
+  - `scanWorkbook(XLSX, wb, { includeVisible, includeHidden, analyzeReferences })`。
+  - 隐藏元数据来自 `!rows[].hidden`、`!cols[].hidden`、`wb.Workbook.Sheets[].Hidden`。
+  - 类别优先级：`hidden`（勾选时）> `unknown` > `percentage` > `formula` > `raw`。
+  - `buildIssuesWorkbook()`：6 工作表导出，纯文本 F5 地址，含自动筛选。
+- 输出类型：`.xlsm` → `xlsm`、`.xlsb` → `xlsb`，其余回退 `xlsx`（仅标黄对比文件）。
+- **未改动**：`server.js`、`server/`、`services/`、Contract Review、Excel Review、数据库、`.env`（无服务端逻辑）。
 
 ---
 
-## 4. 测试
+## 4. 问题清单 Excel 结构
 
-```
-node:test (npm test):  21 pass / 0 fail
-  node --test tests/excel-decimal-check/*.test.js
-```
+| Sheet | 内容 |
+|---|---|
+| 高风险尾差 | 风险等级 = 高（跨类别汇总：普通数值 / 公式 / 隐藏 / 百分比） |
+| 普通数值问题 | 可见 + 非百分比 + 多位小数 |
+| 公式结果问题 | 可见 + 公式（有缓存结果）+ 结果多位小数 |
+| 隐藏区域检查 | 仅在勾选「检查隐藏区域」时填充 |
+| 百分比检查 | 百分比格式单元格（底层值 / 显示格式 / Number Format） |
+| 公式不可判定 | 有公式但无缓存结果 |
+| 汇率检查 | 全部汇率族单元格：原始汇率 / 汇率直接引用 / 汇率派生计算 / 疑似汇率（含精度正常者），按下游引用数排序 |
 
-覆盖：有效小数位判定、尾随 0、浮点误差、`roundToTwo` 进位、`ROUND` 包裹与去重、
-F5 地址引号 / 转义 / 中文 Sheet、三类异常扫描、自动修正结果与状态、
-问题清单行与最终记录一致。
+字段含：工作表、单元格、F5定位地址、风险等级、是否被引用、直接引用次数、是否引用终点、隐藏类型、是否百分比、风险原因、人工处理建议。**无修正字段。**
 
 ---
 
-## 5. 已知限制
+## 5. 风险规则
 
-- 依赖 SheetJS 写出修正版，复杂工作簿（宏 / 特殊格式）保真度受 SheetJS 能力限制。
-- 公式**不会**在浏览器中重算，只能读取源文件保存的缓存结果；无缓存时列为「不可判定」，
-  不自动修正。
-- 数据完全在浏览器处理；不进入服务器存储，因此**无历史记录 / 无服务端任务**。
-- 日期单元格不参与小数检查（按日期格式排除）。
+- 高风险：可见多位小数（被引用 / 公式结果 / 无引用=可能输出终点）；隐藏多位小数**被可见公式引用**；百分比被可见公式引用。
+- 中风险：隐藏多位小数被（隐藏）公式引用；百分比被公式引用；公式不可判定。
+- 低风险：隐藏多位小数且未被任何公式引用。
+- 单独观察：百分比且未被引用。
+
+**汇率（`exchange_rate`，允许 4 位）**：≤4 位视为正常，不进入普通数值问题；>4 位记为「汇率精度问题」（被引用 → 高，否则中）。**纯引用链**继承汇率类型（原始汇率 → 汇率直接引用，可多层/跨表），不进入公式结果问题。**汇率派生计算**（`exchange_rate_derived`，允许 2 位、不豁免）→ 不再享受 4 位；按结果类型评估（金额等），仅自身上下文明确为汇率时才重判为汇率。**疑似汇率**（允许 2 位、不豁免）→ 单独观察。精度正常的汇率若下游引用多，标为「高影响基础参数」。
+
+> 排序：风险等级优先；同一等级内 **下游引用数降序**，其次直接引用数。下游引用数为正向依赖图上“可达的唯一单元格数”（去重、循环安全）。
+
+---
+
+## 6. 测试
+
+```
+node:test (npm test): tests/excel-decimal-check/*
+  decimal-core.test.js     小数规则 / F5 地址 / 无修正 helper
+  reference-map.test.js    引用提取 / 引用计数 / 跨表 / 特殊表名 / 区域 / 下游可达（链 / 菱形去重 / 循环 / 跨表）
+  risk-core.test.js        百分比格式 / 隐藏类型 / 风险分级 / 排序模式
+  business-type.test.js    汇率识别（标题 / 币种对 / 命名范围 / 引用来源 / 疑似）/ 纯引用与血缘 / 允许小数位
+  decimal-workbook.test.js 分类 / 隐藏 / 百分比 / 汇率 / 血缘 / 引用 / 下游 / 只读 / 7 表导出与排序
+  issue-filters.test.js    多选筛选（字段内 OR、字段间 AND、空=全部、清空、排序独立、特殊表名）
+  stress.test.js           2 万+ 单元格 + 上千公式；1 万 numeric + 3 千公式的依赖图性能
+```
+
+---
+
+## 7. 已知限制
+
+- 公式**不会**在浏览器中重算，只读取源文件保存的缓存结果；无缓存列为「公式不可判定」。
+- 引用分析基于**正向依赖图**：可给出直接引用数与去重的下游可达数，但不判断“是否传播到某个可见终点”。
+- 超大工作簿：下游分析受 `downstreamCap` / `downstreamBudget` 约束，极端情况会截断标记（`downstreamTruncated`）。
+- 全列 / 全行区域引用（如 `A:A`）与个别纯大写命名范围无法与单元格地址区分，按保守策略跳过或按单元格处理。
+- 标黄对比文件依赖共享 OOXML 最小补丁，仅支持 `.xlsx` / `.xlsm`。
+- 数据完全在浏览器处理，无历史记录 / 无服务端任务。
+- 汇率识别为**上下文启发式**：仅当标题/币种对/命名范围/引用来源出现汇率特征时才认定；识别不到时会归为疑似或普通数值，需人工确认。

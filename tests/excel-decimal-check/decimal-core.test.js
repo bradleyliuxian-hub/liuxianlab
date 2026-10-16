@@ -45,43 +45,20 @@ test('hasMoreThanTwoDecimals', () => {
   assert.equal(core.hasMoreThanTwoDecimals(0.001), true);
 });
 
-test('roundToTwo: reliable half-away-from-zero rounding', () => {
-  assert.equal(core.roundToTwo(123.4567), 123.46);
-  assert.equal(core.roundToTwo(1.005), 1.01);
-  assert.equal(core.roundToTwo(2.675), 2.68);
-  assert.equal(core.roundToTwo(-1.005), -1.01);
-  assert.equal(core.roundToTwo(-12.345), -12.35);
-  assert.equal(core.roundToTwo(0.1 + 0.2), 0.3);
-  assert.equal(core.roundToTwo(10), 10);
-  assert.equal(core.roundToTwo(10.12), 10.12);
+test('no auto-fix helpers are exported any more', () => {
+  assert.equal(core.roundToTwo, undefined);
+  assert.equal(core.wrapFormulaWithRound, undefined);
+  assert.equal(core.isAlreadyRoundedFormula, undefined);
 });
 
-test('roundToTwo: output never has more than two decimals', () => {
-  [123.4567, 1.005, 99999.999, -0.004, 0.001, 1234567.891234, 3.14159].forEach((value) => {
-    assert.equal(core.hasMoreThanTwoDecimals(core.roundToTwo(value)), false);
-  });
-});
-
-test('isAlreadyRoundedFormula', () => {
-  assert.equal(core.isAlreadyRoundedFormula('ROUND(A1/B1,2)'), true);
-  assert.equal(core.isAlreadyRoundedFormula('=ROUND(A1/B1,2)'), true);
-  assert.equal(core.isAlreadyRoundedFormula('round(A1/B1, 2)'), true);
-  assert.equal(core.isAlreadyRoundedFormula('ROUND(ROUND(A1,3),2)'), true);
-  assert.equal(core.isAlreadyRoundedFormula('ROUND(A1)'), true);
-  assert.equal(core.isAlreadyRoundedFormula('ROUND(A1,0)'), true);
-  assert.equal(core.isAlreadyRoundedFormula('ROUND(A1/B1,3)'), false);
-  assert.equal(core.isAlreadyRoundedFormula('ROUND(A1/B1,4)'), false);
-  assert.equal(core.isAlreadyRoundedFormula('A1/B1'), false);
-  assert.equal(core.isAlreadyRoundedFormula('ROUND(A1/B1,2)+1'), false);
-  assert.equal(core.isAlreadyRoundedFormula('SUM(ROUND(A1,2),B1)'), false);
-  assert.equal(core.isAlreadyRoundedFormula(''), false);
-});
-
-test('wrapFormulaWithRound does not double-wrap', () => {
-  assert.equal(core.wrapFormulaWithRound('A1/B1'), 'ROUND((A1/B1),2)');
-  assert.equal(core.wrapFormulaWithRound('=A1/B1'), 'ROUND((A1/B1),2)');
-  assert.equal(core.wrapFormulaWithRound(' SUM(A1:A3)/COUNT(A1:A3) '), 'ROUND((SUM(A1:A3)/COUNT(A1:A3)),2)');
-  assert.equal(core.isAlreadyRoundedFormula(core.wrapFormulaWithRound('A1/B1')), true);
+test('parseCellAddress: basic, absolute, and invalid input', () => {
+  assert.deepEqual(core.parseCellAddress('A1'), { row: 0, col: 0 });
+  assert.deepEqual(core.parseCellAddress('C18'), { row: 17, col: 2 });
+  assert.deepEqual(core.parseCellAddress('$AA$64'), { row: 63, col: 26 });
+  assert.deepEqual(core.parseCellAddress('aa1'), { row: 0, col: 26 });
+  assert.equal(core.parseCellAddress('A1:B2'), null);
+  assert.equal(core.parseCellAddress('hello'), null);
+  assert.equal(core.parseCellAddress(''), null);
 });
 
 test('buildExcelGotoReference: plain sheet names', () => {

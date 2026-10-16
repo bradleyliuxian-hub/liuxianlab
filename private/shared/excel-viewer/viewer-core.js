@@ -265,6 +265,13 @@
       listIndex: -1,
       overlay: opts.overlay !== false,
       mode: 'focus',           // 'focus' | 'sheet'
+      // Navigation order override (an explicit, ordered list of issues). When
+      // set, filteredIssues() returns exactly this list, so prev/next and the
+      // position counter follow the caller's filter + sort order.
+      filterList: null,
+      // When false, prev/next do not wrap around (clamp at the ends). Tools
+      // that want no-cycle navigation pass { cycle: false }.
+      cycle: opts.cycle !== false,
       // One-shot reveal signal. Incremented ONLY by explicit navigation
       // (定位 / 上一个 / 下一个 / 名称框 / 回到当前问题). The viewer scrolls the
       // selected cell into view once per token bump, then the viewport is free:
@@ -279,7 +286,10 @@
     function metaFor(name) { return resolveSheetMeta(sheet(name)); }
     function issuesForSheet(name) { return issueIndex.bySheet[name] || {}; }
     function issueAt(name, address) { return issuesForSheet(name)[String(address).toUpperCase()] || null; }
-    function filtered() { return filterIssues(issueIndex.list, { sheet: state.filterSheet, kind: state.filterKind }); }
+    function filtered() {
+      if (state.filterList) return state.filterList;
+      return filterIssues(issueIndex.list, { sheet: state.filterSheet, kind: state.filterKind });
+    }
 
     function setSelection(name, row, col) {
       state.sheetName = name;
@@ -323,8 +333,10 @@
 
     function selectIndex(i) {
       const list = filtered();
-      if (!list.length) return;
-      const idx = ((i % list.length) + list.length) % list.length;
+      if (!list.length) { state.listIndex = -1; return; }
+      const idx = state.cycle
+        ? ((i % list.length) + list.length) % list.length
+        : Math.max(0, Math.min(list.length - 1, i));
       state.listIndex = idx;
       goTo(list[idx], state.mode);
     }
@@ -343,6 +355,28 @@
       setSheet(name) { if (name && name !== state.sheetName) { state.sheetName = name; state.selected = null; state.selectedIssue = null; emit(); } },
       setFilterSheet(name) { state.filterSheet = name || ''; emit(); },
       setFilterKind(kind) { state.filterKind = kind || ''; emit(); },
+      setFilterList(list) { state.filterList = Array.isArray(list) ? list : null; emit(); },
+      /*
+       * Re-align selection after the filter/sort list changed:
+       *   - empty list  -> nothing selected;
+       *   - current issue still in the list -> keep it (no camera move), just
+       *     recompute its index;
+       *   - current issue filtered out (or none) -> select the first item.
+       */
+      reconcile() {
+        const list = filtered();
+        if (!list.length) {
+          state.listIndex = -1;
+          state.selected = null;
+          state.selectedIssue = null;
+          emit();
+          return;
+        }
+        const idx = state.selectedIssue ? list.indexOf(state.selectedIssue) : -1;
+        if (idx >= 0) { state.listIndex = idx; emit(); return; }
+        state.listIndex = 0;
+        goTo(list[0], state.mode);
+      },
       setOverlay(value) { state.overlay = Boolean(value); emit(); },
       setMode(mode) { state.mode = mode === 'sheet' ? 'sheet' : 'focus'; emit(); },
       selectCell,

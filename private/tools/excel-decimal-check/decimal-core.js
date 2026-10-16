@@ -1,10 +1,14 @@
 'use strict';
 
 /*
- * Liuxian Lab — Excel decimal check core.
+ * Liuxian Lab — Excel 尾差检查 core (pure helpers).
  *
- * Pure, dependency-free helpers shared by the browser tool and the
- * Node test-suite. No DOM and no XLSX dependency lives here.
+ * Dependency-free, no DOM, no XLSX. Shared by the browser tool and the
+ * Node test-suite.
+ *
+ * This tool DETECTS ONLY: it never rounds, never rewrites a value and never
+ * generates a "corrected" workbook. There is deliberately no auto-fix helper
+ * here (no roundToTwo / no formula wrapping).
  */
 (function (root, factory) {
   const api = factory();
@@ -50,130 +54,24 @@
     return places === null || places > 2;
   }
 
-  /*
-   * Round a number to two decimals, half away from zero, the way Excel's
-   * ROUND behaves. Uses a 15-significant-digit string so binary noise such
-   * as 1.005 (stored as 1.00499999999999989) still rounds to 1.01.
-   */
-  function roundToTwo(value) {
-    if (typeof value !== 'number' || !Number.isFinite(value)) return value;
-
-    const negative = value < 0;
-    const magnitude = Math.abs(value);
-    if (magnitude === 0) return 0;
-
-    let scaled;
-    if (!Number.isInteger(magnitude) && /e/i.test(magnitude.toPrecision(MAX_DECIMALS))) {
-      scaled = Math.round(magnitude * 100);
-    } else if (Number.isInteger(magnitude)) {
-      return value;
-    } else {
-      scaled = Math.round(Number(magnitude.toPrecision(MAX_DECIMALS) + 'e2'));
-    }
-
-    const result = scaled / 100;
-    return negative ? -result : result;
-  }
-
-  function stripLeadingEquals(formula) {
-    return String(formula == null ? '' : formula).trim().replace(/^=/, '').trim();
-  }
-
-  function findMatchingParen(text, openIndex) {
-    let depth = 0;
-    let inString = false;
-    for (let i = openIndex; i < text.length; i += 1) {
-      const ch = text[i];
-      if (inString) {
-        if (ch === '"') {
-          if (text[i + 1] === '"') i += 1;
-          else inString = false;
-        }
-        continue;
-      }
-      if (ch === '"') inString = true;
-      else if (ch === '(') depth += 1;
-      else if (ch === ')') {
-        depth -= 1;
-        if (depth === 0) return i;
-      }
-    }
-    return -1;
-  }
-
-  function splitTopLevelArgs(text) {
-    const args = [];
-    let depth = 0;
-    let inString = false;
-    let current = '';
-    for (let i = 0; i < text.length; i += 1) {
-      const ch = text[i];
-      if (inString) {
-        current += ch;
-        if (ch === '"') {
-          if (text[i + 1] === '"') {
-            current += text[i + 1];
-            i += 1;
-          } else {
-            inString = false;
-          }
-        }
-        continue;
-      }
-      if (ch === '"') {
-        inString = true;
-        current += ch;
-      } else if (ch === '(') {
-        depth += 1;
-        current += ch;
-      } else if (ch === ')') {
-        depth -= 1;
-        current += ch;
-      } else if (ch === ',' && depth === 0) {
-        args.push(current);
-        current = '';
-      } else {
-        current += ch;
-      }
-    }
-    if (current.trim() !== '' || args.length > 0) args.push(current);
-    return args;
-  }
-
-  /*
-   * True when a formula is already a single top-level ROUND(...) that
-   * guarantees at most two decimals, e.g. =ROUND(A1/B1,2) or =ROUND(A1).
-   * Used to avoid generating =ROUND((ROUND(A1/B1,2)),2).
-   */
-  function isAlreadyRoundedFormula(formula) {
-    const text = stripLeadingEquals(formula);
-    if (!/^ROUND\s*\(/i.test(text)) return false;
-
-    const open = text.indexOf('(');
-    const close = findMatchingParen(text, open);
-    if (close === -1 || close !== text.length - 1) return false;
-
-    const args = splitTopLevelArgs(text.slice(open + 1, close));
-    if (args.length === 1) return true;
-
-    const digits = Number(args[1].trim());
-    return Number.isFinite(digits) && Number.isInteger(digits) && digits >= 0 && digits <= 2;
-  }
-
-  /*
-   * Wrap a formula so its result is rounded to two decimals.
-   * SheetJS stores formulas without the leading "="; the returned string
-   * follows the same convention.
-   */
-  function wrapFormulaWithRound(formula) {
-    return 'ROUND((' + stripLeadingEquals(formula) + '),2)';
-  }
-
   const CELL_REFERENCE = /^[A-Za-z]{1,3}[0-9]{1,7}$/;
   const SAFE_SHEET_NAME = /^[A-Za-z_\u4e00-\u9fff][A-Za-z0-9_.\u4e00-\u9fff]*$/;
 
   function looksLikeCellReference(name) {
     return CELL_REFERENCE.test(name);
+  }
+
+  /*
+   * Parse an A1-style cell address (optionally with absolute $ markers) into
+   * zero-based { row, col }. Returns null when unparseable.
+   */
+  function parseCellAddress(address) {
+    const match = /^\$?([A-Za-z]{1,3})\$?(\d{1,7})$/.exec(String(address == null ? '' : address).trim());
+    if (!match) return null;
+    const letters = match[1].toUpperCase();
+    let col = 0;
+    for (let i = 0; i < letters.length; i += 1) col = col * 26 + (letters.charCodeAt(i) - 64);
+    return { row: Number(match[2]) - 1, col: col - 1 };
   }
 
   /*
@@ -197,9 +95,7 @@
     MAX_DECIMALS,
     effectiveDecimalPlaces,
     hasMoreThanTwoDecimals,
-    roundToTwo,
-    isAlreadyRoundedFormula,
-    wrapFormulaWithRound,
+    parseCellAddress,
     buildExcelGotoReference,
     looksLikeCellReference
   };

@@ -3,9 +3,9 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="description" content="Liuxian Lab Excel尾差检查工具" />
-  <title>Excel尾差检查 · Liuxian Lab</title>
-  <link rel="stylesheet" href="/app/tools/excel-decimal-check/styles.css?v=1.2.0" />
+  <meta name="description" content="Liuxian Lab Excel 尾差风险检查工具" />
+  <title>Excel 尾差风险检查 · Liuxian Lab</title>
+  <link rel="stylesheet" href="/app/tools/excel-decimal-check/styles.css?v=1.3.0" />
 </head>
 <body>
   <div class="page-shell">
@@ -13,10 +13,10 @@
       <a class="back-link" href="/" aria-label="返回工作台">←</a>
       <div class="tool-brand">
         <span class="tool-mark">2DP</span>
-        <div><strong>Excel尾差检查</strong><small>Liuxian Lab / Decimal Check</small></div>
+        <div><strong>Excel 尾差风险检查</strong><small>Liuxian Lab / Tail-Risk Check</small></div>
       </div>
       <div class="header-actions">
-        <span class="version-chip" title="当前工具版本">v1.2.0</span>
+        <span class="version-chip" title="当前工具版本">v1.3.0</span>
         <span class="private-badge"><i></i>浏览器本地处理</span>
         <button class="ghost-button" id="newJobButton" type="button">重新开始</button>
       </div>
@@ -24,20 +24,19 @@
 
     <main class="tool-main">
       <section class="intro-section">
-        <p class="eyebrow">EXCEL DECIMAL CHECK</p>
-          <h1>检查并定位超过两位小数的单元格。</h1>
+        <p class="eyebrow">EXCEL TAIL-RISK CHECK</p>
+        <h1>找到真正可能导致最终展示结果出现尾差的数据。</h1>
         <p>
-          文件在你的浏览器中读取、扫描与生成，不会上传到服务器。<strong>原文件不会被修改。</strong>工具检查的是单元格
-          <strong>实际数值</strong>而非显示格式，因此「实际值 1.23456、显示 1.23」仍会被判为异常；
-          尾随 0 不会误报，JS 浮点误差也不会误报。网页内可直接定位复核，也可导出带 Excel F5 定位地址的问题清单，
-          或导出仅将问题单元格标黄的原始副本对比文件。
+          文件在你的浏览器中读取、分析并生成，不会上传到服务器。<strong>工具只发现问题，不会修改原 Excel。</strong>
+          检查的是单元格<strong>实际数值</strong>而非显示格式，因此「实际值 1.23456、显示 1.23」仍会被识别；尾随 0 与 JS 浮点误差不会误报。
+          结果按<strong>尾差风险</strong>分级，并区分普通数值、公式结果、隐藏区域、百分比与<strong>汇率</strong>（普通数值允许 2 位、汇率允许 4 位）；同一风险等级内按<strong>下游引用数</strong>从高到低排序，支持网页内定位与问题清单导出。
         </p>
       </section>
 
       <section class="workspace-card" id="uploadPanel">
         <div class="card-heading">
           <div><span class="step-no">01</span><div><h2>上传工作簿</h2><p>支持 <code>.xlsx</code> / <code>.xlsm</code> / <code>.xlsb</code> / <code>.xls</code>；原文件不会被修改。</p></div></div>
-          <span class="profile-chip">Decimal v1.2.0</span>
+          <span class="profile-chip">Tail-Risk v1.3.0</span>
         </div>
 
         <label class="drop-zone" id="dropZone" for="fileInput">
@@ -53,15 +52,32 @@
           <button class="icon-button" id="clearFileButton" type="button" aria-label="移除文件">×</button>
         </div>
 
+        <fieldset class="scan-options">
+          <legend>检查范围</legend>
+          <label class="scan-option">
+            <input type="checkbox" id="optVisible" checked />
+            <span>检查可见单元格</span>
+          </label>
+          <label class="scan-option">
+            <input type="checkbox" id="optHidden" />
+            <span>检查隐藏区域<small>隐藏行 / 隐藏列 / 隐藏工作表</small></span>
+          </label>
+          <label class="scan-option">
+            <input type="checkbox" id="optReferences" checked />
+            <span>分析公式引用关系<small>是否被引用、直接引用次数（仅直接引用）</small></span>
+          </label>
+          <p class="scan-option-note">百分比格式单元格始终单独分析，不计入普通两位小数问题。</p>
+        </fieldset>
+
         <div class="upload-actions">
-          <p>仅在浏览器内存中处理。下载修正版时会新建文件，不会覆盖你的原始工作簿。</p>
+          <p>仅在浏览器内存中处理。下载对比文件时会新建文件，不会覆盖你的原始工作簿。</p>
           <button class="primary-button" id="startButton" type="button" disabled>开始检查 <span>→</span></button>
         </div>
       </section>
 
       <section class="workspace-card process-card" id="processPanel" hidden>
         <div class="card-heading">
-          <div><span class="step-no">02</span><div><h2>本地扫描</h2><p id="processMessage">正在读取工作簿…</p></div></div>
+          <div><span class="step-no">02</span><div><h2>本地分析</h2><p id="processMessage">正在读取工作簿…</p></div></div>
           <span class="job-status" id="jobStatus">READING</span>
         </div>
         <div class="progress-track"><span id="progressBar"></span></div>
@@ -70,21 +86,28 @@
 
       <section class="results-shell" id="resultsPanel" hidden>
         <div class="results-head">
-          <div><p class="eyebrow">RESULT</p><h2>扫描完成</h2><p id="resultSubtitle">已扫描工作簿。</p></div>
+          <div><p class="eyebrow">RESULT</p><h2>分析完成</h2><p id="resultSubtitle">已扫描工作簿。</p></div>
         </div>
 
         <div class="summary-grid">
-          <article><span>工作表</span><strong id="statSheets">0</strong><small>个工作表</small></article>
-          <article><span>已扫描单元格</span><strong id="statCells">0</strong><small>含值与公式</small></article>
-          <article class="is-raw"><span>原始数据异常</span><strong id="statRaw">0</strong><small>直接存储数字</small></article>
-          <article class="is-formula"><span>公式结果异常</span><strong id="statFormula">0</strong><small>公式计算结果</small></article>
+          <article class="is-high"><span>高风险尾差</span><strong id="statHigh">0</strong><small>最需优先处理</small></article>
+          <article class="is-raw"><span>普通数值问题</span><strong id="statRaw">0</strong><small>可见多位小数</small></article>
+          <article class="is-formula"><span>公式结果问题</span><strong id="statFormula">0</strong><small>公式计算结果</small></article>
+          <article class="is-hidden"><span>隐藏区域问题</span><strong id="statHidden">0</strong><small>按需扫描</small></article>
+          <article class="is-percentage"><span>百分比观察</span><strong id="statPercentage">0</strong><small>单独分类</small></article>
           <article class="is-unknown"><span>公式不可判定</span><strong id="statUnknown">0</strong><small>缺少缓存结果</small></article>
-          <article class="is-total"><span>问题总数</span><strong id="statTotal">0</strong><small>需处理单元格</small></article>
+        </div>
+
+        <div class="summary-meta">
+          <span>工作表 <strong id="statSheets">0</strong></span>
+          <span>已扫描单元格 <strong id="statCells">0</strong></span>
+          <span>汇率参数 <strong id="statRates">0</strong></span>
+          <span>问题总数 <strong id="statTotal">0</strong></span>
         </div>
 
         <div class="notice-box" id="unknownNotice" hidden>
-          <strong>存在「公式结果不可判定」的单元格</strong>
-          <p>当前文件没有保存这些公式的可读取计算结果，请在 Excel / WPS 中重新计算并保存工作簿后再次检查。这些单元格同样会出现在问题清单中并标记黄色，需要人工确认。</p>
+          <strong>存在「公式不可判定」的单元格</strong>
+          <p>当前文件没有保存这些公式的可读取计算结果，请在 Excel / WPS 中重新计算并保存工作簿后再次检查。这些单元格会单独列在问题清单「公式不可判定」中，需要人工确认。</p>
         </div>
 
         <section class="download-card">
@@ -92,13 +115,13 @@
           <div class="download-grid">
             <div class="download-item">
               <button class="primary-button download-button secondary-download" id="downloadHighlightButton" type="button">下载标黄对比文件.xlsx <span>↓</span></button>
-              <p><strong>标黄对比文件</strong>：基于原始文件生成副本，仅对疑似问题单元格添加黄色填充，用于与原文件人工对照。公式、外部链接及工作簿结构保持不变。
+              <p><strong>标黄对比文件</strong>：基于原始文件生成副本，仅对问题单元格添加黄色填充，用于与原文件人工对照。公式、外部链接及工作簿结构保持不变。
                 <small>仅支持导出 <code>.xlsx</code> / <code>.xlsm</code> 原文件。</small></p>
               <p class="download-status" id="highlightStatus" hidden></p>
             </div>
             <div class="download-item">
               <button class="primary-button download-button" id="downloadIssuesButton" type="button">下载问题清单 Excel <span>↓</span></button>
-              <p><strong>问题清单 Excel</strong>：仅包含异常单元格及 Excel F5 定位地址，方便人工逐项核对。</p>
+              <p><strong>问题清单 Excel</strong>：包含高风险尾差、普通数值问题、公式结果问题、隐藏区域检查、百分比检查、公式不可判定 共 6 个工作表，含 Excel F5 定位地址。</p>
             </div>
           </div>
           <p class="final-note" id="formatNote" hidden></p>
@@ -107,27 +130,33 @@
         <section class="review-shell" id="reviewShell">
           <div class="review-pane review-pane--list issues-card">
             <div class="card-heading">
-              <div><span class="step-no">04</span><div><h2>问题单元格</h2><p>点击任意问题定位到右侧 Excel。</p></div></div>
+              <div><span class="step-no">04</span><div><h2>风险清单</h2><p>默认按风险等级排序，点击任意条目定位到右侧 Excel。</p></div></div>
               <span class="profile-chip" id="issueCountChip">0 条</span>
             </div>
 
             <div class="filter-row">
-              <select id="sheetFilter"><option value="">全部工作表</option></select>
-              <select id="typeFilter">
-                <option value="">全部类型</option>
-                <option value="raw">原始数据异常</option>
-                <option value="formula">公式结果异常</option>
-                <option value="unknown">公式结果不可判定</option>
+              <div class="ms-host" id="riskFilter"></div>
+              <div class="ms-host" id="categoryFilter"></div>
+              <div class="ms-host" id="sheetFilter"></div>
+              <div class="ms-host" id="businessFilter"></div>
+              <div class="ms-host" id="hiddenFilter"></div>
+              <div class="ms-host" id="precisionFilter"></div>
+              <select id="sortMode" title="排序方式">
+                <option value="risk">排序：风险优先</option>
+                <option value="downstream">排序：下游引用最多</option>
+                <option value="directReferences">排序：直接引用最多</option>
+                <option value="sheet">排序：工作表顺序</option>
               </select>
-              <span id="filterCountLabel">0 条</span>
+              <button class="ghost-button" id="clearFilters" type="button">清空筛选</button>
+              <span id="filterCountLabel">0 / 0 条</span>
             </div>
 
             <div class="issue-list" id="issueList"></div>
 
             <div class="empty-state" id="issuesEmpty" hidden>
               <span aria-hidden="true">✓</span>
-              <h3>没有发现超过两位小数的单元格</h3>
-              <p>所有数值均符合要求。你仍可下载问题清单（内容为空表头）。</p>
+              <h3>没有发现多位小数风险</h3>
+              <p>在当前检查范围内未发现问题。你仍可下载问题清单（内容为空表头）。</p>
             </div>
 
             <div class="pagination" id="pagination" hidden>
@@ -154,27 +183,30 @@
           <h2>版本迭代</h2>
         </div>
         <ul class="changelog-list">
-          <li class="changelog-item"><span class="changelog-ver">v1.2.0</span><p class="changelog-text"><strong>改为只读复核 + 标黄对比</strong>：不再自动修正、不再导出修正版 Excel，也移除「处理状态」；网页内只读展示<strong>原始</strong>工作簿并标黄问题单元格；新增「下载标黄对比文件」——基于原始文件的最小 OOXML 样式补丁（与死数检查一致）。</p></li>
-          <li class="changelog-item"><span class="changelog-ver">v1.1.1</span><p class="changelog-text"><strong>Viewer 显示原始文件</strong>：网页内 Excel 展示的是<strong>未修改的原工作簿</strong>（原始值/公式）+ 问题黄色标记；自动修正结果只用于「修正后值/公式」展示与下载，不再改写被浏览的工作簿。</p></li>
-          <li class="changelog-item"><span class="changelog-ver">v1.1.0</span><p class="changelog-text"><strong>网页内定位复核</strong>：新增只读 Excel Viewer 两栏工作台，点击问题即可切换 Sheet、定位单元格并查看公式与上下文；支持问题黄色标记、当前选中淡蓝、问题聚焦 / 完整工作表、上一个 / 下一个、名称框与左右拖动调宽。</p></li>
-          <li class="changelog-item"><span class="changelog-ver">v1.0.2</span><p class="changelog-text"><strong>版本号展示与迭代记录</strong>：页面显示工具版本号与版本迭代说明。</p></li>
-          <li class="changelog-item"><span class="changelog-ver">v1.0</span><p class="changelog-text"><strong>基础能力</strong>：浏览器本地扫描超过两位小数的单元格，区分原始数据与公式结果，导出修正文件与带 F5 定位的问题清单。</p></li>
+          <li class="changelog-item"><span class="changelog-ver">v1.3.0</span><p class="changelog-text"><strong>尾差风险分析版</strong>：从「异常扫描」升级为「尾差风险分析」。新增隐藏区域可选扫描（隐藏行 / 列 / 工作表，单独分类）、百分比格式独立分析、<strong>业务类型识别（普通数值 2 位 / 汇率 4 位 / 疑似汇率与派生不豁免）</strong>、<strong>汇率纯引用血缘继承</strong>（公式等于单个引用即继承汇率、不算公式异常；做了运算即「汇率派生计算」）、公式引用关系（直接引用数 + 去重的<strong>下游引用数</strong>，支持跨表与循环引用）与风险分级；<strong>同一风险等级内按下游引用数从高到低排序</strong>，问题清单按类别拆分为 7 个工作表（含汇率检查）且排序一致；风险等级 / 问题类型 / 工作表 / 业务类型 / 隐藏类型 / 精度状态 升级为<strong>多选筛选</strong>（字段内 OR、字段间 AND、空=全部，工作表可搜索）；Excel 预览内的<strong>上一个 / 下一个</strong>严格按当前筛选结果与排序移动（不跳到被过滤项、不循环，显示 当前位次/筛选数量）。取消自动修正，仅提供发现、F5 定位与问题清单导出。</p></li>
+          <li class="changelog-item"><span class="changelog-ver">v1.2.0</span><p class="changelog-text"><strong>只读复核 + 标黄对比</strong>：不再自动修正、不再导出修正版 Excel，也移除「处理状态」；网页内只读展示<strong>原始</strong>工作簿并标黄问题单元格；新增「下载标黄对比文件」——基于原始文件的最小 OOXML 样式补丁。</p></li>
+          <li class="changelog-item"><span class="changelog-ver">v1.1.0</span><p class="changelog-text"><strong>网页内定位复核</strong>：新增只读 Excel Viewer 两栏工作台，点击问题即可切换 Sheet、定位单元格并查看公式与上下文。</p></li>
+          <li class="changelog-item"><span class="changelog-ver">v1.0</span><p class="changelog-text"><strong>基础能力</strong>：浏览器本地扫描超过两位小数的单元格，区分原始数据与公式结果，导出问题清单。</p></li>
         </ul>
       </div>
     </section>
 
-    <footer class="tool-footer"><span>Liuxian Lab</span><span>Excel Decimal Check v1.2.0</span></footer>
+    <footer class="tool-footer"><span>Liuxian Lab</span><span>Excel Tail-Risk Check v1.3.0</span></footer>
   </div>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <script src="/app/vendor/xlsx/xlsx.full.min.js?v=0.18.5"></script>
   <script src="/app/vendor/fflate/fflate.umd.js?v=0.8.2"></script>
-  <script src="/app/tools/excel-decimal-check/decimal-core.js?v=1.2.0"></script>
-  <script src="/app/tools/excel-decimal-check/decimal-workbook.js?v=1.2.0"></script>
-  <script src="/app/shared/excel-viewer/viewer-core.js?v=1.2.0"></script>
-  <script src="/app/shared/excel-viewer/excel-viewer.js?v=1.2.0"></script>
-  <script src="/app/shared/excel-highlight/ooxml-highlight.js?v=1.2.0"></script>
-  <script src="/app/tools/excel-decimal-check/script.js?v=1.2.0"></script>
+  <script src="/app/tools/excel-decimal-check/decimal-core.js?v=1.3.0"></script>
+  <script src="/app/tools/excel-decimal-check/reference-map.js?v=1.3.0"></script>
+  <script src="/app/tools/excel-decimal-check/risk-core.js?v=1.3.0"></script>
+  <script src="/app/tools/excel-decimal-check/business-type.js?v=1.3.0"></script>
+  <script src="/app/tools/excel-decimal-check/decimal-workbook.js?v=1.3.0"></script>
+  <script src="/app/tools/excel-decimal-check/issue-filters.js?v=1.3.0"></script>
+  <script src="/app/shared/excel-viewer/viewer-core.js?v=1.3.0"></script>
+  <script src="/app/shared/excel-viewer/excel-viewer.js?v=1.3.0"></script>
+  <script src="/app/shared/excel-highlight/ooxml-highlight.js?v=1.3.0"></script>
+  <script src="/app/tools/excel-decimal-check/script.js?v=1.3.0"></script>
 </body>
 </html>

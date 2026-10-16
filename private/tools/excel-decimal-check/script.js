@@ -20,10 +20,18 @@
   const errorBox = $('#errorBox');
   const toast = $('#toast');
 
+  const optVisible = $('#optVisible');
+  const optHidden = $('#optHidden');
+  const optReferences = $('#optReferences');
+
   const statSheets = $('#statSheets');
   const statCells = $('#statCells');
+  const statRates = $('#statRates');
+  const statHigh = $('#statHigh');
   const statRaw = $('#statRaw');
   const statFormula = $('#statFormula');
+  const statHidden = $('#statHidden');
+  const statPercentage = $('#statPercentage');
   const statUnknown = $('#statUnknown');
   const statTotal = $('#statTotal');
   const unknownNotice = $('#unknownNotice');
@@ -34,9 +42,9 @@
   const downloadIssuesButton = $('#downloadIssuesButton');
   const highlightStatus = $('#highlightStatus');
 
-  const sheetFilter = $('#sheetFilter');
-  const typeFilter = $('#typeFilter');
   const filterCountLabel = $('#filterCountLabel');
+  const sortMode = $('#sortMode');
+  const clearFiltersButton = $('#clearFilters');
   const issueList = $('#issueList');
   const issuesEmpty = $('#issuesEmpty');
   const pagination = $('#pagination');
@@ -50,21 +58,245 @@
 
   const PAGE_SIZE = 50;
   const SUPPORTED_EXT = ['xlsx', 'xlsm', 'xlsb', 'xls'];
+  const riskCore = (typeof DecimalRiskCore !== 'undefined') ? DecimalRiskCore : null;
+  const filters = (typeof DecimalIssueFilters !== 'undefined') ? DecimalIssueFilters : null;
+
+  const RISK_ORDER = ['高', '中', '低', '观察'];
+  const CATEGORY_ORDER = ['raw', 'formula', 'unknown', 'hidden', 'percentage', 'exchange_rate'];
 
   const state = {
     file: null,
     baseName: 'workbook',
     workbook: null,
     issues: [],
+    rates: [],
     summary: null,
     sheetStats: [],
     filtered: [],
     visible: 0,
     leftPaneWidth: 0,
     model: null,
-    viewer: null
+    viewer: null,
+    suppressFilterRender: false,
+    filterState: filters ? filters.emptyFilterState() : {}
   };
 
+  // ---- reusable multi-select dropdown --------------------------------------
+  function createMultiSelect(config) {
+    const root = config.root;
+    const store = { values: new Set(), options: [] };
+    root.classList.add('ms');
+    root.textContent = '';
+
+    const control = document.createElement('button');
+    control.type = 'button';
+    control.className = 'ms-control';
+    const chips = document.createElement('span');
+    chips.className = 'ms-chips';
+    const caret = document.createElement('span');
+    caret.className = 'ms-caret';
+    caret.textContent = '▾';
+    control.appendChild(chips);
+    control.appendChild(caret);
+    root.appendChild(control);
+
+    const panel = document.createElement('div');
+    panel.className = 'ms-panel';
+    panel.hidden = true;
+    root.appendChild(panel);
+
+    let search = null;
+    if (config.searchable) {
+      search = document.createElement('input');
+      search.type = 'search';
+      search.className = 'ms-search';
+      search.placeholder = '搜索…';
+      panel.appendChild(search);
+    }
+
+    const actions = document.createElement('div');
+    actions.className = 'ms-actions';
+    const selectAllBtn = document.createElement('button');
+    selectAllBtn.type = 'button';
+    selectAllBtn.className = 'ms-act';
+    selectAllBtn.textContent = '全选';
+    const clearBtn = document.createElement('button');
+    clearBtn.type = 'button';
+    clearBtn.className = 'ms-act';
+    clearBtn.textContent = '清空';
+    actions.appendChild(selectAllBtn);
+    actions.appendChild(clearBtn);
+    panel.appendChild(actions);
+
+    const list = document.createElement('div');
+    list.className = 'ms-list';
+    panel.appendChild(list);
+
+    function labelFor(value) {
+      const opt = store.options.find((o) => o.value === value);
+      return opt ? opt.label : value;
+    }
+
+    function renderChips() {
+      chips.textContent = '';
+      const values = [...store.values];
+      if (!values.length) {
+        const ph = document.createElement('span');
+        ph.className = 'ms-placeholder';
+        ph.textContent = config.placeholder || '全部';
+        chips.appendChild(ph);
+        return;
+      }
+      const max = 2;
+      values.slice(0, max).forEach((value) => {
+        const chip = document.createElement('span');
+        chip.className = 'ms-chip';
+        chip.appendChild(document.createTextNode(labelFor(value)));
+        const x = document.createElement('button');
+        x.type = 'button';
+        x.className = 'ms-chip-x';
+        x.textContent = '×';
+        x.setAttribute('aria-label', '移除');
+        x.addEventListener('click', (event) => {
+          event.stopPropagation();
+          store.values.delete(value);
+          emit();
+        });
+        chip.appendChild(x);
+        chips.appendChild(chip);
+      });
+      if (values.length > max) {
+        const more = document.createElement('span');
+        more.className = 'ms-chip ms-chip--more';
+        more.textContent = `已选择 ${values.length} 项`;
+        chips.appendChild(more);
+      }
+    }
+
+    function emit() {
+      renderChips();
+      if (config.onChange) config.onChange([...store.values]);
+    }
+
+    function renderList() {
+      const query = search && search.value ? search.value.trim().toLowerCase() : '';
+      list.textContent = '';
+      store.options
+        .filter((o) => !query || o.label.toLowerCase().indexOf(query) !== -1)
+        .forEach((o) => {
+          const row = document.createElement('label');
+          row.className = 'ms-option';
+          const cb = document.createElement('input');
+          cb.type = 'checkbox';
+          cb.checked = store.values.has(o.value);
+          cb.addEventListener('change', () => {
+            if (cb.checked) store.values.add(o.value); else store.values.delete(o.value);
+            emit();
+          });
+          const text = document.createElement('span');
+          text.className = 'ms-option-label';
+          text.textContent = o.label;
+          const count = document.createElement('span');
+          count.className = 'ms-count';
+          count.textContent = o.count;
+          row.appendChild(cb);
+          row.appendChild(text);
+          row.appendChild(count);
+          list.appendChild(row);
+        });
+      if (!list.children.length) {
+        const empty = document.createElement('div');
+        empty.className = 'ms-empty';
+        empty.textContent = '无匹配项';
+        list.appendChild(empty);
+      }
+    }
+
+    function open() {
+      panel.hidden = false;
+      control.classList.add('is-open');
+      renderList();
+      if (search) setTimeout(() => search.focus(), 0);
+    }
+    function close() {
+      panel.hidden = true;
+      control.classList.remove('is-open');
+    }
+
+    control.addEventListener('click', () => { if (panel.hidden) open(); else close(); });
+    document.addEventListener('click', (event) => { if (!root.contains(event.target)) close(); });
+    if (search) search.addEventListener('input', renderList);
+    selectAllBtn.addEventListener('click', () => {
+      store.options.forEach((o) => store.values.add(o.value));
+      emit();
+      renderList();
+    });
+    clearBtn.addEventListener('click', () => {
+      store.values.clear();
+      emit();
+      renderList();
+    });
+
+    function setOptions(options) {
+      store.options = options || [];
+      const present = new Set(store.options.map((o) => o.value));
+      [...store.values].forEach((v) => { if (!present.has(v)) store.values.delete(v); });
+      renderChips();
+      if (!panel.hidden) renderList();
+    }
+
+    return {
+      getValues: () => [...store.values],
+      setOptions,
+      clear() { store.values.clear(); emit(); if (!panel.hidden) renderList(); },
+      setVisible(visible) { root.hidden = !visible; },
+      root
+    };
+  }
+
+  const filterFields = [
+    { key: 'risks', id: '#riskFilter', field: 'risks', label: (i) => i.riskLabel, order: RISK_ORDER, placeholder: '全部风险' },
+    { key: 'categories', id: '#categoryFilter', field: 'categories', label: (i) => i.categoryLabel, order: CATEGORY_ORDER, placeholder: '全部类型' },
+    { key: 'sheets', id: '#sheetFilter', field: 'sheets', label: (i) => i.sheetName, searchable: true, placeholder: '全部工作表' },
+    { key: 'businessTypes', id: '#businessFilter', field: 'businessTypes', label: (i) => i.businessTypeLabel, placeholder: '全部业务类型' },
+    { key: 'hiddenTypes', id: '#hiddenFilter', field: 'hiddenTypes', label: (i) => i.hiddenLabel, exclude: ['none'], placeholder: '全部隐藏类型' },
+    { key: 'precisionStatuses', id: '#precisionFilter', field: 'precisionStatuses', label: (i) => i.precisionStatus, placeholder: '全部精度状态' }
+  ];
+
+  const filterControls = [];
+  filterFields.forEach((def) => {
+    const root = $(def.id);
+    if (!root) return;
+    const component = createMultiSelect({
+      root,
+      placeholder: def.placeholder,
+      searchable: Boolean(def.searchable),
+      onChange(values) {
+        state.filterState[def.field] = values;
+        if (!state.suppressFilterRender) renderIssues(true);
+      }
+    });
+    filterControls.push({ def, component });
+  });
+
+  function rebuildFilterOptions() {
+    filterControls.forEach(({ def, component }) => {
+      const options = filters
+        ? filters.buildOptions(state.issues, def.field, def.label, def.order, def.exclude)
+        : [];
+      component.setOptions(options);
+      component.setVisible(options.length > 0);
+    });
+  }
+
+  function clearAllFilters() {
+    state.suppressFilterRender = true;
+    filterControls.forEach(({ component }) => component.clear());
+    state.suppressFilterRender = false;
+    renderIssues(true);
+  }
+
+  // ---- file / scan ---------------------------------------------------------
   function showToast(message) {
     toast.textContent = message;
     toast.classList.add('show');
@@ -124,6 +356,14 @@
   }));
   dropZone.addEventListener('drop', (event) => setFile(event.dataTransfer.files?.[0]));
 
+  function readScanOptions() {
+    return {
+      includeVisible: optVisible ? optVisible.checked : true,
+      includeHidden: optHidden ? optHidden.checked : false,
+      analyzeReferences: optReferences ? optReferences.checked : true
+    };
+  }
+
   function setProgress(percent) {
     const safe = Math.max(0, Math.min(100, Number(percent || 0)));
     progressBar.style.width = `${safe}%`;
@@ -137,6 +377,7 @@
 
   function resetResults() {
     state.issues = [];
+    state.rates = [];
     state.summary = null;
     state.workbook = null;
     state.sheetStats = [];
@@ -152,18 +393,23 @@
     setProgress(0);
   }
 
-  function plural(value) {
-    return String(value);
+  function riskClass(level) {
+    return { '高': 'high', '中': 'medium', '低': 'low', '观察': 'watch' }[level] || 'watch';
+  }
+
+  function sortIssues(list, mode) {
+    if (riskCore && typeof riskCore.sortIssues === 'function') return riskCore.sortIssues(list, mode);
+    return list.slice();
   }
 
   function formatValue(issue) {
-    if (issue.type === 'unknown') return '不可读取';
-    if (issue.isNumericValue && issue.originalValue !== null) return String(issue.originalValue);
+    if (issue.category === 'unknown') return '不可读取';
+    if (issue.originalValue !== null && issue.originalValue !== undefined) return String(issue.originalValue);
     return '—';
   }
 
   function decimalsLabel(issue) {
-    if (issue.type === 'unknown') return '—';
+    if (issue.category === 'unknown') return '—';
     return DecimalWorkbook.formatDecimals(issue.decimals);
   }
 
@@ -190,9 +436,22 @@
     }
   }
 
+  function field(label, value, code) {
+    const wrap = document.createElement('div');
+    wrap.className = 'issue-field';
+    const caption = document.createElement('span');
+    caption.textContent = label;
+    const node = document.createElement(code ? 'code' : 'strong');
+    node.textContent = value;
+    wrap.appendChild(caption);
+    wrap.appendChild(node);
+    return wrap;
+  }
+
   function makeIssueNode(issue) {
     const item = document.createElement('article');
     item.className = 'issue-item';
+    item.dataset.risk = riskClass(issue.riskLevel);
 
     const top = document.createElement('div');
     top.className = 'issue-top';
@@ -210,36 +469,95 @@
     cell.textContent = issue.cell;
     loc.appendChild(cell);
 
+    const riskBadge = document.createElement('span');
+    riskBadge.className = `risk-badge risk-${riskClass(issue.riskLevel)}`;
+    riskBadge.textContent = issue.riskLabel;
+    loc.appendChild(riskBadge);
+
     const badge = document.createElement('span');
-    badge.className = `type-badge is-${issue.type}`;
-    badge.textContent = issue.typeLabel;
+    badge.className = `type-badge is-${issue.category}`;
+    badge.textContent = issue.categoryLabel;
     loc.appendChild(badge);
     top.appendChild(loc);
     item.appendChild(top);
 
+    const refStats = document.createElement('div');
+    refStats.className = 'issue-refstats';
+    const down = document.createElement('span');
+    down.className = 'refstat refstat--down';
+    down.textContent = `下游引用 ${issue.downstreamReferenceCount}`;
+    refStats.appendChild(down);
+    const direct = document.createElement('span');
+    direct.className = 'refstat';
+    direct.textContent = `直接引用 ${issue.directReferenceCount}`;
+    refStats.appendChild(direct);
+    if (issue.crossSheet) {
+      const cross = document.createElement('span');
+      cross.className = 'refstat';
+      cross.textContent = '跨表引用';
+      refStats.appendChild(cross);
+    }
+    if (issue.hasCircularDependency) {
+      const cycle = document.createElement('span');
+      cycle.className = 'refstat refstat--cycle';
+      cycle.textContent = '存在循环引用';
+      refStats.appendChild(cycle);
+    }
+    item.appendChild(refStats);
+
     const body = document.createElement('div');
     body.className = 'issue-body';
 
-    const fields = [
-      { label: 'F5 定位地址', value: issue.goto, code: true },
-      { label: '当前值 / 公式结果', value: formatValue(issue), code: false },
-      { label: '有效小数位', value: decimalsLabel(issue), code: false },
-      { label: '公式', value: issue.originalFormula || '—', code: true }
-    ];
-
-    fields.forEach((field) => {
-      const wrap = document.createElement('div');
-      wrap.className = 'issue-field';
-      const label = document.createElement('span');
-      label.textContent = field.label;
-      const value = document.createElement(field.code ? 'code' : 'strong');
-      value.textContent = field.value;
-      wrap.appendChild(label);
-      wrap.appendChild(value);
-      body.appendChild(wrap);
-    });
-
+    body.appendChild(field('F5 定位地址', issue.goto, true));
+    body.appendChild(field('当前值 / 公式结果', formatValue(issue), false));
+    body.appendChild(field('有效小数位', decimalsLabel(issue), false));
+    body.appendChild(field('直接引用数', String(issue.directReferenceCount), false));
+    body.appendChild(field('下游引用数', String(issue.downstreamReferenceCount), false));
+    body.appendChild(field('是否引用终点', issue.isReferenceTerminal ? '是（可能是输出终点）' : '否', false));
+    if (issue.hiddenType && issue.hiddenType !== 'none') {
+      body.appendChild(field('隐藏类型', issue.hiddenLabel, false));
+    }
+    if (issue.isPercentage) {
+      body.appendChild(field('是否百分比', '是（底层按数值存储）', false));
+    }
+    if (issue.category === 'exchange_rate') {
+      body.appendChild(field('识别类型', issue.businessTypeLabel + (issue.businessTypeConfidence === 'low' ? '（低可信度）' : ''), false));
+      body.appendChild(field('识别依据', issue.businessTypeReason || '—', false));
+      body.appendChild(field('允许小数位', String(issue.allowedDecimals), false));
+      body.appendChild(field('精度状态', issue.precisionStatus || '—', false));
+      if (issue.exchangeRateSource) {
+        body.appendChild(field('来源汇率', issue.exchangeRateSource, true));
+      }
+      if (issue.exchangeRatePassthrough) {
+        body.appendChild(field('传递层级', String(issue.exchangeRatePassthroughDepth), false));
+      }
+    }
+    if (issue.businessType === 'exchange_rate_derived' && issue.category !== 'exchange_rate') {
+      body.appendChild(field('业务类型', '由汇率计算派生', false));
+      if (issue.exchangeRateSource) {
+        body.appendChild(field('来源汇率', issue.exchangeRateSource, true));
+      }
+    }
+    if (issue.originalFormula) {
+      body.appendChild(field('公式', issue.originalFormula, true));
+    }
     item.appendChild(body);
+
+    const reason = document.createElement('p');
+    reason.className = 'issue-reason';
+    const reasonLabel = document.createElement('span');
+    reasonLabel.textContent = '风险原因：';
+    reason.appendChild(reasonLabel);
+    reason.appendChild(document.createTextNode(issue.riskReason));
+    item.appendChild(reason);
+
+    const suggestion = document.createElement('p');
+    suggestion.className = 'issue-suggestion';
+    const sugLabel = document.createElement('span');
+    sugLabel.textContent = '人工处理建议：';
+    suggestion.appendChild(sugLabel);
+    suggestion.appendChild(document.createTextNode(issue.suggestion));
+    item.appendChild(suggestion);
 
     const actions = document.createElement('div');
     actions.className = 'issue-actions';
@@ -281,31 +599,19 @@
     });
   }
 
-  function applyFiltersToModel() {
-    if (!state.model) return;
-    state.model.setFilterKind(typeFilter.value || '');
-    state.model.setFilterSheet(sheetFilter.value || '');
-  }
-
   function currentFiltered() {
-    const sheet = sheetFilter.value;
-    const type = typeFilter.value;
-    return state.issues.filter((issue) => {
-      if (sheet && issue.sheetName !== sheet) return false;
-      if (type && issue.type !== type) return false;
-      return true;
-    });
+    return filters ? filters.applyFilters(state.issues, state.filterState) : state.issues.slice();
   }
 
   function renderIssues(resetVisible) {
-    state.filtered = currentFiltered();
+    state.filtered = sortIssues(currentFiltered(), sortMode ? sortMode.value : 'risk');
     if (resetVisible) state.visible = 0;
 
     const total = state.filtered.length;
     const shown = Math.min(total, Math.max(PAGE_SIZE, state.visible || PAGE_SIZE));
     state.visible = shown;
 
-    filterCountLabel.textContent = `${total} 条`;
+    filterCountLabel.textContent = `${total} / ${state.issues.length} 条`;
     issueCountChip.textContent = `${state.issues.length} 条`;
 
     issueList.textContent = '';
@@ -320,36 +626,32 @@
     pagination.hidden = !hasMore;
     pageLabel.textContent = hasMore ? `已显示 ${shown} / ${total}` : '';
 
+    // Prev/next navigation follows THIS filtered + sorted list (never allIssues).
+    if (state.model && typeof state.model.setFilterList === 'function') {
+      state.model.setFilterList(state.filtered);
+      state.model.reconcile();
+    }
+
     highlightActiveIssue();
   }
 
-  function populateSheetFilter() {
-    sheetFilter.textContent = '';
-    const all = document.createElement('option');
-    all.value = '';
-    all.textContent = '全部工作表';
-    sheetFilter.appendChild(all);
-    state.sheetStats.forEach((sheet) => {
-      const option = document.createElement('option');
-      option.value = sheet.name;
-      option.textContent = sheet.issues > 0 ? `${sheet.name}（${sheet.issues}）` : sheet.name;
-      sheetFilter.appendChild(option);
-    });
-  }
-
   function renderSummary(summary) {
-    statSheets.textContent = plural(summary.sheetCount);
-    statCells.textContent = plural(summary.scannedCells);
-    statRaw.textContent = plural(summary.rawCount);
-    statFormula.textContent = plural(summary.formulaCount);
-    statUnknown.textContent = plural(summary.unknownCount);
-    statTotal.textContent = plural(summary.issueCount);
+    statSheets.textContent = String(summary.sheetCount);
+    statCells.textContent = String(summary.scannedCells);
+    if (statRates) statRates.textContent = String(summary.rateRowCount || 0);
+    statHigh.textContent = String(summary.highRiskCount);
+    statRaw.textContent = String(summary.rawCount);
+    statFormula.textContent = String(summary.formulaCount);
+    statHidden.textContent = String(summary.hiddenCount);
+    statPercentage.textContent = String(summary.percentageCount);
+    statUnknown.textContent = String(summary.unknownCount);
+    statTotal.textContent = String(summary.issueCount);
 
     unknownNotice.hidden = summary.unknownCount === 0;
 
     resultSubtitle.textContent = summary.issueCount === 0
-      ? '未发现超过两位小数的单元格。'
-      : `共发现 ${summary.issueCount} 个需要关注的单元格。`;
+      ? `已扫描 ${summary.sheetCount} 个工作表、${summary.scannedCells} 个单元格，未发现多位小数风险。`
+      : `${summary.sheetCount} 个工作表 · ${summary.scannedCells} 个单元格 · 共 ${summary.issueCount} 条风险，其中高风险 ${summary.highRiskCount} 条。`;
   }
 
   function buildFormatNote() {
@@ -377,16 +679,21 @@
       excelViewerHost.appendChild(note);
       return;
     }
-    state.model = ExcelViewerCore.createViewerModel(state.workbook, state.issues);
+    state.model = ExcelViewerCore.createViewerModel(state.workbook, state.issues, { cycle: false });
     state.viewer = ExcelViewer.createExcelViewer({ root: excelViewerHost, model: state.model });
     state.model.subscribe(() => { highlightActiveIssue(); });
-    applyFiltersToModel();
     const first = state.model.filteredIssues()[0];
     if (first) state.model.selectIssue(first);
   }
 
   async function runScan() {
     if (!state.file) return;
+    const options = readScanOptions();
+    if (!options.includeVisible && !options.includeHidden) {
+      showToast('请至少选择「检查可见单元格」或「检查隐藏区域」。');
+      return;
+    }
+
     startButton.disabled = true;
     errorBox.hidden = true;
     resultsPanel.hidden = true;
@@ -399,7 +706,9 @@
     try {
       const buffer = await state.file.arrayBuffer();
       await new Promise((resolve) => setTimeout(resolve, 30));
-      processMessage.textContent = '正在扫描所有工作表…';
+      processMessage.textContent = options.analyzeReferences
+        ? '正在扫描工作表并分析公式引用关系…'
+        : '正在扫描所有工作表…';
       jobStatus.textContent = 'SCANNING';
       setProgress(55);
 
@@ -410,29 +719,27 @@
         throw new Error('无法解析该文件。请确认它是有效的 Excel 工作簿，且未加密或损坏。');
       }
 
-      // Read-only scan: the viewer shows the ORIGINAL (unmodified) workbook,
-      // with yellow highlights overlaid. The workbook is never rewritten.
-      const result = DecimalWorkbook.scanWorkbook(XLSX, wb);
+      const result = DecimalWorkbook.scanWorkbook(XLSX, wb, options);
       state.workbook = wb;
-      // Extend each issue with the fields the shared viewer expects, without
-      // dropping any original field used by the list / exports.
       state.issues = result.issues.map((issue) => Object.assign({}, issue, {
         cellAddress: issue.cell,
-        severity: issue.type,
-        ruleId: issue.type,
-        cellType: issue.originalFormula ? 'formula' : 'number',
+        severity: issue.category,
+        ruleId: issue.category,
+        cellType: issue.isFormula ? 'formula' : 'number',
         formula: issue.originalFormula || null,
         value: issue.originalValue
       }));
       state.summary = result.summary;
       state.sheetStats = result.sheetStats;
+      state.rates = result.rates || [];
 
       setProgress(100);
       processMessage.textContent = '扫描完成';
       jobStatus.textContent = 'DONE';
 
       renderSummary(result.summary);
-      populateSheetFilter();
+      clearAllFilters();
+      rebuildFilterOptions();
       initViewer();
       renderIssues(true);
       buildFormatNote();
@@ -473,9 +780,6 @@
     highlightStatus.classList.toggle('is-error', Boolean(isError));
   }
 
-  // Same OOXML minimal patch as the hardcode check: highlights the issue cells
-  // in a COPY of the original file. The workbook is never rebuilt and the
-  // original upload is never modified.
   async function downloadHighlight() {
     if (!state.file || !state.summary) return;
     if (typeof ExcelOoxmlHighlight === 'undefined' || typeof fflate === 'undefined') {
@@ -488,14 +792,9 @@
     setHighlightStatus('正在生成对比文件…', false);
     try {
       const buffer = await state.file.arrayBuffer();
-      const { data } = ExcelOoxmlHighlight.buildHighlightedWorkbook(
-        fflate,
-        new Uint8Array(buffer),
-        state.issues,
-        {}
-      );
+      const { data } = ExcelOoxmlHighlight.buildHighlightedWorkbook(fflate, new Uint8Array(buffer), state.issues, {});
       const blob = new Blob([data], { type: MIME.xlsx });
-      downloadBlob(blob, `${state.baseName}_小数标黄对比版.xlsx`);
+      downloadBlob(blob, `${state.baseName}_尾差标黄对比版.xlsx`);
       setHighlightStatus('已生成标黄对比文件。', false);
       showToast('已生成标黄对比文件。');
     } catch (error) {
@@ -507,14 +806,15 @@
     }
   }
 
+  // Export always covers the FULL scan result (filters do not change exports).
   async function downloadIssues() {
     if (!state.summary) return;
     downloadIssuesButton.disabled = true;
     try {
-      const wb = DecimalWorkbook.buildIssuesWorkbook(XLSX, state.issues);
+      const wb = DecimalWorkbook.buildIssuesWorkbook(XLSX, state.issues, { rates: state.rates });
       const output = XLSX.write(wb, { bookType: 'xlsx', type: 'array', compression: true });
       const blob = new Blob([output], { type: MIME.xlsx });
-      downloadBlob(blob, `${state.baseName}_decimal_issues.xlsx`);
+      downloadBlob(blob, `${state.baseName}_尾差问题清单.xlsx`);
       showToast('已生成问题清单 Excel。');
     } catch (error) {
       showToast('生成问题清单失败，请重试。');
@@ -526,8 +826,13 @@
   startButton.addEventListener('click', runScan);
   downloadHighlightButton.addEventListener('click', downloadHighlight);
   downloadIssuesButton.addEventListener('click', downloadIssues);
-  sheetFilter.addEventListener('change', () => { renderIssues(true); applyFiltersToModel(); });
-  typeFilter.addEventListener('change', () => { renderIssues(true); applyFiltersToModel(); });
+  if (sortMode) sortMode.addEventListener('change', () => {
+    if (typeof DecimalWorkbook !== 'undefined' && state.filtered.length) {
+      state.filtered = sortIssues(currentFiltered(), sortMode.value);
+    }
+    renderIssues(true);
+  });
+  if (clearFiltersButton) clearFiltersButton.addEventListener('click', clearAllFilters);
   loadMoreButton.addEventListener('click', () => {
     state.visible += PAGE_SIZE;
     renderIssues(false);
