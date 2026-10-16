@@ -35,7 +35,12 @@ while [ $# -gt 0 ]; do
     -h|--help)
       sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'
       exit 0 ;;
-    *) echo "pre-push-check: unknown argument: $1" >&2; exit 2 ;;
+    -*)
+      echo "pre-push-check: unknown option: $1" >&2; exit 2 ;;
+    *)
+      # Positional args come from Git's pre-push protocol (<remote-name> <remote-url>);
+      # ignore them so the hook invocation never fails on argument parsing.
+      : ;;
   esac
   shift
 done
