@@ -6,11 +6,47 @@ const parseStoredArray = (key) => {
   catch (_) { return []; }
 };
 
+/*
+ * Tool Library information architecture (frontend-only).
+ * Excel / Word / PDF  ->  (Excel) 通用处理 / 检查 / 模板分析  ->  tool.
+ * The server contract (/api/tools, config/tools.json) is unchanged; the IA is
+ * mapped here by tool slug so business config stays untouched.
+ */
+const FILE_TYPES = [
+  { key: 'excel', label: 'Excel', title: 'Excel', blurb: 'Excel 工作流、检查与专业分析工具' },
+  { key: 'word', label: 'Word', title: 'Word', blurb: '文档处理、格式整理与专业工作流', comingSoon: true },
+  { key: 'pdf', label: 'PDF', title: 'PDF', blurb: 'PDF 解析与文档数字化工具' }
+];
+
+const EXCEL_GROUPS = [
+  { key: 'all', label: '全部' },
+  { key: 'general', label: '通用处理', accent: 'blue' },
+  { key: 'check', label: '检查', accent: 'amber' },
+  { key: 'template', label: '模板分析', accent: 'teal' }
+];
+
+const TOOL_IA = {
+  'excel-standardizer': { fileType: 'excel', group: 'general' },
+  'excel-review': { fileType: 'excel', group: 'general' },
+  'excel-decimal-check': { fileType: 'excel', group: 'check' },
+  'excel-hardcode-check': { fileType: 'excel', group: 'check' },
+  'sales-income-analysis': { fileType: 'excel', group: 'template' },
+  'contract-review': { fileType: 'pdf', group: 'pdf' }
+};
+
+const GROUP_LABEL = { general: '通用处理', check: '检查', template: '模板分析', pdf: 'PDF' };
+const GROUP_ACCENT = { general: 'blue', check: 'amber', template: 'teal', pdf: 'navy' };
+const GROUP_ORDER = { general: 0, check: 1, template: 2, pdf: 0 };
+
+const iaOf = (tool) => TOOL_IA[tool && tool.slug] || { fileType: 'other', group: '' };
+
 const state = {
   tools: [],
-  category: '全部',
+  fileType: 'excel',
+  group: 'all',
   query: '',
   view: 'all',
+  sidebarExcelOpen: false,
   favorites: new Set(parseStoredArray('liuxianlab-favorites')),
   recent: parseStoredArray('liuxianlab-recent')
 };
@@ -21,9 +57,15 @@ const $$ = (selector) => [...document.querySelectorAll(selector)];
 const body = document.body;
 const toolGrid = $('#toolGrid');
 const toolSearch = $('#toolSearch');
-const categoryTabs = $('#categoryTabs');
-const categoryNav = $('#categoryNav');
+const fileTypeTabs = $('#fileTypeTabs');
+const groupTabs = $('#groupTabs');
+const libraryNav = $('#libraryNav');
+const libraryContext = $('#libraryContext');
+const libraryTitle = $('#libraryTitle');
+const librarySubtitle = $('#librarySubtitle');
+const resultMeta = $('#resultMeta');
 const resultCount = $('#resultCount');
+const wordPanel = $('#wordPanel');
 const emptyState = $('#emptyState');
 const clearFilters = $('#clearFilters');
 const favoriteCount = $('#favoriteCount');
@@ -135,100 +177,226 @@ async function loadTools() {
     toolGrid.removeAttribute('aria-busy');
   }
 
-  const categories = [...new Set(state.tools.map((tool) => tool.category).filter(Boolean))];
-  renderCategories(categories);
-  renderCategoryNavigation(categories);
+  renderFileTypeTabs();
+  renderGroupTabs();
+  renderLibraryNav();
+  updateLibraryCopy();
   renderTools();
 }
 
-function renderCategories(categories) {
-  categoryTabs.innerHTML = '';
-  ['全部', ...categories].forEach((category) => {
+function toolsOfFileType(fileType) {
+  return state.tools.filter((tool) => iaOf(tool).fileType === fileType);
+}
+
+function renderFileTypeTabs() {
+  fileTypeTabs.innerHTML = '';
+  FILE_TYPES.forEach((type) => {
+    const count = type.comingSoon ? null : toolsOfFileType(type.key).length;
     const button = document.createElement('button');
     button.type = 'button';
-    button.className = `category-tab${state.category === category ? ' active' : ''}`;
-    button.textContent = category;
-    button.addEventListener('click', () => setCategory(category));
-    categoryTabs.appendChild(button);
+    button.className = `file-type-tab${state.fileType === type.key ? ' active' : ''}${type.comingSoon ? ' is-soon' : ''}`;
+    button.dataset.fileType = type.key;
+    button.setAttribute('role', 'tab');
+    button.setAttribute('aria-selected', String(state.fileType === type.key));
+
+    const label = document.createElement('strong');
+    label.textContent = type.label;
+    const meta = document.createElement('span');
+    meta.className = 'file-type-meta';
+    meta.textContent = type.comingSoon ? 'Coming Soon' : `${count} 个工具`;
+    button.append(label, meta);
+
+    button.addEventListener('click', () => setFileType(type.key));
+    fileTypeTabs.appendChild(button);
   });
 }
 
-function categoryIcon(category) {
-  const iconMap = {
-    AI: 'AI',
-    文件: '▤',
-    数据: '⌗',
-    开发: '</>',
-    效率: '⌁'
-  };
-  return iconMap[category] || '•';
-}
-
-function renderCategoryNavigation(categories) {
-  categoryNav.innerHTML = '';
-  categories.forEach((category) => {
+function renderGroupTabs() {
+  const isExcel = state.fileType === 'excel';
+  groupTabs.hidden = !isExcel;
+  groupTabs.innerHTML = '';
+  if (!isExcel) return;
+  const excelTools = toolsOfFileType('excel');
+  EXCEL_GROUPS.forEach((group) => {
+    const count = group.key === 'all'
+      ? excelTools.length
+      : excelTools.filter((tool) => iaOf(tool).group === group.key).length;
     const button = document.createElement('button');
     button.type = 'button';
-    button.className = `category-nav-item${state.category === category ? ' active' : ''}`;
-    button.dataset.category = category;
+    button.className = `group-tab${state.group === group.key ? ' active' : ''}`;
+    button.setAttribute('role', 'tab');
+    button.setAttribute('aria-selected', String(state.group === group.key));
+    button.textContent = `${group.label} ${count}`;
+    button.addEventListener('click', () => setGroup(group.key));
+    groupTabs.appendChild(button);
+  });
+}
 
-    const icon = document.createElement('span');
-    icon.className = 'mini-icon';
-    icon.textContent = categoryIcon(category);
+function renderLibraryNav() {
+  libraryNav.innerHTML = '';
 
+  const excelCount = toolsOfFileType('excel').length;
+  const pdfCount = toolsOfFileType('pdf').length;
+
+  // Excel (expandable into its groups)
+  const excelGroup = document.createElement('div');
+  excelGroup.className = 'library-nav-group';
+
+  const excelRow = document.createElement('div');
+  excelRow.className = `library-nav-item${state.fileType === 'excel' ? ' active' : ''}`;
+  const caret = document.createElement('button');
+  caret.type = 'button';
+  caret.className = `lib-caret${state.sidebarExcelOpen ? ' open' : ''}`;
+  caret.setAttribute('aria-label', state.sidebarExcelOpen ? '收起 Excel 分类' : '展开 Excel 分类');
+  caret.setAttribute('aria-expanded', String(state.sidebarExcelOpen));
+  caret.textContent = '▸';
+  caret.addEventListener('click', (event) => {
+    event.stopPropagation();
+    state.sidebarExcelOpen = !state.sidebarExcelOpen;
+    renderLibraryNav();
+  });
+  const excelLabel = document.createElement('button');
+  excelLabel.type = 'button';
+  excelLabel.className = 'lib-label';
+  excelLabel.textContent = 'Excel';
+  excelLabel.addEventListener('click', () => selectLibrary('excel', 'all'));
+  const excelBadge = document.createElement('span');
+  excelBadge.className = 'nav-count';
+  excelBadge.textContent = String(excelCount);
+  excelRow.append(caret, excelLabel, excelBadge);
+  excelGroup.appendChild(excelRow);
+
+  const subnav = document.createElement('div');
+  subnav.className = 'library-subnav';
+  subnav.hidden = !state.sidebarExcelOpen;
+  EXCEL_GROUPS.forEach((group) => {
+    if (group.key === 'all') return;
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = `library-subitem${state.fileType === 'excel' && state.group === group.key ? ' active' : ''}`;
+    const dot = document.createElement('span');
+    dot.className = `group-dot accent-${group.accent || 'blue'}`;
     const label = document.createElement('span');
-    label.textContent = category;
-
+    label.textContent = group.label;
     const count = document.createElement('span');
     count.className = 'nav-count';
-    count.textContent = state.tools.filter((tool) => tool.category === category).length;
-
-    button.append(icon, label, count);
-    button.addEventListener('click', () => {
-      state.view = 'all-tools';
-      setCategory(category, { preserveView: true });
-      syncViewNavigation();
-      updateViewCopy();
-      closeSidebar();
-    });
-    categoryNav.appendChild(button);
+    count.textContent = String(toolsOfFileType('excel').filter((tool) => iaOf(tool).group === group.key).length);
+    item.append(dot, label, count);
+    item.addEventListener('click', () => selectLibrary('excel', group.key));
+    subnav.appendChild(item);
   });
+  excelGroup.appendChild(subnav);
+  libraryNav.appendChild(excelGroup);
+
+  // Word (coming soon)
+  const wordRow = document.createElement('div');
+  wordRow.className = `library-nav-item is-soon${state.fileType === 'word' ? ' active' : ''}`;
+  const wordLabel = document.createElement('button');
+  wordLabel.type = 'button';
+  wordLabel.className = 'lib-label';
+  wordLabel.textContent = 'Word';
+  wordLabel.addEventListener('click', () => selectLibrary('word', 'all'));
+  const wordBadge = document.createElement('span');
+  wordBadge.className = 'nav-count soon';
+  wordBadge.textContent = 'Soon';
+  wordRow.append(wordLabel, wordBadge);
+  libraryNav.appendChild(wordRow);
+
+  // PDF
+  const pdfRow = document.createElement('div');
+  pdfRow.className = `library-nav-item${state.fileType === 'pdf' ? ' active' : ''}`;
+  const pdfLabel = document.createElement('button');
+  pdfLabel.type = 'button';
+  pdfLabel.className = 'lib-label';
+  pdfLabel.textContent = 'PDF';
+  pdfLabel.addEventListener('click', () => selectLibrary('pdf', 'all'));
+  const pdfBadge = document.createElement('span');
+  pdfBadge.className = 'nav-count';
+  pdfBadge.textContent = String(pdfCount);
+  pdfRow.append(pdfLabel, pdfBadge);
+  libraryNav.appendChild(pdfRow);
 }
 
-function setCategory(category, options = {}) {
-  state.category = category;
-  if (!options.preserveView && state.view === 'favorites') state.view = 'all-tools';
-  const categories = [...new Set(state.tools.map((tool) => tool.category).filter(Boolean))];
-  renderCategories(categories);
-  renderCategoryNavigation(categories);
+function selectLibrary(fileType, group) {
+  state.fileType = fileType;
+  state.group = fileType === 'excel' ? (group || 'all') : 'all';
+  if (fileType === 'excel' && group && group !== 'all') state.sidebarExcelOpen = true;
+  if (state.view === 'favorites' || state.view === 'recent') {
+    state.view = 'all-tools';
+    syncViewNavigation();
+    updateViewCopy();
+  }
+  renderFileTypeTabs();
+  renderGroupTabs();
+  renderLibraryNav();
+  updateLibraryCopy();
   renderTools();
+  closeSidebar();
+}
+
+function setFileType(fileType) {
+  if (state.fileType === fileType) return;
+  state.fileType = fileType;
+  state.group = 'all';
+  renderFileTypeTabs();
+  renderGroupTabs();
+  renderLibraryNav();
+  updateLibraryCopy();
+  renderTools();
+}
+
+function setGroup(group) {
+  state.group = group;
+  renderGroupTabs();
+  renderLibraryNav();
+  renderTools();
+}
+
+function updateLibraryCopy() {
+  const type = FILE_TYPES.find((item) => item.key === state.fileType) || FILE_TYPES[0];
+  if (libraryTitle) libraryTitle.textContent = type.title;
+  if (librarySubtitle) librarySubtitle.textContent = type.blurb;
+  const isWord = type.comingSoon === true;
+  if (libraryContext) libraryContext.hidden = isWord;
 }
 
 function toolMatches(tool) {
-  if (state.category !== '全部' && tool.category !== state.category) return false;
+  const ia = iaOf(tool);
+  if (ia.fileType !== state.fileType) return false;
+  if (state.fileType === 'excel' && state.group !== 'all' && ia.group !== state.group) return false;
   if (state.view === 'favorites' && !state.favorites.has(tool.slug)) return false;
   if (state.view === 'recent' && !state.recent.includes(tool.slug)) return false;
 
   const query = state.query.trim().toLowerCase();
   if (!query) return true;
-  const haystack = [tool.name, tool.description, tool.category, ...(tool.keywords || [])].join(' ').toLowerCase();
+  const haystack = [tool.name, tool.description, GROUP_LABEL[ia.group], ia.group, ...(tool.keywords || [])].join(' ').toLowerCase();
   return haystack.includes(query);
 }
 
 function orderedTools() {
   const filtered = state.tools.filter(toolMatches);
-  if (state.view !== 'recent') return filtered;
-  return filtered.sort((a, b) => state.recent.indexOf(a.slug) - state.recent.indexOf(b.slug));
+  if (state.view === 'recent') {
+    return filtered.sort((a, b) => state.recent.indexOf(a.slug) - state.recent.indexOf(b.slug));
+  }
+  return filtered.sort((a, b) => (GROUP_ORDER[iaOf(a).group] ?? 9) - (GROUP_ORDER[iaOf(b).group] ?? 9));
 }
 
 function renderTools() {
-  const tools = orderedTools();
+  const isWord = state.fileType === 'word';
+  const tools = isWord ? [] : orderedTools();
+
+  wordPanel.hidden = !isWord;
+  toolGrid.hidden = isWord;
+
   toolGrid.innerHTML = '';
+  if (resultMeta) resultMeta.hidden = isWord;
   resultCount.textContent = tools.length;
   favoriteCount.textContent = state.favorites.size;
   railFavoriteCount.textContent = state.favorites.size;
   railFavoriteCount.hidden = state.favorites.size === 0;
-  emptyState.hidden = tools.length > 0;
+  emptyState.hidden = isWord || tools.length > 0;
+
+  if (isWord) return;
 
   tools.forEach((tool) => {
     const fragment = $('#toolCardTemplate').content.cloneNode(true);
@@ -243,12 +411,15 @@ function renderTools() {
 
     const toolName = String(tool.name || '未命名工具');
     const toolSlug = String(tool.slug || '');
+    const ia = iaOf(tool);
     glyph.textContent = tool.icon || toolName.slice(0, 2);
     title.textContent = toolName;
     description.textContent = tool.description || '';
     version.textContent = tool.version || '';
     version.hidden = !version.textContent;
-    category.textContent = tool.category || '';
+    category.textContent = GROUP_LABEL[ia.group] || tool.category || '';
+    category.classList.add(`accent-${GROUP_ACCENT[ia.group] || 'blue'}`);
+    card.dataset.group = ia.group || '';
     link.href = toolSlug ? `/tools/${encodeURIComponent(toolSlug)}` : '#';
     link.setAttribute('aria-label', `打开 ${toolName}`);
 
@@ -294,8 +465,8 @@ function rememberRecent(slug) {
 }
 
 const viewConfig = {
-  all: ['工作台', '工具'],
-  'all-tools': ['全部工具', '全部工具'],
+  all: ['工作台', '工具库'],
+  'all-tools': ['全部工具', '工具库'],
   favorites: ['收藏', '收藏'],
   recent: ['最近使用', '最近使用']
 };
@@ -312,15 +483,16 @@ function updateViewCopy() {
 
 function setView(view) {
   state.view = view;
-  state.category = '全部';
+  state.group = 'all';
   state.query = '';
   toolSearch.value = '';
 
   syncViewNavigation();
   updateViewCopy();
-  const categories = [...new Set(state.tools.map((tool) => tool.category).filter(Boolean))];
-  renderCategories(categories);
-  renderCategoryNavigation(categories);
+  renderFileTypeTabs();
+  renderGroupTabs();
+  renderLibraryNav();
+  updateLibraryCopy();
   renderTools();
   closeSidebar();
 }
@@ -376,12 +548,11 @@ mobileMenuButton?.addEventListener('click', () => sidebar.classList.contains('op
 sidebarBackdrop?.addEventListener('click', closeSidebar);
 
 clearFilters?.addEventListener('click', () => {
-  state.category = '全部';
+  state.group = 'all';
   state.query = '';
   toolSearch.value = '';
-  const categories = [...new Set(state.tools.map((tool) => tool.category).filter(Boolean))];
-  renderCategories(categories);
-  renderCategoryNavigation(categories);
+  renderGroupTabs();
+  renderLibraryNav();
   renderTools();
 });
 
