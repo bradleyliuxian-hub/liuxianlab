@@ -1,6 +1,6 @@
 # Liuxian Lab UI Guidelines
 
-> Version: 1.0  
+> Version: 1.0
 > Companion to: `docs/design-tokens.md`
 
 ---

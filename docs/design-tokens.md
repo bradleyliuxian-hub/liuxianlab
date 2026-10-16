@@ -1,7 +1,7 @@
 # Liuxian Lab Design Tokens
 
-> Version: 1.0  
-> Status: Project-wide UI baseline  
+> Version: 1.0
+> Status: Project-wide UI baseline
 > Scope: All web pages, tools, dashboards, dialogs, tables, forms, Excel-like viewers, navigation, authentication and responsive layouts.
 
 ---
@@ -584,4 +584,3 @@ Before changing a global token:
 8. Build and test.
 
 For a local exception, create a semantic component token rather than changing the global brand token.
-
