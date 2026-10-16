@@ -2,10 +2,10 @@
   {
     "slug": "excel-standardizer",
     "name": "Excel 标准化",
-    "description": "按规则标准化 Excel，并保留变更记录。",
+    "description": "按任务勾选标准化 Excel，并保留变更记录。",
     "category": "数据",
     "status": "ready",
-    "version": "v1.0.0",
+    "version": "v1.1.0",
     "icon": "XLS",
     "keywords": [
       "excel",

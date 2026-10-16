@@ -6,7 +6,7 @@
   <meta name="description" content="Liuxian Lab Excel 标准化工具" />
   <title>Excel 标准化 · Liuxian Lab</title>
   <link rel="stylesheet" href="/design-tokens.css?v=1.0.0" />
-  <link rel="stylesheet" href="/app/tools/excel-standardizer/styles.css?v=1.0.1" />
+  <link rel="stylesheet" href="/app/tools/excel-standardizer/styles.css?v=1.1.0" />
   <link rel="stylesheet" href="/app/app-shell.css?v=1.0.0" />
 </head>
 <body>
@@ -18,7 +18,7 @@
         <div><strong>Excel 标准化</strong><small>Liuxian Lab / Data Tool</small></div>
       </div>
       <div class="header-actions">
-        <span class="version-chip" title="当前工具版本">v1.0.0</span>
+        <span class="version-chip" title="当前工具版本">v1.1.0</span>
         <span class="private-badge"><i></i>私有处理</span>
         <button class="ghost-button" id="newJobButton" type="button">新建任务</button>
       </div>
@@ -28,13 +28,13 @@
       <section class="intro-section">
         <p class="eyebrow">EXCEL STANDARDIZER</p>
         <h1>上传、标准化、核对，再下载。</h1>
-        <p>原文件保持不变。后台按照标准化规则生成新文件，同时记录每一项可审计的修改。</p>
+        <p>原文件保持不变。上传后自由勾选需要的标准化功能，后台只执行本次任务已选项，并保留可审计变更记录。</p>
       </section>
 
       <section class="workspace-card" id="uploadPanel">
         <div class="card-heading">
           <div><span class="step-no">01</span><div><h2>上传工作簿</h2><p>当前版本支持单个 <code>.xlsx</code> 文件；应用层不设置文件大小上限。</p></div></div>
-          <span class="profile-chip">Standard v1.0.0</span>
+          <span class="profile-chip">Standard v1.1.0</span>
         </div>
 
         <label class="drop-zone" id="dropZone" for="fileInput">
@@ -49,6 +49,51 @@
           <div class="file-copy"><strong id="fileName"></strong><small id="fileMeta"></small></div>
           <button class="icon-button" id="clearFileButton" type="button" aria-label="移除文件">×</button>
         </div>
+
+        <section class="feature-picker" aria-labelledby="featurePickerTitle">
+          <div class="feature-picker-head">
+            <div>
+              <p class="eyebrow">STANDARDIZATION OPTIONS</p>
+              <h3 id="featurePickerTitle">选择本次要执行的功能</h3>
+              <p>每个任务独立保存选择，不会改动服务器全局 profile。</p>
+            </div>
+            <div class="feature-picker-tools">
+              <button class="mini-button" id="selectAllFeatures" type="button">全选</button>
+              <button class="mini-button" id="recommendedFeatures" type="button">恢复推荐设置</button>
+            </div>
+          </div>
+
+          <div class="feature-groups">
+            <div class="feature-group">
+              <div class="feature-group-title"><strong>基础清理</strong><span>内容与日期</span></div>
+              <label class="feature-option"><input type="checkbox" data-feature="trim_text" checked><span><strong>去除文本首尾空格</strong><small>清理文本单元格前后多余空格，不处理公式。</small></span></label>
+              <label class="feature-option"><input type="checkbox" data-feature="normalize_dates" checked><span><strong>统一日期格式</strong><small>将真实 date 单元格显示为 <code>yyyy-mm-dd</code>。</small></span></label>
+              <label class="feature-option"><input type="checkbox" data-feature="normalize_datetime"><span><strong>统一日期时间格式</strong><small>将 datetime 单元格显示为 <code>yyyy-mm-dd hh:mm</code>，保留时间可见性。</small></span></label>
+            </div>
+
+            <div class="feature-group">
+              <div class="feature-group-title"><strong>格式与布局</strong><span>表头与列宽</span></div>
+              <label class="feature-option"><input type="checkbox" data-feature="header_style" checked><span><strong>统一表头样式</strong><small>按现有 profile 统一第 1 行表头字体、填充色、对齐和行高。</small></span></label>
+              <label class="feature-option"><input type="checkbox" data-feature="autofit_columns" checked><span><strong>自动调整列宽</strong><small>根据单元格内容在 profile 限制范围内调整列宽。</small></span></label>
+            </div>
+
+            <div class="feature-group">
+              <div class="feature-group-title"><strong>工作表设置</strong><span>可分开选择</span></div>
+              <label class="feature-option"><input type="checkbox" data-feature="freeze_header" checked><span><strong>冻结表头</strong><small>按当前规则冻结第 1 行（<code>A2</code>）。</small></span></label>
+              <label class="feature-option"><input type="checkbox" data-feature="auto_filter" checked><span><strong>添加自动筛选</strong><small>将当前数据区域设置为 Excel 自动筛选范围。</small></span></label>
+            </div>
+
+            <div class="feature-group feature-group-warning">
+              <div class="feature-group-title"><strong>高级操作</strong><span>谨慎使用</span></div>
+              <label class="feature-option"><input type="checkbox" data-feature="remove_empty_rows"><span><strong>删除空白行</strong><small>删除完全空白的行。可能影响引用被删除行的公式，默认不勾选。</small></span></label>
+            </div>
+          </div>
+
+          <div class="feature-picker-foot">
+            <span id="featureCount">已选择 6 / 8 项</span>
+            <span id="featureHint">请至少选择一项功能</span>
+          </div>
+        </section>
 
         <div class="upload-actions">
           <p>文件仅保存在受保护的服务器存储目录，并按照服务器保留策略自动清理。</p>
@@ -65,11 +110,14 @@
         <div class="progress-meta"><strong id="progressValue">0%</strong><span id="jobIdLabel"></span></div>
         <div class="stage-grid" id="stageGrid">
           <div data-stage="validating"><i></i><span>文件检查</span></div>
-          <div data-stage="trim_text"><i></i><span>文本清理</span></div>
-          <div data-stage="normalize_dates"><i></i><span>日期格式</span></div>
-          <div data-stage="header_style"><i></i><span>表头标准</span></div>
-          <div data-stage="autofit_columns"><i></i><span>列宽调整</span></div>
-          <div data-stage="sheet_settings"><i></i><span>工作表设置</span></div>
+          <div data-stage="trim_text" data-feature-stage><i></i><span>文本清理</span></div>
+          <div data-stage="normalize_dates" data-feature-stage><i></i><span>日期格式</span></div>
+          <div data-stage="normalize_datetime" data-feature-stage><i></i><span>日期时间</span></div>
+          <div data-stage="header_style" data-feature-stage><i></i><span>表头样式</span></div>
+          <div data-stage="autofit_columns" data-feature-stage><i></i><span>列宽调整</span></div>
+          <div data-stage="freeze_header" data-feature-stage><i></i><span>冻结表头</span></div>
+          <div data-stage="auto_filter" data-feature-stage><i></i><span>自动筛选</span></div>
+          <div data-stage="remove_empty_rows" data-feature-stage><i></i><span>删除空白行</span></div>
           <div data-stage="checking"><i></i><span>输出校验</span></div>
           <div data-stage="reporting"><i></i><span>生成报告</span></div>
         </div>
@@ -125,7 +173,7 @@
         <section class="result-view" id="summaryView" hidden>
           <div class="summary-detail-grid">
             <article><h3>工作表</h3><div id="sheetSummary"></div></article>
-            <article><h3>已执行规则</h3><div id="ruleSummary"></div></article>
+            <article><h3>本次功能</h3><div id="ruleSummary"></div></article>
           </div>
         </section>
       </section>
@@ -138,16 +186,17 @@
           <h2>版本迭代</h2>
         </div>
         <ul class="changelog-list">
+          <li class="changelog-item"><span class="changelog-ver">v1.1.0</span><p class="changelog-text"><strong>可选功能</strong>：新增 8 项按任务勾选的标准化功能，拆分日期/日期时间以及冻结/筛选，结果页显示本次已选与未选项。</p></li>
           <li class="changelog-item"><span class="changelog-ver">v1.0.0</span><p class="changelog-text"><strong>基础能力</strong>：上传 <code>.xlsx</code>，按规则标准化（文本清理、日期格式、表头样式、列宽与工作表设置），生成新文件并保留可审计的变更记录；原文件保持不变。</p></li>
         </ul>
       </div>
     </section>
 
-    <footer class="tool-footer"><span>Liuxian Lab</span><span>Excel Standardizer v1.0.0</span></footer>
+    <footer class="tool-footer"><span>Liuxian Lab</span><span>Excel Standardizer v1.1.0</span></footer>
   </div>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
     <script src="/app/app-shell.js?v=1.0.0"></script>
-<script src="/app/tools/excel-standardizer/script.js?v=1.0.1"></script>
+<script src="/app/tools/excel-standardizer/script.js?v=1.1.0"></script>
 </body>
 </html>

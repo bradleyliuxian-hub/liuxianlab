@@ -1,6 +1,6 @@
 {
-  "name": "Liuxian Lab Standard v1",
-  "description": "第一版保守型 Excel 标准化方案。规则可随业务继续扩展。",
+  "name": "Liuxian Lab Standard v1.1",
+  "description": "可按任务勾选功能的 Excel 标准化方案。profile 保留规则参数，实际开关由每个 job 的 selection 决定。",
   "rules": {
     "trim_text": {
       "enabled": true,
@@ -8,9 +8,11 @@
     },
     "normalize_dates": {
       "enabled": true,
-      "label": "统一真实日期单元格格式",
+      "label": "统一日期与日期时间格式",
       "format": "yyyy-mm-dd",
-      "include_datetime": true
+      "include_datetime": true,
+      "include_date": true,
+      "datetime_format": "yyyy-mm-dd hh:mm"
     },
     "header_style": {
       "enabled": true,
@@ -32,7 +34,7 @@
     },
     "sheet_settings": {
       "enabled": true,
-      "label": "冻结表头并启用筛选",
+      "label": "工作表设置（冻结表头 / 自动筛选）",
       "freeze_header": true,
       "auto_filter": true
     },
@@ -44,5 +46,15 @@
   "preview": {
     "rows": 50,
     "columns": 20
+  },
+  "selectionDefaults": {
+    "trim_text": true,
+    "normalize_dates": true,
+    "normalize_datetime": false,
+    "header_style": true,
+    "autofit_columns": true,
+    "freeze_header": true,
+    "auto_filter": true,
+    "remove_empty_rows": false
   }
 }

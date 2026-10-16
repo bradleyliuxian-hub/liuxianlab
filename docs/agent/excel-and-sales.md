@@ -7,14 +7,28 @@ Read on demand. Both tools are Node routes + Python workers.
 - UI: `private/tools/excel-standardizer/` (`index.html`, `script.js`, `styles.css`).
 - API: `/api/excel` -> `server/excel-standardizer/routes.js` (`createExcelRouter`), job lifecycle in `server/excel-standardizer/jobs.js`.
 - Worker: `services/excel_standardizer/`
-  - `processor.py` — main processing entry.
+  - `processor.py` — main processing entry; reads each job's `selection` and executes only selected features.
   - `job_state.py` — job state persistence.
   - `preview.py` — preview generation.
   - `audit.py` — audit output.
-  - `rules/` — ordered rule modules: `remove_empty_rows.py`, `trim_text.py`, `normalize_dates.py`, `header_style.py`, `autofit_columns.py`, `sheet_settings.py`.
-  - `requirements.txt` — worker Python deps.
-- Profile: `config/excel_profiles/default.json`.
-- The `rules/*` modules are individually SIMPLE/MEDIUM to change; the job lifecycle is MEDIUM.
+  - `rules/` — implementation modules: `trim_text.py`, `normalize_dates.py`, `header_style.py`, `autofit_columns.py`, `sheet_settings.py`, `remove_empty_rows.py`.
+- Profile: `config/excel_profiles/default.json` stores rule parameters plus recommended selection defaults.
+- Python deps remain shared in the project's existing environment/manifest; do not add `services/excel_standardizer/requirements.txt`.
+
+### Selectable features (v1.1.0)
+
+The browser exposes 8 per-job checkboxes. The selection is posted as multipart field `selection` (JSON), stored in `job.json`, returned by the job API, and copied into `result.json` summary.
+
+1. `trim_text` — remove leading/trailing text whitespace.
+2. `normalize_dates` — date cells -> `yyyy-mm-dd`.
+3. `normalize_datetime` — datetime cells -> `yyyy-mm-dd hh:mm`.
+4. `header_style` — first-row header style.
+5. `autofit_columns` — column width adjustment.
+6. `freeze_header` — freeze first row (`A2`).
+7. `auto_filter` — set the current worksheet data range as auto-filter.
+8. `remove_empty_rows` — delete fully empty rows (not recommended by default because formulas can be affected).
+
+Recommended selection: all except `normalize_datetime` and `remove_empty_rows`. At least one feature must be selected. Date/datetime and freeze/filter are intentionally independent even though they reuse the same underlying Python modules.
 
 ## Sales-income analysis
 

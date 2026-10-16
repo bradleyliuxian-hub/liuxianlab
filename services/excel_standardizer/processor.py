@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import argparse
+import copy
 import json
-import os
 import sys
 import traceback
 from pathlib import Path
@@ -24,14 +24,27 @@ from services.excel_standardizer.rules import (  # noqa: E402
     trim_text,
 )
 
-RULES = [
-    ("trim_text", trim_text),
-    ("normalize_dates", normalize_dates),
-    ("header_style", header_style),
-    ("autofit_columns", autofit_columns),
-    ("sheet_settings", sheet_settings),
-    ("remove_empty_rows", remove_empty_rows),
-]
+FEATURE_LABELS = {
+    "trim_text": "\u53bb\u9664\u6587\u672c\u9996\u5c3e\u7a7a\u683c",
+    "normalize_dates": "\u7edf\u4e00\u65e5\u671f\u683c\u5f0f",
+    "normalize_datetime": "\u7edf\u4e00\u65e5\u671f\u65f6\u95f4\u683c\u5f0f",
+    "header_style": "\u7edf\u4e00\u8868\u5934\u6837\u5f0f",
+    "autofit_columns": "\u81ea\u52a8\u8c03\u6574\u5217\u5bbd",
+    "freeze_header": "\u51bb\u7ed3\u8868\u5934",
+    "auto_filter": "\u6dfb\u52a0\u81ea\u52a8\u7b5b\u9009",
+    "remove_empty_rows": "\u5220\u9664\u7a7a\u767d\u884c",
+}
+
+RECOMMENDED_SELECTION = {
+    "trim_text": True,
+    "normalize_dates": True,
+    "normalize_datetime": False,
+    "header_style": True,
+    "autofit_columns": True,
+    "freeze_header": True,
+    "auto_filter": True,
+    "remove_empty_rows": False,
+}
 
 
 def load_profile(name: str):
@@ -43,15 +56,93 @@ def load_profile(name: str):
     return safe, data
 
 
+def normalize_selection(raw):
+    selection = dict(RECOMMENDED_SELECTION)
+    if isinstance(raw, dict):
+        for key in selection:
+            if key in raw:
+                selection[key] = raw[key] is True
+    if not any(selection.values()):
+        raise ValueError("At least one standardization feature must be selected.")
+    return selection
+
+
+def build_feature_plan(profile, selection):
+    rules = profile.get("rules", {})
+    plan = []
+
+    if selection["trim_text"]:
+        config = copy.deepcopy(rules.get("trim_text", {}))
+        config["enabled"] = True
+        plan.append(("trim_text", trim_text, config))
+
+    if selection["normalize_dates"]:
+        config = copy.deepcopy(rules.get("normalize_dates", {}))
+        config.update({
+            "enabled": True,
+            "include_date": True,
+            "include_datetime": False,
+            "audit_rule": "normalize_dates",
+            "label": FEATURE_LABELS["normalize_dates"],
+        })
+        plan.append(("normalize_dates", normalize_dates, config))
+
+    if selection["normalize_datetime"]:
+        config = copy.deepcopy(rules.get("normalize_dates", {}))
+        config.update({
+            "enabled": True,
+            "include_date": False,
+            "include_datetime": True,
+            "audit_rule": "normalize_datetime",
+            "label": FEATURE_LABELS["normalize_datetime"],
+        })
+        plan.append(("normalize_datetime", normalize_dates, config))
+
+    if selection["header_style"]:
+        config = copy.deepcopy(rules.get("header_style", {}))
+        config["enabled"] = True
+        plan.append(("header_style", header_style, config))
+
+    if selection["autofit_columns"]:
+        config = copy.deepcopy(rules.get("autofit_columns", {}))
+        config["enabled"] = True
+        plan.append(("autofit_columns", autofit_columns, config))
+
+    if selection["freeze_header"]:
+        config = copy.deepcopy(rules.get("sheet_settings", {}))
+        config.update({
+            "enabled": True,
+            "freeze_header": True,
+            "auto_filter": False,
+            "freeze_audit_rule": "freeze_header",
+            "label": FEATURE_LABELS["freeze_header"],
+        })
+        plan.append(("freeze_header", sheet_settings, config))
+
+    if selection["auto_filter"]:
+        config = copy.deepcopy(rules.get("sheet_settings", {}))
+        config.update({
+            "enabled": True,
+            "freeze_header": False,
+            "auto_filter": True,
+            "filter_audit_rule": "auto_filter",
+            "label": FEATURE_LABELS["auto_filter"],
+        })
+        plan.append(("auto_filter", sheet_settings, config))
+
+    if selection["remove_empty_rows"]:
+        config = copy.deepcopy(rules.get("remove_empty_rows", {}))
+        config["enabled"] = True
+        plan.append(("remove_empty_rows", remove_empty_rows, config))
+
+    return plan
+
+
 def workbook_summary(workbook):
     return {
         "sheetCount": len(workbook.worksheets),
         "sheets": [
-            {
-                "name": ws.title,
-                "rows": ws.max_row,
-                "columns": ws.max_column,
-            }
+            {"name": ws.title, "rows": ws.max_row, "columns": ws.max_column}
             for ws in workbook.worksheets
         ],
     }
@@ -73,20 +164,24 @@ def process(job_dir: Path, profile_name: str):
     preview_path = job_dir / "preview.json"
 
     profile_name, profile = load_profile(profile_name)
+    job = read_job(job_dir)
+    selection = normalize_selection(job.get("selection"))
+    feature_plan = build_feature_plan(profile, selection)
 
     update_job(
         job_dir,
         status="validating",
         stage="validating",
         progress=5,
-        message="正在检查 Excel 工作簿…",
+        message="\u6b63\u5728\u68c0\u67e5 Excel \u5de5\u4f5c\u7c3f\u2026",
         profile=profile_name,
+        selection=selection,
+        selectedFeatures=[name for name, _module, _config in feature_plan],
     )
 
     if not input_path.exists():
         raise FileNotFoundError("input.xlsx not found")
 
-    # data_only=False keeps formula expressions. keep_links=True preserves external-link metadata where supported.
     workbook = load_workbook(input_path, data_only=False, read_only=False, keep_links=True)
     initial_summary = workbook_summary(workbook)
 
@@ -95,61 +190,35 @@ def process(job_dir: Path, profile_name: str):
         status="processing",
         stage="processing",
         progress=12,
-        message=f"已读取 {initial_summary['sheetCount']} 个工作表，开始执行标准化规则…",
+        message=f"\u5df2\u8bfb\u53d6 {initial_summary['sheetCount']} \u4e2a\u5de5\u4f5c\u8868\uff0c\u5f00\u59cb\u6267\u884c {len(feature_plan)} \u9879\u5df2\u9009\u529f\u80fd\u2026",
         workbook=initial_summary,
     )
 
     audit = AuditLog(changes_path)
     try:
-        enabled_rules = []
-        rules_config = profile.get("rules", {})
-        for name, module in RULES:
-            config = rules_config.get(name, {})
-            if config.get("enabled", name != "remove_empty_rows"):
-                enabled_rules.append((name, module, config))
-
-        total_rules = max(1, len(enabled_rules))
-        for index, (name, module, config) in enumerate(enabled_rules, start=1):
-            start_progress = 15 + int((index - 1) / total_rules * 58)
+        total_features = max(1, len(feature_plan))
+        for index, (name, module, config) in enumerate(feature_plan, start=1):
+            start_progress = 15 + int((index - 1) / total_features * 58)
             update_job(
                 job_dir,
                 status="processing",
                 stage=name,
                 progress=start_progress,
-                message=config.get("label") or f"正在执行规则：{name}",
+                message=config.get("label") or FEATURE_LABELS.get(name) or f"\u6b63\u5728\u6267\u884c\uff1a{name}",
             )
             module.apply(workbook, audit, config)
 
         set_recalculation_flags(workbook)
 
-        update_job(
-            job_dir,
-            status="checking",
-            stage="saving",
-            progress=78,
-            message="正在保存标准化后的工作簿…",
-        )
+        update_job(job_dir, status="checking", stage="saving", progress=78, message="\u6b63\u5728\u4fdd\u5b58\u6807\u51c6\u5316\u540e\u7684\u5de5\u4f5c\u7c3f\u2026")
         workbook.save(output_path)
 
-        update_job(
-            job_dir,
-            status="checking",
-            stage="checking",
-            progress=86,
-            message="正在校验输出文件…",
-        )
-        # Reopen in read-only mode to verify the generated workbook can be parsed.
+        update_job(job_dir, status="checking", stage="checking", progress=86, message="\u6b63\u5728\u6821\u9a8c\u8f93\u51fa\u6587\u4ef6\u2026")
         check_book = load_workbook(output_path, data_only=False, read_only=True, keep_links=True)
         check_summary = workbook_summary(check_book)
         check_book.close()
 
-        update_job(
-            job_dir,
-            status="reporting",
-            stage="reporting",
-            progress=92,
-            message="正在生成变更报告和网页预览…",
-        )
+        update_job(job_dir, status="reporting", stage="reporting", progress=92, message="\u6b63\u5728\u751f\u6210\u53d8\u66f4\u62a5\u544a\u548c\u7f51\u9875\u9884\u89c8\u2026")
         preview_config = profile.get("preview", {})
         build_preview(
             workbook,
@@ -164,18 +233,22 @@ def process(job_dir: Path, profile_name: str):
             "sheets": check_summary["sheets"],
             "inputBytes": input_path.stat().st_size,
             "outputBytes": output_path.stat().st_size,
-            "rulesApplied": [name for name, _module, _config in enabled_rules],
+            "rulesApplied": [name for name, _module, _config in feature_plan],
+            "featuresApplied": [
+                {"key": name, "label": FEATURE_LABELS[name], "changes": int(summary.get("byRule", {}).get(name, 0))}
+                for name, _module, _config in feature_plan
+            ],
+            "selection": selection,
         })
 
-        result_path = job_dir / "result.json"
-        result_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        (job_dir / "result.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
         update_job(
             job_dir,
             status="completed",
             stage="completed",
             progress=100,
-            message="Excel 标准化完成。",
+            message="Excel \u6807\u51c6\u5316\u5b8c\u6210\u3002",
             summary=summary,
             outputBytes=output_path.stat().st_size,
         )
@@ -202,7 +275,7 @@ def main():
                 status="failed",
                 stage="failed",
                 progress=100,
-                message="Excel 处理失败，请查看错误信息。",
+                message="Excel \u5904\u7406\u5931\u8d25\uff0c\u8bf7\u67e5\u770b\u9519\u8bef\u4fe1\u606f\u3002",
                 error=error_text,
             )
         except Exception:

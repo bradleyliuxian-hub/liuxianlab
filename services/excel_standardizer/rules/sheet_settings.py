@@ -6,6 +6,8 @@ def apply(workbook, audit, config):
         return
     freeze_header = bool(config.get("freeze_header", True))
     auto_filter = bool(config.get("auto_filter", True))
+    freeze_rule = config.get("freeze_audit_rule", "freeze_header")
+    filter_rule = config.get("filter_audit_rule", "auto_filter")
 
     for ws in workbook.worksheets:
         if ws.max_row < 1 or ws.max_column < 1:
@@ -20,13 +22,13 @@ def apply(workbook, audit, config):
             if before != after:
                 ws.freeze_panes = after
                 audit.add(
-                    rule="sheet_settings",
+                    rule=freeze_rule,
                     sheet=ws.title,
                     target="worksheet",
                     change_type="sheet",
                     before={"freezePanes": before},
                     after={"freezePanes": after},
-                    reason="冻结第一行表头",
+                    reason="\u51bb\u7ed3\u7b2c\u4e00\u884c\u8868\u5934",
                 )
 
         if auto_filter and ws.max_row >= 2:
@@ -36,11 +38,11 @@ def apply(workbook, audit, config):
             if before != after:
                 ws.auto_filter.ref = after
                 audit.add(
-                    rule="sheet_settings",
+                    rule=filter_rule,
                     sheet=ws.title,
                     target="worksheet",
                     change_type="sheet",
                     before={"autoFilter": before},
                     after={"autoFilter": after},
-                    reason="为数据区域启用自动筛选",
+                    reason="\u4e3a\u6570\u636e\u533a\u57df\u542f\u7528\u81ea\u52a8\u7b5b\u9009",
                 )

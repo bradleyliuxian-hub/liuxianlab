@@ -8,8 +8,9 @@ Updated: 2026-10-16
 ## Git
 
 - 分支：`main`（查询：`git branch --show-current`）
-- HEAD：`ffb2935`（查询：`git rev-parse --short HEAD`）
-- 工作区：干净（已全部提交并推送至 `origin/main`）。
+- HEAD：`0ec800a`（查询：`git rev-parse --short HEAD`）
+- 工作区（未提交）：Excel Standardizer v1.1.0「可选功能」升级——替换 10 个文件 +
+  新增 `tests/excel-standardizer/test_selectable_features.py`（未 commit/push）。查询：`git status --short`。
 - 已上线内容：本地 pre-push 检查器；Excel 标准化修复（解释器回落 `.venv`、
   中文文件名乱码 `defParamCharset:utf8`+`repairMojibake`）与后端迁移
   （`server/excel/`→`server/excel-standardizer/`、`workers/excel/*`→`services/excel_standardizer/*`）。
@@ -28,6 +29,10 @@ Updated: 2026-10-16
    以对齐 excel-review 布局。前端 `private/tools/excel-standardizer/` 不变；
    `config/excel_profiles/` 暂留原位。修复上传文件名乱码（multer `defParamCharset:'utf8'`
    + `server/excel-standardizer/encoding.js` 的 repairMojibake，与 excel-review 同源）。
+3. Excel Standardizer v1.1.0「可选功能」：由 profile 一次性执行改为**每任务勾选**（网页 8 项、
+   默认 6 项推荐）。`selection` 存 `job.json`，worker 按 selection 构建执行计划；日期/日期时间、
+   冻结/筛选均可独立开关；0 项服务端拒绝。API 新增 `POST /api/excel/jobs` 的 `selection` 字段
+   与 `/api/excel/meta.features`（前缀不变）。
 
 ## Known Broken
 
@@ -54,3 +59,8 @@ Updated: 2026-10-16
   `scripts/local/pre-push-check.sh` QUICK PASSED（12 个 Python 语法检查通过）。
 - 文件名修复：raw UTF-8 中文文件名上传后 `originalName`/`outputName` 正确
   （`测试_报价表 …-standardized.xlsx`），任务 `completed`；旧乱码串 repair 往返 OK。
+- v1.1.0 升级验证（本地）：包内测试 `test_selectable_features.py` 3/3 PASS（文本清理单独、
+  日期/日期时间独立、冻结/筛选独立）；HTTP 层：全 false → 400 拒绝、无 selection → 推荐默认
+  6 项且任务 completed（job.selection 持久化）；前端默认 6/8（日期时间/删除空白行未选）、
+  0 项禁用、全选/恢复推荐正常；`node --check`/`py_compile`/JSON 校验通过；无新增依赖清单、
+  `package-lock.json` 未变。
