@@ -8,11 +8,10 @@ Updated: 2026-10-19
 ## Git
 
 - 分支：`main`（查询：`git branch --show-current`）
-- HEAD：`4c1f2ee`（查询：`git rev-parse --short HEAD`）；HEAD == `origin/main`。
-- 工作区：合同审阅 Local/Cloud 每任务选择、加密 Token、migration 004、
-  文档与测试改动未提交。查询：`git status --short`。
+- HEAD：`ab0f448`（查询：`git rev-parse --short HEAD`）；HEAD == `origin/main`。
+- 工作区：干净；合同审阅 Local/Cloud UI、加密 Token、migration 004 已提交并推送。
 - 本地 dev DB（127.0.0.1/liuxianlab）已应用 migration 004；**生产未执行**。
-- 未执行 commit / push / deploy；未连接生产服务器。
+- 未连接生产服务器；生产部署 / PM2 / 生产 `.env` 未操作。
 
 ## Current Focus
 
@@ -21,9 +20,9 @@ Updated: 2026-10-19
    逐任务执行，不再依赖全局环境切换。
 2. 云端 Token 优先级：本次任务 Token（AES-256-GCM 存入
    `contract_credentials`）→ 服务器 `MINERU_API_TOKEN` → 拒绝。
-3. 等待用户审查 UI / Node API / Worker / migration / Token 安全设计；
-   真实云端 API 尚未调用。
+3. 代码已推送 GitHub（`ab0f448`）；真实云端 API 尚未调用。
 4. 生产部署（含 migration 004）仍未执行；本地 dev server 运行于 8080。
+5. 上线顺序：生产先应用 migration 004，再配置 Token/加密密钥，再重启 Node/worker。
 
 ## Workspace-level（不在本 repo 内，仅作上下文）
 
@@ -60,7 +59,7 @@ Updated: 2026-10-19
 2. 生产前：先应用 migration 004，再配置加密密钥（如需用户 Token），再重启 Node/worker。
 3. 用非生产合同做一次 Local + Cloud 冒烟；核对 page/bbox、Markdown、middle JSON、
    Token/URL 不落日志，以及 `contract_credentials` 在任务终态后为空。
-4. 冒烟通过后再走 `deployment-safety` / `/deploy`；未批准不 push / 不部署。
+4. 冒烟通过后再走 `deployment-safety` / `/deploy`；本次仅 push GitHub，生产部署需单独批准。
 5. 回滚：新上传改为 Local（或把 `parse_backend_requested` 置回 local）；旧代码可运行在
    已扩展的 schema 上，无需回滚数据库。
 
