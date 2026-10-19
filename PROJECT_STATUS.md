@@ -8,10 +8,13 @@ Updated: 2026-10-19
 ## Git
 
 - 分支：`main`（查询：`git branch --show-current`）
-- HEAD：`ab0f448`（查询：`git rev-parse --short HEAD`）；HEAD == `origin/main`。
-- 工作区：干净；合同审阅 Local/Cloud UI、加密 Token、migration 004 已提交并推送。
+- 代码提交：`da80aff`（parser-selection 抽取 + 安全测试）；HEAD 以
+  `git rev-parse --short HEAD` 为准。
+- 工作区：本 status 提交后应为干净；查询：`git status --short`。
+- 本地 `.env` 已配置 `MINERU_API_TOKEN_ENCRYPTION_KEY`（32 字节 hex；值未输出、
+  未进入 Git）；本地 Node 已重启并识别为 configured；**生产 `.env` 未修改**。
 - 本地 dev DB（127.0.0.1/liuxianlab）已应用 migration 004；**生产未执行**。
-- 未连接生产服务器；生产部署 / PM2 / 生产 `.env` 未操作。
+- 未连接生产服务器；本次仅 commit/push GitHub；生产部署 / PM2 / 生产 `.env` 未操作。
 
 ## Current Focus
 
@@ -20,9 +23,12 @@ Updated: 2026-10-19
    逐任务执行，不再依赖全局环境切换。
 2. 云端 Token 优先级：本次任务 Token（AES-256-GCM 存入
    `contract_credentials`）→ 服务器 `MINERU_API_TOKEN` → 拒绝。
-3. 代码已推送 GitHub（`ab0f448`）；真实云端 API 尚未调用。
+3. 已排查“未配置凭证加密密钥”问题：根因为本地 `.env` 缺少
+   `MINERU_API_TOKEN_ENCRYPTION_KEY`，非代码缺陷；本地已配置并验证
+   Node/Python 密钥一致，用户可重试自定义 Token。
 4. 生产部署（含 migration 004）仍未执行；本地 dev server 运行于 8080。
 5. 上线顺序：生产先应用 migration 004，再配置 Token/加密密钥，再重启 Node/worker。
+6. 当前增量已 commit；GitHub 推送随本轮执行；生产部署未执行。
 
 ## Workspace-level（不在本 repo 内，仅作上下文）
 
@@ -66,11 +72,14 @@ Updated: 2026-10-19
 ## Last Verification
 
 - Python：`.mineru/bin/python -m unittest discover -s services/contract_review/tests -t .`
-  = 196 tests PASS / 0 fail。
-- Node：`node --test tests/contracts/*.test.js` = 25 tests PASS；`npm test` = 241 PASS。
+  = 198 tests PASS / 0 fail。
+- Node：`node --test tests/contracts/*.test.js` = 42 tests PASS（本轮 pre-push）。
 - 跨语言凭证：Node AES-GCM → 本地 DB → Python 解密 = PASS（虚构 Token）；
-  篡改/错 owner/缺密钥测试 PASS。
-- `py_compile`、`node --check`、`git diff --check`、`pre-push-check.sh --full` PASS。
+  实际本地配置下 Node 加密 → Python 解密 = `NODE_PYTHON_KEY_MATCH`。
+- 配置诊断：修复前 Node `isConfigured()`=false、Python key absent；
+  修复后 Node true、Python 32-byte valid。
+- `py_compile`、`node --check`、`git diff --check`、
+  `pre-push-check.sh --full` PASS（Python 198 + Node 42）。
 - 本地 migration 004 已应用（127.0.0.1/liuxianlab，7 行历史合同 backfill local）。
 - 真实云端 API：NOT RUN；生产部署 / 生产 DB / 生产 `.env`：NOT RUN。
 - Python 环境：`.mineru`=3.12.15（含 cryptography 50.0.2）；`.venv`=3.9.6（BLOCKED）。
