@@ -86,6 +86,31 @@
       "parseModeBadge"
     );
 
+  const engineBadge =
+    document.getElementById(
+      "engineBadge"
+    );
+
+  const cloudSettings =
+    document.getElementById(
+      "cloudSettings"
+    );
+
+  const mineruApiToken =
+    document.getElementById(
+      "mineruApiToken"
+    );
+
+  const cloudConsent =
+    document.getElementById(
+      "cloudConsent"
+    );
+
+  const cloudConfigHint =
+    document.getElementById(
+      "cloudConfigHint"
+    );
+
   const themeToggle =
     document.getElementById(
       "themeToggle"
@@ -108,6 +133,14 @@
 
   let statusTimer =
     null;
+
+  let cloudConfig = {
+    serverTokenConfigured:
+      false,
+
+    encryptionKeyConfigured:
+      false
+  };
 
 
   function showToast(
@@ -219,6 +252,17 @@
 
     }
 
+
+    if (engineBadge) {
+
+      engineBadge.hidden =
+        true;
+
+      engineBadge.textContent =
+        "";
+
+    }
+
   }
 
 
@@ -240,6 +284,233 @@
     )
       ? value
       : "auto";
+
+  }
+
+
+  function selectedParserBackend() {
+
+    const checked =
+      document.querySelector(
+        'input[name="parserBackend"]:checked'
+      );
+
+
+    return checked?.value === "cloud"
+      ? "cloud"
+      : "local";
+
+  }
+
+
+  function clearCloudInputs() {
+
+    if (mineruApiToken) {
+
+      mineruApiToken.value =
+        "";
+
+    }
+
+    if (cloudConsent) {
+
+      cloudConsent.checked =
+        false;
+
+    }
+
+  }
+
+
+  function updateCloudHint() {
+
+    if (!cloudConfigHint) {
+      return;
+    }
+
+
+    if (cloudConfig.serverTokenConfigured) {
+
+      cloudConfigHint.textContent =
+        cloudConfig.encryptionKeyConfigured
+          ? "服务器已配置云端 API，可直接使用；也可以填写本次任务使用的 Token。"
+          : "服务器已配置云端 API，可直接使用；填写自定义 Token 需要服务器配置凭证加密密钥。";
+
+      return;
+
+    }
+
+
+    cloudConfigHint.textContent =
+      cloudConfig.encryptionKeyConfigured
+        ? "服务器未配置云端 API，请填写本次任务使用的 MinerU API Token。"
+        : "服务器未配置云端 API 或凭证加密密钥，当前无法安全提交云端 Token；请使用本地解析或联系管理员。";
+
+  }
+
+
+  function syncBackendUi() {
+
+    const isCloud =
+      selectedParserBackend() ===
+      "cloud";
+
+
+    if (cloudSettings) {
+
+      cloudSettings.hidden =
+        !isCloud;
+
+    }
+
+
+    if (!isCloud) {
+
+      clearCloudInputs();
+
+    }
+
+
+    updateCloudHint();
+
+  }
+
+
+  async function loadCloudConfig() {
+
+    try {
+
+      const response =
+        await fetch(
+          "/api/contracts/cloud-config",
+          {
+            method:
+              "GET",
+
+            headers: {
+              "Accept":
+                "application/json"
+            }
+          }
+        );
+
+
+      const payload =
+        await parseResponse(
+          response
+        );
+
+
+      if (!response.ok) {
+        throw new Error(
+          payload.error ||
+          "无法读取云端配置"
+        );
+      }
+
+
+      cloudConfig = {
+        serverTokenConfigured:
+          Boolean(
+            payload.serverTokenConfigured
+          ),
+
+        encryptionKeyConfigured:
+          Boolean(
+            payload.encryptionKeyConfigured
+          )
+      };
+
+    } catch (error) {
+
+      console.error(
+        "[contract cloud config]",
+        error
+      );
+
+      cloudConfig = {
+        serverTokenConfigured:
+          false,
+
+        encryptionKeyConfigured:
+          false
+      };
+
+      if (cloudConfigHint) {
+
+        cloudConfigHint.textContent =
+          "无法读取服务器云端配置；可先使用本地解析。";
+
+      }
+
+    }
+
+
+    updateCloudHint();
+
+  }
+
+
+  function validateCloudSelection() {
+
+    if (
+      selectedParserBackend() !==
+      "cloud"
+    ) {
+      return true;
+    }
+
+
+    if (!cloudConsent?.checked) {
+
+      showToast(
+        "请先确认已获授权将合同发送至 MinerU 云端。",
+        "error"
+      );
+
+      return false;
+
+    }
+
+
+    const token =
+      String(
+        mineruApiToken?.value ||
+        ""
+      ).trim();
+
+
+    if (
+      !token
+      && !cloudConfig.serverTokenConfigured
+    ) {
+
+      showToast(
+        "服务器未配置云端 Token，请填写本次任务使用的 Token。",
+        "error"
+      );
+
+      return false;
+
+    }
+
+
+    if (
+      token
+      && !cloudConfig.encryptionKeyConfigured
+    ) {
+
+      showToast(
+        "服务器未配置凭证加密密钥，无法安全保存自定义 Token；请留空并使用服务器 Token。",
+        "error"
+      );
+
+      return false;
+
+    }
+
+
+    return true;
 
   }
 
@@ -279,6 +550,42 @@
 
 
     return "";
+
+  }
+
+
+  function updateEngineBadge(payload) {
+
+    if (!engineBadge) {
+      return;
+    }
+
+
+    const requested =
+      payload.requestedBackend;
+
+    const actual =
+      payload.parseBackend;
+
+
+    let text =
+      "本地解析（历史默认）";
+
+
+    if (requested === "cloud") {
+      text = "云端解析";
+    } else if (requested === "local") {
+      text = "本地解析";
+    } else if (actual === "cloud") {
+      text = "云端解析（历史）";
+    }
+
+
+    engineBadge.textContent =
+      text;
+
+    engineBadge.hidden =
+      false;
 
   }
 
@@ -581,7 +888,7 @@
       extracting:
         "正在提取条款",
       reviewing:
-        "正在审阅风险",
+        "等待人工校对",
       completed:
         "审阅完成",
       failed:
@@ -624,6 +931,11 @@
     }
 
 
+    updateEngineBadge(
+      payload
+    );
+
+
     updateParseBadge(
       payload
     );
@@ -655,6 +967,21 @@
       }
 
 
+      if (!validateCloudSelection()) {
+        return;
+      }
+
+
+      const parserBackend =
+        selectedParserBackend();
+
+      const token =
+        String(
+          mineruApiToken?.value ||
+          ""
+        ).trim();
+
+
       uploading =
         true;
 
@@ -681,6 +1008,30 @@
         "parseMode",
         selectedParseMode()
       );
+
+      formData.append(
+        "parserBackend",
+        parserBackend
+      );
+
+
+      if (parserBackend === "cloud") {
+
+        formData.append(
+          "cloudProcessingConsent",
+          "true"
+        );
+
+        if (token) {
+
+          formData.append(
+            "mineruApiToken",
+            token
+          );
+
+        }
+
+      }
 
 
       try {
@@ -737,7 +1088,9 @@
 
 
         showToast(
-          "合同任务已创建。"
+          parserBackend === "cloud"
+            ? "云端解析任务已创建。"
+            : "本地解析任务已创建。"
         );
 
 
@@ -761,12 +1114,15 @@
           false;
 
 
+        clearCloudInputs();
+
+
         uploadButton.disabled =
           !currentFile;
 
 
         uploadButton.textContent =
-          "上传合同 →";
+          "开始解析 →";
 
       }
 
@@ -790,6 +1146,27 @@
     "click",
     clearFile
   );
+
+
+  document
+    .querySelectorAll(
+      'input[name="parserBackend"]'
+    )
+    .forEach(
+      input => {
+
+        input.addEventListener(
+          "change",
+          syncBackendUi
+        );
+
+      }
+    );
+
+
+  syncBackendUi();
+
+  loadCloudConfig();
 
 
   [

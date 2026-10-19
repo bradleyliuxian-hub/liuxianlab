@@ -1,9 +1,12 @@
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from services.contract_review import parse_cache
+from services.contract_review.mineru_api_client import MineruApiError
 import services.contract_review.worker as worker
 
 
@@ -55,18 +58,47 @@ class FakeDatabase:
         return None
 
 
+class FakeCredentials:
+
+    def __init__(self):
+        self.tokens = {}
+        self.deleted = []
+        self.pruned = 0
+
+    def get_contract_token(self, contract_id, owner_username=None):
+        return self.tokens.get(contract_id)
+
+    def delete_contract_credential(self, contract_id):
+        self.deleted.append(contract_id)
+
+    def prune_expired_credentials(self):
+        self.pruned += 1
+
+
 class Harness:
 
     def __init__(self, root, tier_text):
         self.root = root
         self.tier_text = tier_text
         self.calls = []
+        self.backends = []
+        self.tokens = []
         self.review_calls = 0
         self.parsed_pages = 4
         self.critical_issues = []
 
-    def parse(self, contract, *, tier, on_stage=None):
+    def parse(
+        self,
+        contract,
+        *,
+        tier,
+        on_stage=None,
+        backend=None,
+        token=None,
+    ):
         self.calls.append(tier)
+        self.backends.append(backend)
+        self.tokens.append(token)
 
         parsed_dir = (
             (self.root / contract["file_path"]).resolve().parent
@@ -136,6 +168,7 @@ class WorkerOrchestrationTests(unittest.TestCase):
         self._original_consistency = worker.build_consistency_artifacts
         self._original_sha = worker._sha256_file
         self._original_cache_root = parse_cache.CACHE_ROOT
+        self._original_credentials = worker.credential_store
 
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
@@ -147,6 +180,9 @@ class WorkerOrchestrationTests(unittest.TestCase):
         worker.database = self.fake
         worker._sha256_file = lambda path: FIXED_SHA
 
+        self.credentials = FakeCredentials()
+        worker.credential_store = self.credentials
+
     def tearDown(self):
         worker.PROJECT_ROOT = self._original_root
         worker.database = self._original_db
@@ -155,6 +191,7 @@ class WorkerOrchestrationTests(unittest.TestCase):
         worker.build_consistency_artifacts = self._original_consistency
         worker._sha256_file = self._original_sha
         parse_cache.CACHE_ROOT = self._original_cache_root
+        worker.credential_store = self._original_credentials
         self.tmp.cleanup()
 
     def _install(self, tier_text):
@@ -171,6 +208,7 @@ class WorkerOrchestrationTests(unittest.TestCase):
         owner="liuxian",
         mode="auto",
         original_name="contract.pdf",
+        parser_backend="local",
     ):
         job_dir = self.root / "storage" / "contracts" / contract_id
         job_dir.mkdir(parents=True, exist_ok=True)
@@ -182,6 +220,7 @@ class WorkerOrchestrationTests(unittest.TestCase):
             "original_name": original_name,
             "file_path": f"storage/contracts/{contract_id}/source.pdf",
             "parse_mode_requested": mode,
+            "parse_backend_requested": parser_backend,
             "page_count": 4,
             "status": "queued",
             "stage": "queued",
@@ -679,6 +718,248 @@ class WorkerOrchestrationTests(unittest.TestCase):
 
         self.assertEqual(harness.calls, ["basic", "standard"])
         self.assertTrue(meta["parse_fallback_used"])
+
+    # -- Per-contract backend / token (v1.3.0) --
+
+    def test_consecutive_local_and_cloud_tasks_do_not_mix(self):
+        harness = self._install({"basic": GOOD_TEXT})
+
+        self._run(
+            self._contract(
+                "job-backend-local",
+                parser_backend="local",
+            )
+        )
+
+        self.credentials.tokens[
+            "job-backend-cloud"
+        ] = "fictional-user-token"
+
+        meta = self._run(
+            self._contract(
+                "job-backend-cloud",
+                parser_backend="cloud",
+            )
+        )
+
+        self.assertEqual(
+            harness.backends,
+            ["local", "cloud"],
+        )
+        self.assertEqual(
+            harness.tokens,
+            [None, "fictional-user-token"],
+        )
+        self.assertEqual(
+            meta["parse_metrics"]["parseBackend"],
+            "cloud",
+        )
+        self.assertEqual(
+            meta["parse_metrics"]["parseModelVersion"],
+            "pipeline",
+        )
+        self.assertEqual(
+            self.credentials.deleted,
+            ["job-backend-local", "job-backend-cloud"],
+        )
+
+    def test_cloud_uses_server_token_when_no_task_token(self):
+        harness = self._install({"basic": GOOD_TEXT})
+
+        with mock.patch.dict(
+            os.environ,
+            {"MINERU_API_TOKEN": "server-env-token"},
+            clear=False,
+        ):
+            self._run(
+                self._contract(
+                    "job-server-token",
+                    parser_backend="cloud",
+                )
+            )
+
+        self.assertEqual(
+            harness.tokens,
+            ["server-env-token"],
+        )
+
+    def test_cloud_without_any_token_fails_before_parse(self):
+        harness = self._install({"basic": GOOD_TEXT})
+
+        with mock.patch.dict(
+            os.environ,
+            {"MINERU_API_TOKEN": ""},
+            clear=False,
+        ):
+            result = worker.process_contract(
+                self._contract(
+                    "job-no-token",
+                    parser_backend="cloud",
+                )
+            )
+
+        self.assertFalse(result)
+        self.assertEqual(harness.calls, [])
+        self.assertEqual(
+            self.fake.states[-1][0],
+            "failed",
+        )
+        self.assertIn(
+            "job-no-token",
+            self.credentials.deleted,
+        )
+
+    def test_cloud_cache_hit_does_not_require_a_token(self):
+        harness = self._install({"basic": GOOD_TEXT})
+
+        self.credentials.tokens[
+            "job-cloud-cache-1"
+        ] = "fictional-user-token"
+
+        self._run(
+            self._contract(
+                "job-cloud-cache-1",
+                parser_backend="cloud",
+            )
+        )
+
+        harness.calls = []
+        harness.backends = []
+        harness.tokens = []
+
+        with mock.patch.dict(
+            os.environ,
+            {"MINERU_API_TOKEN": ""},
+            clear=False,
+        ):
+            meta = self._run(
+                self._contract(
+                    "job-cloud-cache-2",
+                    parser_backend="cloud",
+                )
+            )
+
+        self.assertEqual(harness.calls, [])
+        self.assertTrue(meta["parse_cache_hit"])
+        self.assertEqual(
+            meta["parse_tier_actual"],
+            "basic",
+        )
+
+    def test_fast_cloud_is_basic_only(self):
+        harness = self._install({"basic": BAD_TEXT})
+
+        self.credentials.tokens[
+            "job-fast-cloud"
+        ] = "fictional-user-token"
+
+        meta = self._run(
+            self._contract(
+                "job-fast-cloud",
+                mode="fast",
+                parser_backend="cloud",
+            )
+        )
+
+        self.assertEqual(harness.calls, ["basic"])
+        self.assertEqual(harness.backends, ["cloud"])
+        self.assertFalse(meta["parse_fallback_used"])
+
+    def test_accurate_cloud_uses_standard_only(self):
+        harness = self._install({"standard": GOOD_TEXT})
+
+        self.credentials.tokens[
+            "job-accurate-cloud"
+        ] = "fictional-user-token"
+
+        meta = self._run(
+            self._contract(
+                "job-accurate-cloud",
+                mode="accurate",
+                parser_backend="cloud",
+            )
+        )
+
+        self.assertEqual(harness.calls, ["standard"])
+        self.assertEqual(harness.backends, ["cloud"])
+        self.assertEqual(
+            meta["parse_tier_actual"],
+            "standard",
+        )
+        self.assertEqual(
+            meta["parse_metrics"]["parseModelVersion"],
+            "vlm",
+        )
+
+    def test_auto_cloud_falls_back_only_on_quality_failure(self):
+        harness = self._install(
+            {
+                "basic": BAD_TEXT,
+                "standard": GOOD_TEXT,
+            }
+        )
+
+        self.credentials.tokens[
+            "job-auto-cloud"
+        ] = "fictional-user-token"
+
+        meta = self._run(
+            self._contract(
+                "job-auto-cloud",
+                parser_backend="cloud",
+            )
+        )
+
+        self.assertEqual(
+            harness.calls,
+            ["basic", "standard"],
+        )
+        self.assertTrue(meta["parse_fallback_used"])
+        self.assertEqual(
+            meta["parse_metrics"]["parseBackend"],
+            "cloud",
+        )
+
+
+    # -- Cloud API errors are not quality fallback --
+
+    def test_cloud_api_error_does_not_trigger_standard_fallback(self):
+        self._install({"standard": GOOD_TEXT})
+        calls = []
+
+        def fail(
+            contract,
+            *,
+            tier,
+            on_stage=None,
+            backend=None,
+            token=None,
+        ):
+            calls.append(tier)
+            raise MineruApiError(
+                "MinerU 云端解析失败",
+                stage="parse",
+            )
+
+        worker.parse_contract = fail
+        self.credentials.tokens[
+            "job-cloud-api-fail"
+        ] = "fictional-cloud-token"
+
+        result = worker.process_contract(
+            self._contract(
+                "job-cloud-api-fail",
+                parser_backend="cloud",
+            )
+        )
+
+        self.assertFalse(result)
+        self.assertEqual(calls, ["basic"])
+        self.assertEqual(self.fake.states[-1][0], "failed")
+        self.assertIn(
+            "job-cloud-api-fail",
+            self.credentials.deleted,
+        )
 
 
 if __name__ == "__main__":

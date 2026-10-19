@@ -12,10 +12,21 @@ const { startContractWorker } = require("./parse-runner");
 const { readPdfPageCount } = require("./pdf-meta");
 
 const {
+  normalizeParseMode,
+  validateUploadOptions
+} = require("./contract-options");
+
+const tokenCrypto =
+  require("./token-crypto");
+
+const {
   createContract,
+  deleteContractById,
+  deleteContractCredential,
   getContractById,
   getContractForOwner,
   getLatestContractForOwner,
+  saveContractCredential,
   updateContractState
 } = require("./repository");
 
@@ -35,51 +46,8 @@ const {
 const MAX_FILE_SIZE =
   25 * 1024 * 1024;
 
-
-const VALID_PARSE_MODES =
-  new Set([
-    "auto",
-    "fast",
-    "accurate"
-  ]);
-
-
-/*
- * Contract Digitization v1.1.
- *
- * Returns:
- *   "auto"      when parseMode is missing (old clients)
- *   "fast" / "accurate"
- *   null        when an explicit but invalid value is sent
- */
-function normalizeParseMode(value) {
-
-  if (
-    value === undefined ||
-    value === null ||
-    value === ""
-  ) {
-
-    return "auto";
-
-  }
-
-
-  const candidate =
-    String(value)
-      .trim()
-      .toLowerCase();
-
-
-  return (
-    VALID_PARSE_MODES.has(
-      candidate
-    )
-      ? candidate
-      : null
-  );
-
-}
+const DEFAULT_CREDENTIAL_TTL_HOURS =
+  24;
 
 
 function validContractId(value) {
@@ -309,6 +277,72 @@ function createContractRouter(
         path.sep
       )
       .join("/");
+
+  }
+
+
+  function serverMineruToken() {
+
+    return String(
+      process.env.MINERU_API_TOKEN
+      || ""
+    ).trim();
+
+  }
+
+
+  function credentialTtlMs() {
+
+    const hours =
+      Number(
+        process.env.CONTRACT_CREDENTIAL_TTL_HOURS
+        || DEFAULT_CREDENTIAL_TTL_HOURS
+      );
+
+
+    const safeHours =
+      Number.isFinite(hours)
+        ? Math.max(
+            1,
+            Math.min(
+              168,
+              Math.floor(hours)
+            )
+          )
+        : DEFAULT_CREDENTIAL_TTL_HOURS;
+
+
+    return safeHours * 60 * 60 * 1000;
+
+  }
+
+
+  function cloudConfigPayload() {
+
+    return {
+      serverTokenConfigured:
+        Boolean(serverMineruToken()),
+
+      encryptionKeyConfigured:
+        tokenCrypto.isConfigured()
+    };
+
+  }
+
+
+  async function removeContractDir(
+    contractId
+  ) {
+
+    await fsp.rm(
+      contractDir(
+        contractId
+      ),
+      {
+        recursive: true,
+        force: true
+      }
+    );
 
   }
 
@@ -594,6 +628,9 @@ function createContractRouter(
       const contractId =
         req.contractId;
 
+      let created =
+        null;
+
 
       try {
 
@@ -613,45 +650,6 @@ function createContractRouter(
         }
 
 
-        /*
-         * Contract Digitization v1.1.
-         *
-         * parseMode is optional (old clients) and defaults to
-         * auto. An explicit invalid value is a 400.
-         */
-        const parseMode =
-          normalizeParseMode(
-            req.body?.parseMode
-          );
-
-
-        if (parseMode === null) {
-
-          await fsp.rm(
-            contractDir(
-              contractId
-            ),
-            {
-              recursive: true,
-              force: true
-            }
-          );
-
-
-          return res
-            .status(400)
-            .json({
-
-              ok: false,
-
-              error:
-                "无效的解析模式，仅支持 自动 / 快速 / 高精度"
-
-            });
-
-        }
-
-
         const owner =
           ownerUsername(req);
 
@@ -663,6 +661,71 @@ function createContractRouter(
           );
 
         }
+
+
+        /*
+         * Parse backend is per-contract. parseMode stays
+         * independent (auto / fast / accurate).
+         *
+         * Cloud requests require explicit consent and a token
+         * source: either this request's token (encrypted) or the
+         * server MINERU_API_TOKEN.
+         */
+        const options =
+          validateUploadOptions({
+
+            parseMode:
+              req.body?.parseMode,
+
+            parserBackend:
+              req.body?.parserBackend,
+
+            cloudProcessingConsent:
+              req.body?.cloudProcessingConsent,
+
+            userToken:
+              req.body?.mineruApiToken,
+
+            serverTokenConfigured:
+              Boolean(serverMineruToken()),
+
+            encryptionConfigured:
+              tokenCrypto.isConfigured()
+
+          });
+
+
+        if (!options.ok) {
+
+          await removeContractDir(
+            contractId
+          );
+
+
+          return res
+            .status(400)
+            .json({
+
+              ok: false,
+
+              error:
+                options.error
+
+            });
+
+        }
+
+
+        const parseMode =
+          options.mode;
+
+        const parserBackend =
+          options.backend;
+
+        let userToken =
+          options.storeToken
+            ? options.token
+            : "";
 
 
         const originalName =
@@ -728,6 +791,9 @@ function createContractRouter(
           parseModeRequested:
             parseMode,
 
+          parseBackendRequested:
+            parserBackend,
+
           sourceSha256:
             null,
 
@@ -746,10 +812,90 @@ function createContractRouter(
         /*
          * PostgreSQL is now the source of truth.
          */
-        const created =
+        created =
           await createContract(
             job
           );
+
+
+        /*
+         * A user-supplied cloud token is encrypted before any
+         * worker starts. It is never written to job.json,
+         * metrics, logs, or the API response.
+         */
+        if (
+          parserBackend === "cloud"
+          && options.storeToken
+        ) {
+
+          try {
+
+            const encrypted =
+              tokenCrypto.encryptToken(
+                userToken,
+                {
+                  contractId,
+                  ownerUsername: owner
+                }
+              );
+
+
+            await saveContractCredential({
+              contractId,
+              ownerUsername: owner,
+              ciphertext:
+                encrypted.ciphertext,
+              iv:
+                encrypted.iv,
+              authTag:
+                encrypted.authTag,
+              keyVersion:
+                encrypted.keyVersion,
+              expiresAt:
+                new Date(
+                  Date.now()
+                  + credentialTtlMs()
+                )
+            });
+
+          } catch (credentialError) {
+
+            console.error(
+              "[contract-review credential]",
+              credentialError.code
+              || "SAVE_FAILED"
+            );
+
+
+            await deleteContractById(
+              contractId
+            );
+
+            created = null;
+
+            await removeContractDir(
+              contractId
+            );
+
+
+            return res
+              .status(500)
+              .json({
+
+                ok: false,
+
+                error:
+                  "无法安全保存云端解析凭证，未创建任务"
+
+              });
+
+          } finally {
+
+            userToken = "";
+
+          }
+
+        }
 
 
         /*
@@ -819,7 +965,11 @@ function createContractRouter(
 
             requestedMode:
               created.parseModeRequested
-              ?? parseMode
+              ?? parseMode,
+
+            requestedBackend:
+              created.parseBackendRequested
+              ?? parserBackend
 
           });
 
@@ -833,18 +983,31 @@ function createContractRouter(
 
 
         /*
-         * Do not leave an orphaned PDF when
-         * PostgreSQL insertion fails.
+         * Do not leave an orphaned row/PDF when a later
+         * upload step fails. The worker has not started yet.
          */
-        await fsp.rm(
-          contractDir(
-            contractId
-          ),
+        if (created) {
 
-          {
-            recursive: true,
-            force: true
+          try {
+
+            await deleteContractById(
+              contractId
+            );
+
+          } catch (deleteError) {
+
+            console.error(
+              "[contract-review upload cleanup]",
+              deleteError
+            );
+
           }
+
+        }
+
+
+        await removeContractDir(
+          contractId
         );
 
 
@@ -1037,6 +1200,26 @@ function createContractRouter(
 
 
   /*
+   * GET /api/contracts/cloud-config
+   *
+   * Safe booleans only. Never returns the server token,
+   * encryption key, or MinerU base URL.
+   */
+  router.get(
+    "/cloud-config",
+
+    async (req, res) => {
+
+      return res.json({
+        ok: true,
+        ...cloudConfigPayload()
+      });
+
+    }
+  );
+
+
+  /*
    * GET /api/contracts/history
    *
    * List every contract belonging to the
@@ -1105,8 +1288,22 @@ function createContractRouter(
                   job.parseModeRequested
                   ?? null,
 
+                requestedBackend:
+                  job.parseBackendRequested
+                  ?? null,
+
                 actualTier:
                   job.parseTierActual
+                  ?? null,
+
+                parseBackend:
+                  job.parseMetrics
+                    ?.parseBackend
+                  ?? null,
+
+                parseModelVersion:
+                  job.parseMetrics
+                    ?.parseModelVersion
                   ?? null,
 
                 cacheHit:
@@ -1117,7 +1314,11 @@ function createContractRouter(
                 fallbackUsed:
                   Boolean(
                     job.parseFallbackUsed
-                  )
+                  ),
+
+                fallbackReason:
+                  job.parseFallbackReason
+                  ?? null
 
               })
             )
@@ -1224,8 +1425,36 @@ function createContractRouter(
             job.parseModeRequested
             ?? null,
 
+          requestedBackend:
+            job.parseBackendRequested
+            ?? null,
+
           actualTier:
             job.parseTierActual
+            ?? null,
+
+          parseBackend:
+            job.parseMetrics
+              ?.parseBackend
+            ?? null,
+
+          parseModelVersion:
+            job.parseMetrics
+              ?.parseModelVersion
+            ?? null,
+
+          cacheHit:
+            Boolean(
+              job.parseCacheHit
+            ),
+
+          fallbackUsed:
+            Boolean(
+              job.parseFallbackUsed
+            ),
+
+          fallbackReason:
+            job.parseFallbackReason
             ?? null
 
         });
@@ -1361,6 +1590,22 @@ function createContractRouter(
 
         }
 
+
+        try {
+
+          await deleteContractCredential(
+            contractId
+          );
+
+        } catch (credentialError) {
+
+          console.error(
+            "[contract delete credential]",
+            credentialError.code
+            || "DELETE_FAILED"
+          );
+
+        }
 
         await fsp.rm(
           contractDir(
@@ -2360,8 +2605,22 @@ function createContractRouter(
             job.parseModeRequested
             ?? null,
 
+          requestedBackend:
+            job.parseBackendRequested
+            ?? null,
+
           actualTier:
             job.parseTierActual
+            ?? null,
+
+          parseBackend:
+            job.parseMetrics
+              ?.parseBackend
+            ?? null,
+
+          parseModelVersion:
+            job.parseMetrics
+              ?.parseModelVersion
             ?? null,
 
           cacheHit:

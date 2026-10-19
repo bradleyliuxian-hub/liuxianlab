@@ -5,9 +5,12 @@ import zipfile
 from pathlib import Path
 
 from .database import PROJECT_ROOT
+from .mineru_api_client import parse_contract_cloud
 from .parse_profile import (
+    BACKEND_CLOUD,
     TIER_STANDARD,
     VALID_TIERS,
+    parse_backend,
 )
 
 
@@ -102,9 +105,45 @@ def parse_contract(
     *,
     tier=TIER_STANDARD,
     on_stage=None,
+    backend=None,
+    token=None,
 ):
     """
-    Parse one contract with MinerU.
+    Parse one contract with the selected backend.
+
+    backend is resolved per contract by worker.py. When omitted,
+    the legacy CONTRACT_MINERU_BACKEND default is used.
+
+    token is the already-resolved cloud token for this one job.
+    It is ignored by the local backend and never logged.
+    """
+
+    backend = parse_backend(backend)
+
+    if backend == BACKEND_CLOUD:
+
+        return parse_contract_cloud(
+            contract,
+            tier=tier,
+            on_stage=on_stage,
+            token=token,
+        )
+
+    return _parse_contract_local(
+        contract,
+        tier=tier,
+        on_stage=on_stage,
+    )
+
+
+def _parse_contract_local(
+    contract,
+    *,
+    tier=TIER_STANDARD,
+    on_stage=None,
+):
+    """
+    Parse one contract with local MinerU.
 
     tier is explicit (basic | standard) and is passed to the
     MinerU CLI so the tier is never auto-selected.
@@ -617,5 +656,11 @@ def parse_contract(
             middle_json_size,
 
         "tier":
+            tier,
+
+        "backend":
+            "local",
+
+        "model_version":
             tier,
     }

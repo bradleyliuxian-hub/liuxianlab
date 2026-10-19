@@ -99,6 +99,73 @@
   }
 
 
+  function parseDetailText(
+    contract
+  ) {
+
+    const requestedBackend =
+      contract.requestedBackend;
+
+    const actualBackend =
+      contract.parseBackend;
+
+
+    let engine =
+      "本地 MinerU（历史默认）";
+
+
+    if (requestedBackend === "cloud") {
+      engine = "MinerU 云端 API";
+    } else if (requestedBackend === "local") {
+      engine = "本地 MinerU";
+    } else if (actualBackend === "cloud") {
+      engine = "MinerU 云端 API（历史）";
+    }
+
+
+    const parts = [
+      `解析引擎：${engine}`
+    ];
+
+
+    const modeMap = {
+      auto: "自动",
+      fast: "快速",
+      accurate: "高精度"
+    };
+
+    const requestedMode =
+      modeMap[contract.requestedMode];
+
+    if (requestedMode) {
+      parts.push(`模式：${requestedMode}`);
+    }
+
+
+    const model =
+      contract.parseModelVersion
+      || contract.actualTier;
+
+    if (model) {
+      parts.push(`模型：${model}`);
+    }
+
+
+    if (contract.cacheHit) {
+      parts.push("缓存命中");
+    }
+
+
+    if (contract.fallbackUsed) {
+      parts.push("自动升级高精度");
+    }
+
+
+    return parts.join(" · ");
+
+  }
+
+
   function createPanel() {
 
     if (panel) {
@@ -453,6 +520,24 @@
 
     main.appendChild(
       meta
+    );
+
+
+    const detail =
+      document.createElement(
+        "div"
+      );
+
+    detail.className =
+      "contract-history-detail";
+
+    detail.textContent =
+      parseDetailText(
+        contract
+      );
+
+    main.appendChild(
+      detail
     );
 
 

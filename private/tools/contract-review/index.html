@@ -17,7 +17,7 @@
 
   <link
     rel="stylesheet"
-    href="/app/tools/contract-review/styles.css?v=4.2.1"
+    href="/app/tools/contract-review/styles.css?v=4.3.0"
   >
 
   <link rel="stylesheet" href="/design-tokens.css?v=1.0.0" />
@@ -57,7 +57,7 @@
       <div class="header-actions">
 
         <span class="version-chip" title="当前工具版本">
-          v1.1.1
+          v1.2.0
         </span>
 
         <span class="private-badge">
@@ -219,6 +219,56 @@
 
 
         <div
+          class="parse-mode engine-mode"
+          id="parserBackend"
+          role="radiogroup"
+          aria-label="解析引擎"
+        >
+
+          <span class="parse-mode-label">
+            解析引擎
+          </span>
+
+          <div class="parse-mode-options engine-options">
+
+            <label class="parse-mode-option">
+              <input
+                type="radio"
+                name="parserBackend"
+                value="local"
+                checked
+              >
+              <span class="parse-mode-title">
+                本地解析
+                <em>默认</em>
+              </span>
+              <span class="parse-mode-desc">
+                使用本服务器上的 MinerU 模型。
+              </span>
+            </label>
+
+            <label class="parse-mode-option">
+              <input
+                type="radio"
+                name="parserBackend"
+                value="cloud"
+              >
+              <span class="parse-mode-title">
+                云端解析
+              </span>
+              <span class="parse-mode-desc">
+                将合同发送到 MinerU 云端 API 解析。可能产生 API
+                费用，速度取决于云端排队和网络情况。
+              </span>
+            </label>
+
+          </div>
+
+        </div>
+
+
+
+        <div
           class="parse-mode"
           id="parseMode"
           role="radiogroup"
@@ -276,6 +326,58 @@
             </label>
 
           </div>
+
+        </div>
+
+
+
+        <div
+          class="cloud-settings"
+          id="cloudSettings"
+          hidden
+        >
+
+          <label
+            class="cloud-token-field"
+            for="mineruApiToken"
+          >
+            <span class="parse-mode-label">
+              MinerU API Token
+            </span>
+
+            <input
+              id="mineruApiToken"
+              type="password"
+              autocomplete="new-password"
+              spellcheck="false"
+              maxlength="2048"
+              placeholder="仅本次任务使用，提交后清空"
+            >
+          </label>
+
+          <p
+            class="cloud-hint"
+            id="cloudConfigHint"
+          >
+            正在读取服务器云端配置…
+          </p>
+
+          <label class="cloud-consent">
+
+            <input
+              id="cloudConsent"
+              type="checkbox"
+            >
+
+            <span>
+              我确认已获授权将这份合同发送至 MinerU 云端服务解析。
+            </span>
+
+          </label>
+
+          <p class="cloud-warning">
+            合同原文将发送给第三方服务处理。请确认你有权上传和处理该文件。
+          </p>
 
         </div>
 
@@ -346,6 +448,13 @@
             QUEUED
           </span>
 
+
+          <span
+            class="parse-badge"
+            id="engineBadge"
+            hidden
+          >
+          </span>
 
           <span
             class="parse-badge"
@@ -423,6 +532,13 @@
         <ul class="changelog-list">
 
           <li class="changelog-item">
+            <span class="changelog-ver">v1.2.0</span>
+            <p class="changelog-text">
+              <strong>解析引擎选择</strong>：每份合同可独立选择本地 MinerU 或 MinerU 云端 API；云端需确认数据发送并可使用服务器或本次任务的 Token。
+            </p>
+          </li>
+
+          <li class="changelog-item">
             <span class="changelog-ver">v1.1.1</span>
             <p class="changelog-text">
               <strong>解析加速与准确度恢复</strong>：新增「自动 / 快速 / 高精度」解析模式、MinerU 解析缓存、结构质量门与关键一致性校验（金额、合同编号、日期），并输出「识别待核对项」。
@@ -469,11 +585,11 @@
 
     <script src="/app/app-shell.js?v=1.0.0"></script>
 <script src="/app/tools/contract-review/workflow.js?v=3.0.0"></script>
-<script
-    src="/app/tools/contract-review/script.js?v=1.2.0"
+  <script
+    src="/app/tools/contract-review/script.js?v=1.3.0"
   ></script>
   <script
-    src="/app/tools/contract-review/contract-history.js?v=1.1.0"
+    src="/app/tools/contract-review/contract-history.js?v=1.2.0"
   ></script>
 
 </body>

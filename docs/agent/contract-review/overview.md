@@ -7,9 +7,9 @@ historical handoff stays in archive (not loaded by default).
 - Skill: `.opencode/skills/contract-review/` (load its invariants first).
 - Node: `server/contracts/` (db, repository, review-store, parse-runner, routes;
   migrations `001..003`).
-- Python: `services/contract_review/` (worker, database, mineru_service,
-  issue_detector, issue_locator, consistency_*, review_artifacts, quality_gate,
-  parse_cache).
+- Python: `services/contract_review/` (worker, database, credential_store,
+  mineru_service, mineru_api_client, issue_detector, issue_locator,
+  consistency_*, review_artifacts, quality_gate, parse_cache).
 - Frontend: `private/tools/contract-review/`.
 - Tests: `services/contract_review/tests/*`.
 
@@ -28,6 +28,7 @@ historical handoff stays in archive (not loaded by default).
 ## Read next
 
 - Modes / quality gate / AUTO fallback / cache / progress: `quality-and-cache.md`.
+- Cloud backend, config, output adapter, errors, rollback: `mineru-cloud.md`.
 - Pipeline / modes: `worker.py`, `quality_gate.py`, `parse_cache.py`.
 - Locator: `issue_locator.py` (be conservative).
 - API/DB: `server/contracts/routes.js`, `repository.js`.

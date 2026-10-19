@@ -37,6 +37,8 @@ from pathlib import Path
 from .database import PROJECT_ROOT
 from .parse_profile import (
     VALID_TIERS,
+    model_for_tier,
+    parse_backend,
     parser_signature,
 )
 
@@ -105,10 +107,10 @@ def _validate_tier(tier):
     return tier
 
 
-def entry_dir(owner_username, source_sha256, tier):
+def entry_dir(owner_username, source_sha256, tier, *, backend=None):
     tier = _validate_tier(tier)
 
-    signature = parser_signature(tier)
+    signature = parser_signature(tier, backend=backend)
 
     cache_root = CACHE_ROOT.resolve()
 
@@ -165,7 +167,7 @@ def _quarantine(path):
         pass
 
 
-def lookup(owner_username, source_sha256, tier):
+def lookup(owner_username, source_sha256, tier, *, backend=None):
     """
     Return a validated manifest, or None (cache miss).
 
@@ -180,6 +182,7 @@ def lookup(owner_username, source_sha256, tier):
         owner_username,
         source_sha256,
         tier,
+        backend=backend,
     )
 
     manifest_path = directory / "manifest.json"
@@ -212,7 +215,7 @@ def lookup(owner_username, source_sha256, tier):
 
     if (
         manifest.get("parserSignature")
-        != parser_signature(tier)
+        != parser_signature(tier, backend=backend)
     ):
         return None
 
@@ -240,6 +243,7 @@ def store(
     files,
     quality_pass=None,
     metrics=None,
+    backend=None,
 ):
     """
     Atomically write a cache entry.
@@ -256,11 +260,13 @@ def store(
         )
 
     tier = _validate_tier(tier)
+    resolved_backend = parse_backend(backend)
 
     directory = entry_dir(
         owner_username,
         source_sha256,
         tier,
+        backend=resolved_backend,
     )
 
     directory.parent.mkdir(
@@ -306,7 +312,15 @@ def store(
             "version": MANIFEST_VERSION,
             "sourceSha256": source_sha256,
             "tier": tier,
-            "parserSignature": parser_signature(tier),
+            "parserSignature": parser_signature(
+                tier,
+                backend=resolved_backend,
+            ),
+            "backend": resolved_backend,
+            "modelVersion": model_for_tier(
+                tier,
+                backend=resolved_backend,
+            ),
             "qualityPass": quality_pass,
             "createdAt": datetime.now(
                 timezone.utc
@@ -352,6 +366,8 @@ def restore(
     source_sha256,
     tier,
     destination_dir,
+    *,
+    backend=None,
 ):
     """
     Materialize cached MinerU artifacts into a new job's
@@ -366,6 +382,7 @@ def restore(
         owner_username,
         source_sha256,
         tier,
+        backend=backend,
     )
 
     if not manifest:
@@ -375,6 +392,7 @@ def restore(
         owner_username,
         source_sha256,
         tier,
+        backend=backend,
     )
 
     destination_dir = Path(destination_dir)

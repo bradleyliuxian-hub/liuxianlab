@@ -26,6 +26,10 @@ FILES=(
 
   "services/contract_review/database.py"
   "services/contract_review/mineru_service.py"
+  "services/contract_review/mineru_api_client.py"
+  "services/contract_review/credential_store.py"
+  "services/contract_review/parse_profile.py"
+  "services/contract_review/parse_cache.py"
   "services/contract_review/worker.py"
   "services/contract_review/review_artifacts.py"
   "services/contract_review/consistency_artifacts.py"
@@ -122,6 +126,10 @@ FILES=(
   for file in \
     services/contract_review/database.py \
     services/contract_review/mineru_service.py \
+    services/contract_review/mineru_api_client.py \
+    services/contract_review/credential_store.py \
+    services/contract_review/parse_profile.py \
+    services/contract_review/parse_cache.py \
     services/contract_review/worker.py \
     services/contract_review/review_artifacts.py \
     services/contract_review/consistency_artifacts.py \

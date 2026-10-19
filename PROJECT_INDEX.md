@@ -71,7 +71,7 @@ Frontend tools are Vanilla HTML/CSS/JS. Do not introduce React/Vue/Tailwind with
 | Item | Location |
 |---|---|
 | Skill | `contract-review` |
-| Docs | `docs/agent/contract-review/*` (start at `overview.md`) |
+| Docs | `docs/agent/contract-review/*` (start at `overview.md`; cloud backend: `mineru-cloud.md`) |
 | Node | `server/contracts/` (db, repository, review-store, parse-runner, routes) |
 | Migrations | `server/contracts/migrations/001..003` |
 | Python | `services/contract_review/` |

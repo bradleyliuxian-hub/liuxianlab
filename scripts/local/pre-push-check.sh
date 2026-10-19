@@ -351,6 +351,16 @@ if [ "$MODE" = full ] && [ "$FAILS" -eq 0 ]; then
     else
       warn ".mineru/bin/python missing — contract_review tests skipped."
     fi
+
+    if [ -d tests/contracts ]; then
+      printf '  [contract-review] node --test tests/contracts/*.test.js\n'
+      if have node; then
+        if node --test tests/contracts/*.test.js ; then printf '  PASS\n';
+        else fail "contract-review Node tests failed."; printf '  FAIL\n'; fi
+      else
+        warn "node missing — contract-review Node tests skipped."
+      fi
+    fi
   fi
 
   if printf '%s\n' "$CHANGED" | grep -Eq '^(tests/excel-decimal-check/|private/tools/excel-decimal-check/)'; then

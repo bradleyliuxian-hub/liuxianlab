@@ -17,6 +17,11 @@ Set in `.env` (never commit, never print values):
 - `SESSION_SECRET` (required in production; app exits if missing)
 - `SESSION_DAYS` (default 7)
 - `DATABASE_URL` (PostgreSQL, used by contract review)
+- Optional contract cloud parsing: `CONTRACT_MINERU_BACKEND=cloud` plus
+  `MINERU_API_TOKEN` (names only; see `contract-review/mineru-cloud.md`)
+- Per-task cloud tokens: `MINERU_API_TOKEN_ENCRYPTION_KEY` (32 bytes; required
+  only when users submit their own token) and optional
+  `CONTRACT_CREDENTIAL_TTL_HOURS`
 
 ## Preconditions for production
 

@@ -39,7 +39,13 @@ class ParseCacheTests(unittest.TestCase):
         parse_cache.CACHE_ROOT = self._original_root
         self._tmp.cleanup()
 
-    def _store(self, owner="liuxian", sha=SHA_A, tier="basic"):
+    def _store(
+        self,
+        owner="liuxian",
+        sha=SHA_A,
+        tier="basic",
+        backend=None,
+    ):
         return parse_cache.store(
             owner,
             sha,
@@ -49,6 +55,7 @@ class ParseCacheTests(unittest.TestCase):
             ),
             quality_pass=True,
             metrics={"basicQualityPass": True},
+            backend=backend,
         )
 
     def test_same_input_same_entry(self):
@@ -69,6 +76,42 @@ class ParseCacheTests(unittest.TestCase):
         a = parse_cache.entry_dir("alice", SHA_A, "basic")
         b = parse_cache.entry_dir("bob", SHA_A, "basic")
         self.assertNotEqual(a, b)
+
+    def test_backend_isolation(self):
+        local = parse_cache.entry_dir(
+            "liuxian",
+            SHA_A,
+            "basic",
+            backend="local",
+        )
+        cloud = parse_cache.entry_dir(
+            "liuxian",
+            SHA_A,
+            "basic",
+            backend="cloud",
+        )
+
+        self.assertNotEqual(local, cloud)
+
+    def test_local_entry_is_not_a_cloud_hit(self):
+        self._store(backend="local")
+
+        self.assertIsNotNone(
+            parse_cache.lookup(
+                "liuxian",
+                SHA_A,
+                "basic",
+                backend="local",
+            )
+        )
+        self.assertIsNone(
+            parse_cache.lookup(
+                "liuxian",
+                SHA_A,
+                "basic",
+                backend="cloud",
+            )
+        )
 
     def test_invalid_sha_is_a_miss(self):
         self.assertIsNone(

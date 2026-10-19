@@ -5,10 +5,26 @@ AUTO fallback, artifact cache, progress). Authoritative source is the code:
 `services/contract_review/{parse_profile,quality_gate,parse_cache,worker,mineru_service}.py`.
 Read this for intent; read the code for exact behaviour.
 
+## Backend
+
+Each contract stores `parse_backend_requested` (`local` default | `cloud`). The
+worker resolves the backend per job; `CONTRACT_MINERU_BACKEND` is only the legacy
+default for old/blank records.
+
+- `local` — pinned local MinerU CLI; the rollback path.
+- `cloud` — MinerU precise-parse API v4; see `mineru-cloud.md`.
+
+Tier selection and all gates are unchanged. The backend is part of the parser
+signature, so local/cloud cache entries are isolated. API/network errors fail the
+job; they are **not** converted into a Quality Gate failure and therefore cannot
+trigger AUTO fallback. A cloud cache hit does not require a token or call the
+API.
+
 ## Modes → tier
 
 Modes are user intent; tiers are what MinerU actually runs. Two modes can map to
-the same tier.
+the same tier. For the cloud backend, the product-policy mapping is
+`basic -> pipeline`, `standard -> vlm` (configurable; not an equivalence claim).
 
 - `FAST` → Basic only; never falls back.
 - `ACCURATE` → Standard only.
@@ -80,10 +96,15 @@ storage/contracts-cache/
 
 - **Owner-scoped**: the directory uses `owner_hash(username)`, never the raw
   username; one owner cannot reuse another's cache.
-- **Parser signature** = SHA256 of `mineru=<ver>;tier;<source>;<backend>;<vlm>;
-  profile=<v>;seal=<v>`. The tier is part of the signature, so Basic/Standard are
-  isolated automatically. Changing profile/MinerU/backend/VLM/seal version
-  changes the signature and **intentionally invalidates** old entries.
+- **Parser signature** = SHA256 of:
+  - local: `mineru=<ver>;tier;backend=local;source;small_backend;vlm;profile;seal`;
+  - cloud: `mineru=cloud;tier;backend=cloud;api_base;api_model;api_lang;
+    api_ocr;api_table;api_formula;profile`.
+  The tier and backend are part of the signature, so Basic/Standard and
+  local/cloud are isolated automatically. Changing profile/MinerU/backend/VLM/
+  seal or cloud model/OCR settings **intentionally invalidates** old entries.
+- The manifest also records `backend` and `modelVersion` for diagnostics; the
+  signature remains the authority.
 - **Atomic publish**: fill a `.tmp-*` dir, write `manifest.json` last, then
   `os.replace`. A crashed job can never leave a half-written entry that a later
   job mistakes for a hit.

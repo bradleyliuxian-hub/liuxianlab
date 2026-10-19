@@ -1,6 +1,7 @@
 import hashlib
 import inspect
 import json
+import os
 import shutil
 import sys
 import time
@@ -8,6 +9,7 @@ from contextlib import nullcontext
 from datetime import datetime, timezone
 from pathlib import Path
 
+from . import credential_store
 from . import database
 from . import parse_cache
 from .consistency_artifacts import build_consistency_artifacts
@@ -19,12 +21,15 @@ from .critical_integrity import (
 )
 from .mineru_service import parse_contract
 from .parse_profile import (
+    BACKEND_CLOUD,
     MODE_ACCURATE,
     MODE_AUTO,
     MODE_FAST,
     TIER_BASIC,
     TIER_STANDARD,
+    model_for_tier,
     normalize_mode,
+    parse_backend,
 )
 from .quality_gate import (
     evaluate_parse_quality,
@@ -51,6 +56,13 @@ _BASIC_STAGE_PROGRESS = {
     "ocr_det": 44,
     "ocr_rec": 48,
     "ocr_seal": 52,
+    # Cloud API stages (no fabricated page percentages).
+    "upload": 22,
+    "queued": 26,
+    "parsing": 34,
+    "converting": 44,
+    "download": 52,
+    "adapt": 56,
 }
 
 _STANDARD_STAGE_PROGRESS = {
@@ -59,6 +71,13 @@ _STANDARD_STAGE_PROGRESS = {
     "ocr_det": 78,
     "ocr_rec": 81,
     "ocr_seal": 84,
+    # Cloud API stages.
+    "upload": 66,
+    "queued": 68,
+    "parsing": 74,
+    "converting": 80,
+    "download": 83,
+    "adapt": 85,
 }
 
 _STAGE_MESSAGES = {
@@ -67,6 +86,12 @@ _STAGE_MESSAGES = {
     "ocr_det": "正在识别合同文字",
     "ocr_rec": "正在识别合同文字",
     "ocr_seal": "正在识别印章与图片文字",
+    "upload": "正在上传合同至云端解析",
+    "queued": "云端解析排队中",
+    "parsing": "云端正在解析合同",
+    "converting": "云端正在转换解析结果",
+    "download": "正在下载云端解析结果",
+    "adapt": "正在适配云端解析产物",
 }
 
 
@@ -246,6 +271,7 @@ def _result_from_restored(restored):
         return None
 
     raw_path = Path(raw)
+    manifest = restored.get("manifest") or {}
 
     return {
         "source_path": None,
@@ -259,6 +285,8 @@ def _result_from_restored(restored):
         ),
         "output_size": raw_path.stat().st_size,
         "tier": None,
+        "backend": manifest.get("backend"),
+        "model_version": manifest.get("modelVersion"),
         "from_cache": True,
     }
 
@@ -268,6 +296,9 @@ def _run_parse(
     tier,
     reporter,
     start_progress,
+    *,
+    backend,
+    token=None,
 ):
     stage_progress = (
         _BASIC_STAGE_PROGRESS
@@ -287,13 +318,25 @@ def _run_parse(
             stage=stage_key,
         )
 
-    reporter.update(
-        start_progress,
-        (
+    if backend == BACKEND_CLOUD:
+
+        start_message = (
+            "正在提交云端快速解析"
+            if tier == TIER_BASIC
+            else "正在提交云端高精度解析"
+        )
+
+    else:
+
+        start_message = (
             "正在启动快速解析"
             if tier == TIER_BASIC
             else "正在启动高精度解析"
-        ),
+        )
+
+    reporter.update(
+        start_progress,
+        start_message,
         force=True,
     )
 
@@ -301,10 +344,12 @@ def _run_parse(
         contract,
         tier=tier,
         on_stage=on_stage,
+        backend=backend,
+        token=token,
     )
 
 
-def _select_cached_parse(owner, source_sha256, mode):
+def _select_cached_parse(owner, source_sha256, mode, *, backend):
     """
     Decide which cached tier (if any) to restore.
 
@@ -324,6 +369,7 @@ def _select_cached_parse(owner, source_sha256, mode):
             owner,
             source_sha256,
             TIER_STANDARD,
+            backend=backend,
         )
 
         if manifest:
@@ -336,6 +382,7 @@ def _select_cached_parse(owner, source_sha256, mode):
             owner,
             source_sha256,
             TIER_BASIC,
+            backend=backend,
         )
 
         if manifest:
@@ -349,6 +396,7 @@ def _select_cached_parse(owner, source_sha256, mode):
         owner,
         source_sha256,
         TIER_STANDARD,
+        backend=backend,
     )
 
     if standard:
@@ -358,6 +406,7 @@ def _select_cached_parse(owner, source_sha256, mode):
         owner,
         source_sha256,
         TIER_BASIC,
+        backend=backend,
     )
 
     if basic:
@@ -372,6 +421,8 @@ def _store_cache(
     tier,
     parsed_dir,
     quality_result,
+    *,
+    backend,
 ):
     """
     Store MinerU artifacts only. Best-effort: never fatal.
@@ -400,6 +451,7 @@ def _store_cache(
                 (quality_result or {}).get("metrics")
                 or {}
             ),
+            backend=backend,
         )
 
     except Exception as error:
@@ -1066,6 +1118,57 @@ def process_contract(
             or ""
         )
 
+        # Per-contract backend. A database value always wins;
+        # NULL falls back to the legacy env default (local).
+        backend = parse_backend(
+            contract.get(
+                "parse_backend_requested"
+            )
+        )
+
+        cloud_token = None
+
+        def ensure_cloud_token():
+            """
+            Resolve the token only when a fresh cloud parse is
+            actually needed. A cache hit never touches the API.
+
+            Priority: per-task encrypted token -> server env.
+            """
+
+            nonlocal cloud_token
+
+            if backend != BACKEND_CLOUD:
+                return None
+
+            if cloud_token:
+                return cloud_token
+
+            cloud_token = (
+                credential_store.get_contract_token(
+                    contract_id,
+                    owner,
+                )
+            )
+
+            if not cloud_token:
+                cloud_token = (
+                    os.getenv(
+                        "MINERU_API_TOKEN",
+                        "",
+                    ).strip()
+                    or None
+                )
+
+            if not cloud_token:
+                raise RuntimeError(
+                    "云端解析需要 MinerU API Token："
+                    "本次任务凭证已过期，"
+                    "或服务器未配置 MINERU_API_TOKEN"
+                )
+
+            return cloud_token
+
         input_page_count = (
             contract.get(
                 "page_count"
@@ -1145,6 +1248,7 @@ def process_contract(
                 owner,
                 source_sha256,
                 mode,
+                backend=backend,
             )
         )
 
@@ -1184,6 +1288,7 @@ def process_contract(
                 source_sha256,
                 cached_tier,
                 parsed_dir,
+                backend=backend,
             )
 
             metrics["cacheRestoreMs"] = elapsed_ms(
@@ -1294,6 +1399,8 @@ def process_contract(
                             TIER_STANDARD,
                             reporter,
                             65,
+                            backend=backend,
+                            token=ensure_cloud_token(),
                         )
 
                         metrics["standardParseMs"] = elapsed_ms(
@@ -1346,6 +1453,8 @@ def process_contract(
                     TIER_STANDARD,
                     reporter,
                     65,
+                    backend=backend,
+                    token=ensure_cloud_token(),
                 )
 
                 metrics["standardParseMs"] = elapsed_ms(
@@ -1363,6 +1472,8 @@ def process_contract(
                     TIER_BASIC,
                     reporter,
                     20,
+                    backend=backend,
+                    token=ensure_cloud_token(),
                 )
 
                 metrics["basicParseMs"] = elapsed_ms(
@@ -1445,6 +1556,7 @@ def process_contract(
                     TIER_BASIC,
                     parsed_dir,
                     quality_result,
+                    backend=backend,
                 )
 
                 # -- AUTO fallback --
@@ -1483,6 +1595,8 @@ def process_contract(
                         TIER_STANDARD,
                         reporter,
                         65,
+                        backend=backend,
+                        token=ensure_cloud_token(),
                     )
 
                     metrics["standardParseMs"] = elapsed_ms(
@@ -1527,7 +1641,37 @@ def process_contract(
                 TIER_STANDARD,
                 parsed_dir,
                 {"passed": True, "metrics": {}},
+                backend=backend,
             )
+
+
+        # ---------------------------------
+        # 3d-2. Backend/model metadata
+        # ---------------------------------
+        #
+        # Metrics only; no schema change. The cache signature has
+        # already isolated local vs cloud artifacts, so this value
+        # describes the artifact actually selected.
+
+        if result is not None:
+
+            metrics["parseBackend"] = (
+                result.get("backend")
+                or backend
+            )
+
+            metrics["parseModelVersion"] = (
+                result.get("model_version")
+                or model_for_tier(
+                    actual_tier,
+                    backend=backend,
+                )
+            )
+
+            if result.get("middle_json_source"):
+                metrics["middleJsonSource"] = result[
+                    "middle_json_source"
+                ]
 
 
         # ---------------------------------
@@ -2000,6 +2144,26 @@ def process_contract(
         return False
 
 
+    finally:
+
+        # A per-task token must not outlive the job, on success
+        # or failure. A crash is covered by TTL pruning.
+        cloud_token = None
+
+        try:
+            credential_store.delete_contract_credential(
+                contract_id
+            )
+
+        except Exception as cleanup_error:
+            print(
+                "[contract-worker] "
+                "credential cleanup failed:",
+                cleanup_error,
+                flush=True,
+            )
+
+
 def run_once():
 
     print(
@@ -2007,6 +2171,13 @@ def run_once():
         "looking for queued contract...",
         flush=True,
     )
+
+
+    try:
+        credential_store.prune_expired_credentials()
+
+    except Exception:
+        pass
 
 
     with _worker_lock_context():

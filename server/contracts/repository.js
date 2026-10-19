@@ -63,6 +63,9 @@ function mapContract(row) {
     parseModeRequested:
       row.parse_mode_requested,
 
+    parseBackendRequested:
+      row.parse_backend_requested,
+
     parseTierActual:
       row.parse_tier_actual,
 
@@ -112,6 +115,7 @@ async function createContract(
         progress,
         error_message,
         parse_mode_requested,
+        parse_backend_requested,
         source_sha256,
         page_count
       )
@@ -129,7 +133,8 @@ async function createContract(
         $11,
         $12,
         $13,
-        $14
+        $14,
+        $15
       )
       RETURNING *
       `,
@@ -146,6 +151,7 @@ async function createContract(
         contract.progress,
         contract.error,
         contract.parseModeRequested ?? null,
+        contract.parseBackendRequested ?? "local",
         contract.sourceSha256 ?? null,
         contract.pageCount ?? null
       ]
@@ -423,8 +429,105 @@ async function hardDeleteContract(
 }
 
 
+async function deleteContractById(
+  contractId
+) {
+
+  await query(
+    `
+    DELETE FROM contracts
+
+    WHERE id = $1
+    `,
+    [
+      contractId
+    ]
+  );
+
+}
+
+
+async function saveContractCredential({
+  contractId,
+  ownerUsername,
+  ciphertext,
+  iv,
+  authTag,
+  keyVersion = 1,
+  expiresAt
+}) {
+
+  const result =
+    await query(
+      `
+      INSERT INTO contract_credentials (
+        contract_id,
+        owner_username,
+        ciphertext,
+        iv,
+        auth_tag,
+        key_version,
+        expires_at
+      )
+      VALUES (
+        $1,
+        $2,
+        $3,
+        $4,
+        $5,
+        $6,
+        $7
+      )
+      ON CONFLICT (contract_id)
+      DO UPDATE SET
+        owner_username = EXCLUDED.owner_username,
+        ciphertext = EXCLUDED.ciphertext,
+        iv = EXCLUDED.iv,
+        auth_tag = EXCLUDED.auth_tag,
+        key_version = EXCLUDED.key_version,
+        expires_at = EXCLUDED.expires_at,
+        updated_at = NOW()
+      RETURNING contract_id
+      `,
+      [
+        contractId,
+        ownerUsername,
+        ciphertext,
+        iv,
+        authTag,
+        keyVersion,
+        expiresAt
+      ]
+    );
+
+
+  return result.rows[0] || null;
+
+}
+
+
+async function deleteContractCredential(
+  contractId
+) {
+
+  await query(
+    `
+    DELETE FROM contract_credentials
+    WHERE contract_id = $1
+    `,
+    [
+      contractId
+    ]
+  );
+
+}
+
+
 module.exports = {
   hardDeleteContract,
+  deleteContractById,
+  deleteContractCredential,
+  saveContractCredential,
   softDeleteContractForOwner,
   listContractsForOwner,
   getLatestContractForOwner,
