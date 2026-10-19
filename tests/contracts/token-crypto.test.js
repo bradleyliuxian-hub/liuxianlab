@@ -55,6 +55,13 @@ test("missing key is reported and isConfigured is false", () => {
 });
 
 
+test("a valid 32-byte key reports configured", () => {
+  withKey(KEY, () => {
+    assert.equal(isConfigured(), true);
+  });
+});
+
+
 test("encrypt/decrypt roundtrip", () => {
   withKey(KEY, () => {
     const record = encryptToken(TOKEN, CONTEXT);

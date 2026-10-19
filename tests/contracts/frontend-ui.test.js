@@ -32,6 +32,14 @@ const HISTORY = fs.readFileSync(
   "utf8"
 );
 
+const SELECTION = fs.readFileSync(
+  path.join(
+    ROOT,
+    "private/tools/contract-review/parser-selection.js"
+  ),
+  "utf8"
+);
+
 
 test("local parser is the default checked option", () => {
   assert.match(
@@ -90,23 +98,13 @@ test("token input is not persisted by the page", () => {
 test("upload sends backend, mode, consent, and optional token", () => {
   assert.match(
     SCRIPT,
-    /formData\.append\(\s*["']parserBackend["']/
+    /uploadFields/
   );
 
-  assert.match(
-    SCRIPT,
-    /formData\.append\(\s*["']parseMode["']/
-  );
-
-  assert.match(
-    SCRIPT,
-    /cloudProcessingConsent/
-  );
-
-  assert.match(
-    SCRIPT,
-    /mineruApiToken/
-  );
+  assert.match(SELECTION, /parserBackend/);
+  assert.match(SELECTION, /parseMode/);
+  assert.match(SELECTION, /cloudProcessingConsent/);
+  assert.match(SELECTION, /mineruApiToken/);
 });
 
 

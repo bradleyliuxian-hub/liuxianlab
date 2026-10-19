@@ -2,6 +2,10 @@
   "use strict";
 
 
+  const parserSelection =
+    window.ContractParserSelection;
+
+
   const MAX_SIZE =
     25 * 1024 * 1024;
 
@@ -274,16 +278,9 @@
       );
 
 
-    const value =
-      checked?.value;
-
-
-    return (
-      value === "fast" ||
-      value === "accurate"
-    )
-      ? value
-      : "auto";
+    return parserSelection.normalizeMode(
+      checked?.value
+    );
 
   }
 
@@ -296,9 +293,9 @@
       );
 
 
-    return checked?.value === "cloud"
-      ? "cloud"
-      : "local";
+    return parserSelection.normalizeBackend(
+      checked?.value
+    );
 
   }
 
@@ -352,8 +349,9 @@
   function syncBackendUi() {
 
     const isCloud =
-      selectedParserBackend() ===
-      "cloud";
+      parserSelection.cloudVisible(
+        selectedParserBackend()
+      );
 
 
     if (cloudSettings) {
@@ -453,60 +451,28 @@
 
   function validateCloudSelection() {
 
-    if (
-      selectedParserBackend() !==
-      "cloud"
-    ) {
-      return true;
-    }
+    const result =
+      parserSelection.validateCloudSelection({
+        backend:
+          selectedParserBackend(),
+
+        consent:
+          Boolean(cloudConsent?.checked),
+
+        token:
+          mineruApiToken?.value || "",
+
+        serverTokenConfigured:
+          cloudConfig.serverTokenConfigured,
+
+        encryptionKeyConfigured:
+          cloudConfig.encryptionKeyConfigured
+      });
 
 
-    if (!cloudConsent?.checked) {
-
-      showToast(
-        "请先确认已获授权将合同发送至 MinerU 云端。",
-        "error"
-      );
-
+    if (!result.ok) {
+      showToast(result.error, "error");
       return false;
-
-    }
-
-
-    const token =
-      String(
-        mineruApiToken?.value ||
-        ""
-      ).trim();
-
-
-    if (
-      !token
-      && !cloudConfig.serverTokenConfigured
-    ) {
-
-      showToast(
-        "服务器未配置云端 Token，请填写本次任务使用的 Token。",
-        "error"
-      );
-
-      return false;
-
-    }
-
-
-    if (
-      token
-      && !cloudConfig.encryptionKeyConfigured
-    ) {
-
-      showToast(
-        "服务器未配置凭证加密密钥，无法安全保存自定义 Token；请留空并使用服务器 Token。",
-        "error"
-      );
-
-      return false;
-
     }
 
 
@@ -1004,34 +970,28 @@
       );
 
 
-      formData.append(
-        "parseMode",
-        selectedParseMode()
-      );
+      const fields =
+        parserSelection.uploadFields({
+          backend:
+            parserBackend,
 
-      formData.append(
-        "parserBackend",
-        parserBackend
-      );
+          mode:
+            selectedParseMode(),
+
+          consent:
+            Boolean(cloudConsent?.checked),
+
+          token
+        });
 
 
-      if (parserBackend === "cloud") {
+      Object.entries(fields).forEach(
+        ([key, value]) => {
 
-        formData.append(
-          "cloudProcessingConsent",
-          "true"
-        );
-
-        if (token) {
-
-          formData.append(
-            "mineruApiToken",
-            token
-          );
+          formData.append(key, value);
 
         }
-
-      }
+      );
 
 
       try {

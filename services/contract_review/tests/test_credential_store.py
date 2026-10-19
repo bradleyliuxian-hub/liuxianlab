@@ -67,6 +67,44 @@ def node_record():
     }
 
 
+class FakeCursor:
+
+    def __init__(self, row=None):
+        self.row = row
+        self.executed = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def execute(self, sql, params=None):
+        self.executed.append((sql, params))
+
+    def fetchone(self):
+        return self.row
+
+    @property
+    def rowcount(self):
+        return 1
+
+
+class FakeConnection:
+
+    def __init__(self, row=None):
+        self.fake_cursor = FakeCursor(row)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def cursor(self):
+        return self.fake_cursor
+
+
 class CredentialStoreCryptoTests(unittest.TestCase):
 
     def setUp(self):
@@ -200,6 +238,55 @@ class CredentialStoreCryptoTests(unittest.TestCase):
                 contract_id=CONTRACT_ID,
                 owner_username=OWNER,
             )
+
+    def test_owner_mismatch_is_rejected_before_decrypt(self):
+        connection = FakeConnection(
+            (
+                "alice",
+                b"ciphertext",
+                b"iv-12-bytes!",
+                b"tag-16-bytes!!!!",
+                1,
+            )
+        )
+
+        with mock.patch.object(
+            credential_store.database,
+            "connect",
+            return_value=connection,
+        ):
+            with self.assertRaises(
+                credential_store.CredentialError
+            ) as context:
+                credential_store.get_contract_token(
+                    CONTRACT_ID,
+                    "bob",
+                )
+
+        self.assertIn(
+            "owner",
+            str(context.exception),
+        )
+
+    def test_delete_credential_is_scoped_by_contract(self):
+        connection = FakeConnection()
+
+        with mock.patch.object(
+            credential_store.database,
+            "connect",
+            return_value=connection,
+        ):
+            credential_store.delete_contract_credential(
+                CONTRACT_ID
+            )
+
+        sql, params = connection.fake_cursor.executed[-1]
+
+        self.assertIn(
+            "DELETE FROM contract_credentials",
+            sql,
+        )
+        self.assertEqual(params, (CONTRACT_ID,))
 
 
 if __name__ == "__main__":
