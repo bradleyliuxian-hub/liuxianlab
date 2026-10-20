@@ -51,11 +51,12 @@ services/equity_structure/
 scripts/local/setup-equity-ocr.sh
 ```
 
-脚本创建 `.equity-venv`（已 gitignore），安装
-`services/equity_structure/requirements.txt`：PaddlePaddle 3.3.1 +
+脚本创建 `.equity-venv`（已 gitignore），并在脚本内固定安装 PaddlePaddle 3.3.1 +
 PaddleOCR 2.10.0 + numpy<2 + OpenCV（PaddleOCR 依赖）+ RapidFuzz + openpyxl +
-reportlab。Node 通过 `EQUITY_STRUCTURE_PYTHON_BIN` 或默认
-`.equity-venv/bin/python` 调用。
+reportlab + CairoSVG。该独立环境不参与 Node deployer 的共享 Python 环境安装，
+因此版本以 `scripts/local/setup-equity-ocr.sh` 为唯一来源，仓库不保留
+`services/*/requirements.txt`，避免例行部署把专用 OCR 环境误判为共享依赖变更。
+Node 通过 `EQUITY_STRUCTURE_PYTHON_BIN` 或默认 `.equity-venv/bin/python` 调用。
 
 首次 OCR 会下载 Paddle 中文模型；生产服务器需要提前允许该下载或预置模型。
 Ubuntu 上若 `import cv2` 报 `libGL.so.1`，需安装系统库 `libgl1`（以及常见的
