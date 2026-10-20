@@ -14,6 +14,7 @@ const parseStoredArray = (key) => {
  */
 const FILE_TYPES = [
   { key: 'excel', label: 'Excel', title: 'Excel', blurb: 'Excel 工作流、检查与专业分析工具' },
+  { key: 'image', label: '图片', title: '图片', blurb: '截图 OCR、结构化识别与图形重建工具' },
   { key: 'word', label: 'Word', title: 'Word', blurb: '文档处理、格式整理与专业工作流', comingSoon: true },
   { key: 'pdf', label: 'PDF', title: 'PDF', blurb: 'PDF 解析与文档数字化工具' }
 ];
@@ -34,12 +35,13 @@ const TOOL_IA = {
   'sales-income-analysis': { fileType: 'excel', group: 'template' },
   'journal-entry-analysis': { fileType: 'excel', group: 'analysis' },
   'purchase-reconciliation': { fileType: 'excel', group: 'analysis' },
-  'contract-review': { fileType: 'pdf', group: 'pdf' }
+  'contract-review': { fileType: 'pdf', group: 'pdf' },
+  'equity-structure': { fileType: 'image', group: 'analysis' }
 };
 
-const GROUP_LABEL = { general: '通用处理', check: '检查', analysis: '专业分析', template: '模板分析', pdf: 'PDF' };
-const GROUP_ACCENT = { general: 'blue', check: 'amber', analysis: 'teal', template: 'teal', pdf: 'navy' };
-const GROUP_ORDER = { general: 0, check: 1, analysis: 2, template: 3, pdf: 0 };
+const GROUP_LABEL = { general: '通用处理', check: '检查', analysis: '专业分析', template: '模板分析', pdf: 'PDF', image: '图片识别' };
+const GROUP_ACCENT = { general: 'blue', check: 'amber', analysis: 'teal', template: 'teal', pdf: 'navy', image: 'teal' };
+const GROUP_ORDER = { general: 0, check: 1, analysis: 2, template: 3, pdf: 0, image: 2 };
 
 const iaOf = (tool) => TOOL_IA[tool && tool.slug] || { fileType: 'other', group: '' };
 
@@ -239,6 +241,7 @@ function renderLibraryNav() {
   libraryNav.innerHTML = '';
 
   const excelCount = toolsOfFileType('excel').length;
+  const imageCount = toolsOfFileType('image').length;
   const pdfCount = toolsOfFileType('pdf').length;
 
   // Excel (expandable into its groups)
@@ -290,6 +293,20 @@ function renderLibraryNav() {
   });
   excelGroup.appendChild(subnav);
   libraryNav.appendChild(excelGroup);
+
+  // Image
+  const imageRow = document.createElement('div');
+  imageRow.className = `library-nav-item${state.fileType === 'image' ? ' active' : ''}`;
+  const imageLabel = document.createElement('button');
+  imageLabel.type = 'button';
+  imageLabel.className = 'lib-label';
+  imageLabel.textContent = '图片';
+  imageLabel.addEventListener('click', () => selectLibrary('image', 'all'));
+  const imageBadge = document.createElement('span');
+  imageBadge.className = 'nav-count';
+  imageBadge.textContent = String(imageCount);
+  imageRow.append(imageLabel, imageBadge);
+  libraryNav.appendChild(imageRow);
 
   // Word (coming soon)
   const wordRow = document.createElement('div');

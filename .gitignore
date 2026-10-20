@@ -75,3 +75,6 @@ archive/opencode-backup-*/
 storage/
 
 # Python runtime cache
+
+# dedicated equity OCR environment
+.equity-venv/

@@ -410,6 +410,24 @@ if [ "$MODE" = full ] && [ "$FAILS" -eq 0 ]; then
     fi
   fi
 
+  if printf '%s\n' "$CHANGED" | grep -Eq '^(services/equity_structure/|server/equity-structure/|private/tools/equity-structure/|tests/equity-structure/|config/equity_structure/)'; then
+    ran_any=1
+    printf '  [equity-structure] .venv/bin/python -m unittest discover -s services/equity_structure/tests -t .\n'
+    if [ -x .venv/bin/python ]; then
+      if .venv/bin/python -m unittest discover -s services/equity_structure/tests -t . ; then printf '  PASS\n';
+      else fail "equity_structure regression tests failed."; printf '  FAIL\n'; fi
+    else
+      warn ".venv/bin/python missing — equity_structure tests skipped."
+    fi
+    printf '  [equity-structure] node --test tests/equity-structure/*.test.js\n'
+    if have node; then
+      if node --test tests/equity-structure/*.test.js ; then printf '  PASS\n';
+      else fail "equity-structure Node tests failed."; printf '  FAIL\n'; fi
+    else
+      warn "node missing — equity-structure Node tests skipped."
+    fi
+  fi
+
   if printf '%s\n' "$CHANGED" | grep -Eq '^(services/excel_review/|server/excel-review/|private/tools/excel-review/)'; then
     ran_any=1
     printf '  [excel-review] .venv/bin/python -m unittest discover -s services/excel_review/tests\n'

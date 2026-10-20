@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Liuxian Lab 股权结构图识别" />
+  <title>股权结构图识别 · Liuxian Lab</title>
+  <link rel="stylesheet" href="/design-tokens.css?v=1.0.0" />
+  <link rel="stylesheet" href="/app/app-shell.css?v=1.0.0" />
+  <link rel="stylesheet" href="/app/tools/equity-structure/styles.css?v=1.0.8" />
+</head>
+<body>
+  <div class="page-shell">
+    <header class="tool-header">
+      <a class="back-link" href="/" aria-label="返回工作台">←</a>
+      <div class="tool-brand">
+        <span class="tool-mark">EQ</span>
+        <div><strong>股权结构图识别</strong><small>Liuxian Lab / Equity Structure OCR</small></div>
+      </div>
+      <div class="header-actions">
+        <button class="version-chip" id="versionButton" type="button" title="查看版本更新说明">v1.0.6</button>
+        <span class="private-badge"><i></i>纯本地识别</span>
+        <button class="ghost-button" id="newJobButton" type="button">新建识别</button>
+      </div>
+    </header>
+
+    <main class="tool-main">
+      <section class="intro-section">
+        <p class="eyebrow">EQUITY STRUCTURE · LOCAL OCR</p>
+        <h1>从一张完整截图，还原可复核的股权结构。</h1>
+        <p>上传天眼查等来源的完整股权结构截图，系统使用 PaddleOCR + OpenCV 完成大图切片、多尺度 OCR、节点与线段检测、拓扑重建和持股比例识别。全程不调用任何大语言模型；识别结果可在页面中人工修改并重新绘图。</p>
+      </section>
+
+      <section class="workspace-card" id="uploadPanel">
+        <div class="card-heading">
+          <div><span class="step-no">01</span><div><h2>上传完整截图</h2><p>支持 PNG / JPG / WebP；单张最大 100 MB；超大图会自动切片并限制最大像素。</p></div></div>
+          <span class="profile-chip">PaddleOCR · CPU</span>
+        </div>
+
+        <label class="drop-zone" id="dropZone" for="fileInput">
+          <input id="fileInput" type="file" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" hidden />
+          <span class="drop-icon">↥</span>
+          <strong>拖入股权结构截图，或点击选择图片</strong>
+          <small>完整长图也可以 · 原图不会被修改 · 不调用云端大模型</small>
+        </label>
+
+        <div class="selected-file" id="selectedFile" hidden>
+          <span class="file-icon">IMG</span>
+          <div class="file-copy"><strong id="fileName"></strong><small id="fileMeta"></small></div>
+          <button class="icon-button" id="clearFileButton" type="button" aria-label="移除图片">×</button>
+        </div>
+
+        <div class="upload-progress" id="uploadProgress" hidden>
+          <div class="progress-track"><span id="uploadProgressBar"></span></div>
+          <small id="uploadProgressText">正在上传…</small>
+        </div>
+
+        <div class="image-preview" id="imagePreview" hidden>
+          <img id="previewImage" alt="上传的股权结构截图预览" />
+        </div>
+
+        <div class="upload-actions">
+          <p>图片保存在受保护的服务器存储目录；识别结果与导出仅归属于当前登录用户。相同图片会复用已完成的结果。</p>
+          <button class="primary-button" id="uploadButton" type="button" disabled>上传并准备识别 <span>→</span></button>
+        </div>
+        <div class="error-box" id="uploadError" hidden></div>
+      </section>
+
+      <section class="workspace-card" id="startPanel" hidden>
+        <div class="card-heading">
+          <div><span class="step-no">02</span><div><h2>开始识别</h2><p id="startSubtitle">图片已就绪。识别可能需要数分钟，页面会显示实时进度。</p></div></div>
+          <span class="job-status" id="draftStatus">DRAFT</span>
+        </div>
+        <div class="image-preview" id="startPreview" hidden>
+          <img id="startPreviewImage" alt="待识别的股权结构截图" />
+        </div>
+        <div class="rule-grid">
+          <div class="rule-block">
+            <h3>切片</h3>
+            <p>默认 1700×1200，重叠 28%，最多 72 片；叠加坐标映射回原图。</p>
+          </div>
+          <div class="rule-block">
+            <h3>OCR</h3>
+            <p>1.0x / 1.3x / 1.65x / 2.0x 多尺度投票，重叠区域去重。</p>
+          </div>
+          <div class="rule-block">
+            <h3>结构与比例</h3>
+            <p>节点框 + 横竖线拓扑 + 持股比例二次裁图；注销节点自动排除出图。</p>
+          </div>
+        </div>
+        <div class="mapping-actions">
+          <p>识别完成后可人工修改节点、关系与持股比例，无需重新跑 OCR。</p>
+          <button class="primary-button" id="startButton" type="button">开始识别 <span>→</span></button>
+        </div>
+        <div class="error-box" id="startError" hidden></div>
+      </section>
+
+      <section class="workspace-card process-card" id="processPanel" hidden>
+        <div class="card-heading">
+          <div><span class="step-no">03</span><div><h2>识别进度</h2><p id="processMessage">正在准备任务…</p></div></div>
+          <span class="job-status" id="jobStatus">QUEUED</span>
+        </div>
+        <div class="progress-track large"><span id="progressBar"></span></div>
+        <div class="progress-meta"><strong id="progressValue">0%</strong><span id="jobIdLabel"></span></div>
+        <div class="process-note" id="processNote">关闭页面后任务仍会继续；重新打开历史任务可查看进度。</div>
+        <div class="error-box" id="processError" hidden></div>
+      </section>
+
+      <section class="workspace-card result-card" id="resultPanel" hidden>
+        <div class="card-heading">
+          <div><span class="step-no">04</span><div><h2>识别结果</h2><p id="resultSubtitle">—</p></div></div>
+          <div class="result-actions">
+            <a class="ghost-button" id="sourceLink" href="#" target="_blank" rel="noopener" hidden>原图</a>
+            <button class="ghost-button" id="saveButton" type="button">保存修改</button>
+            <button class="ghost-button" id="redrawButton" type="button">应用并重绘</button>
+            <button class="ghost-button" id="svgButton" type="button">SVG</button>
+            <button class="ghost-button" id="pngButton" type="button">PNG</button>
+            <button class="ghost-button" id="xlsxButton" type="button">Excel</button>
+            <button class="ghost-button" id="pdfButton" type="button">PDF</button>
+            <button class="primary-button small" id="downloadButton" type="button">下载结果 <span>↓</span></button>
+          </div>
+        </div>
+
+        <div class="summary-metrics" id="resultMetrics"></div>
+        <div class="warnings-box" id="resultWarnings" hidden></div>
+
+        <div class="chart-toolbar">
+          <div class="chart-title"><strong>股权结构图</strong><small id="chartMeta">—</small></div>
+          <div class="zoom-actions">
+            <button class="mini-button" id="undoButton" type="button" title="撤销 Ctrl+Z">撤销</button>
+            <button class="mini-button" id="redoButton" type="button" title="重做 Ctrl+Shift+Z">重做</button>
+            <button class="mini-button" id="zoomOut" type="button" aria-label="缩小">−</button>
+            <span id="zoomLabel">100%</span>
+            <button class="mini-button" id="zoomIn" type="button" aria-label="放大">＋</button>
+            <button class="mini-button" id="zoomReset" type="button">100%</button>
+            <button class="mini-button" id="fitButton" type="button">适应</button>
+            <button class="mini-button" id="alignTopButton" type="button">顶部对齐</button>
+            <button class="mini-button" id="alignCenterButton" type="button">垂直居中</button>
+            <button class="mini-button" id="distributeButton" type="button">水平均分</button>
+            <button class="mini-button" id="saveLayoutButton" type="button">保存布局</button>
+            <button class="mini-button" id="resetLayoutButton" type="button">恢复自动排版</button>
+          </div>
+        </div>
+        <div class="chart-wrap" id="chartWrap"><div class="empty-state">等待识别结果</div></div>
+        <div class="editor-hint" id="layoutStatus">拖动节点或持股比例微调布局；Ctrl+Z 撤销。</div>
+
+        <div class="result-tabs" role="tablist" aria-label="识别结果分类">
+          <button class="result-tab active" data-tab="nodes" type="button" role="tab" aria-selected="true">节点</button>
+          <button class="result-tab" data-tab="edges" type="button" role="tab" aria-selected="false">投资关系</button>
+          <button class="result-tab" data-tab="text" type="button" role="tab" aria-selected="false">OCR 文字</button>
+          <button class="result-tab" data-tab="review" type="button" role="tab" aria-selected="false">复核提示</button>
+          <button class="result-tab" data-tab="corrections" type="button" role="tab" aria-selected="false">字典纠错</button>
+          <button class="result-tab" data-tab="excluded" type="button" role="tab" aria-selected="false">已排除</button>
+          <button class="result-tab" data-tab="advanced" type="button" role="tab" aria-selected="false">高级编辑</button>
+        </div>
+
+        <div class="tab-panel" id="nodesPanel">
+          <div class="table-toolbar">
+            <input class="search-input" id="nodeSearch" type="search" placeholder="搜索节点名称、类型或状态…" />
+            <span class="toolbar-note">直接修改名称 / 层级 / 类型 / 状态，然后点击“应用并重绘”。</span>
+          </div>
+          <div class="table-wrap" id="nodeTable"></div>
+        </div>
+
+        <div class="tab-panel" id="edgesPanel" hidden>
+          <div class="table-toolbar">
+            <input class="search-input" id="edgeSearch" type="search" placeholder="搜索出资方、被投资方或比例…" />
+            <span class="toolbar-note">持股比例可手工修正；关系类型可切换。</span>
+          </div>
+          <div class="table-wrap" id="edgeTable"></div>
+        </div>
+
+        <div class="tab-panel" id="textPanel" hidden>
+          <div class="text-list" id="ocrText"></div>
+        </div>
+
+        <div class="tab-panel" id="reviewPanel" hidden>
+          <div class="review-grid" id="reviewGrid"></div>
+        </div>
+
+        <div class="tab-panel" id="correctionsPanel" hidden>
+          <div class="review-grid" id="correctionsList"></div>
+          <form class="correction-form" id="correctionForm">
+            <label class="field-control"><span>原 OCR 名称</span><input id="correctionOriginal" maxlength="300" required /></label>
+            <label class="field-control"><span>人工修正名称</span><input id="correctionCorrected" maxlength="300" required /></label>
+            <button class="primary-button small" type="submit">记录修正</button>
+          </form>
+          <p class="toolbar-note">当前只保存修正记录，用于后续扩充字典；不会自动改动已识别结果。</p>
+        </div>
+
+        <div class="tab-panel" id="excludedPanel" hidden>
+          <div class="review-grid" id="excludedList"></div>
+        </div>
+
+        <div class="tab-panel" id="advancedPanel" hidden>
+          <p class="toolbar-note">高级编辑会直接修改结构化结果。应用后请检查图表；保存修改会写入服务器，供 Excel/PDF 导出使用。</p>
+          <textarea id="jsonEditor" spellcheck="false"></textarea>
+          <div class="mapping-actions">
+            <p>JSON 必须包含 nodes 与 edges 数组。</p>
+            <button class="primary-button small" id="applyJsonButton" type="button">应用 JSON</button>
+          </div>
+          <div class="error-box" id="jsonError" hidden></div>
+        </div>
+      </section>
+
+      <section class="workspace-card" id="historyPanel">
+        <div class="card-heading">
+          <div><span class="step-no">H</span><div><h2>历史任务</h2><p>仅显示当前登录用户；相同图片会直接复用已完成结果。</p></div></div>
+          <button class="ghost-button" id="refreshHistoryButton" type="button">刷新</button>
+        </div>
+        <div class="history-list" id="historyList"><p class="empty-note">正在载入历史任务…</p></div>
+      </section>
+    </main>
+
+    <footer class="tool-footer"><span>Liuxian Lab</span><span>Equity Structure OCR v1.0.8</span></footer>
+  </div>
+
+  <div class="download-backdrop" id="downloadBackdrop" hidden></div>
+  <section class="download-dialog" id="downloadDialog" hidden role="dialog" aria-modal="true" aria-labelledby="downloadTitle">
+    <div class="download-head">
+      <div>
+        <p class="eyebrow">EXPORT CENTER</p>
+        <h2 id="downloadTitle">下载股权结构结果</h2>
+        <p>SVG / PNG 使用当前页面中已修改的结构；Excel / PDF 会先保存当前修改再生成。</p>
+      </div>
+      <button class="icon-button" id="closeDownloadButton" type="button" aria-label="关闭下载窗口">×</button>
+    </div>
+    <div class="download-grid">
+      <article class="download-card">
+        <span class="download-icon">SVG</span>
+        <div><strong>矢量图 SVG</strong><p>适合继续编辑、排版或放入报告；保留完整节点与连线。</p></div>
+        <button class="primary-button small" id="downloadSvgButton" type="button">下载 SVG</button>
+      </article>
+      <article class="download-card">
+        <span class="download-icon">PNG</span>
+        <div><strong>图片 PNG</strong><p>白底高分辨率图片，适合直接插入 Word / PPT / 邮件。</p></div>
+        <button class="primary-button small" id="downloadPngButton" type="button">下载 PNG</button>
+      </article>
+      <article class="download-card">
+        <span class="download-icon">XLSX</span>
+        <div><strong>数据 Excel</strong><p>包含股权结构、投资关系、识别备注三个工作表。</p></div>
+        <button class="primary-button small" id="downloadXlsxButton" type="button">下载 Excel</button>
+      </article>
+      <article class="download-card">
+        <span class="download-icon">DBG</span>
+        <div><strong>调试 SVG</strong><p>下载当前最终布局的自包含 SVG，用于单独打开或排查转换问题。</p></div>
+        <button class="primary-button small" id="downloadDebugSvgButton" type="button">下载调试 SVG</button>
+      </article>
+      <article class="download-card">
+        <span class="download-icon">PDF</span>
+        <div><strong>股权图 PDF</strong><p>A3 横向完整股权结构图；超宽图会自动缩放。</p></div>
+        <button class="primary-button small" id="downloadPdfButton" type="button">下载 PDF</button>
+      </article>
+    </div>
+    <div class="download-status" id="downloadStatus" role="status" aria-live="polite">请选择下载格式。</div>
+  </section>
+
+  <div class="version-backdrop" id="versionBackdrop" hidden></div>
+  <section class="version-dialog" id="versionDialog" hidden role="dialog" aria-modal="true" aria-labelledby="versionTitle">
+    <div class="download-head">
+      <div><p class="eyebrow">VERSION NOTES</p><h2 id="versionTitle">版本更新</h2><p>当前版本的关键优化。</p></div>
+      <button class="icon-button" id="closeVersionButton" type="button" aria-label="关闭版本说明">×</button>
+    </div>
+    <div class="version-list" id="versionList"></div>
+  </section>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="/app/app-shell.js?v=1.0.0"></script>
+  <script src="/app/tools/equity-structure/script.js?v=1.0.8"></script>
+</body>
+</html>

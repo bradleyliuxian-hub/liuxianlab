@@ -77,6 +77,19 @@ Frontend tools are Vanilla HTML/CSS/JS. Do not introduce React/Vue/Tailwind with
 | Docs | `docs/agent/purchase-reconciliation/web-integration.md` |
 | Tests | `tests/purchase-reconciliation/*`, `services/purchase_reconciliation/tests/*` |
 
+## 股权结构图识别 （equity-structure / PaddleOCR）
+
+| Item | Location |
+|---|---|
+| Node | `server/equity-structure/` (routes, repository, job-factory, worker-runner) |
+| Python | `services/equity_structure/` (tiling, ocr_engine, node/line detectors, topology, percentage reader, exporters, worker) |
+| Frontend | `private/tools/equity-structure/` |
+| Dictionary | `config/equity_structure/company_dictionary.txt` |
+| Migration | `server/equity-structure/migrations/001_equity_structure.sql` |
+| Setup | `scripts/local/setup-equity-ocr.sh` → `.equity-venv` |
+| Docs | `docs/agent/equity-structure/overview.md` |
+| Tests | `tests/equity-structure/*`, `services/equity_structure/tests/*` |
+
 ## 合同审阅 （contract-review / PostgreSQL）
 
 | Item | Location |

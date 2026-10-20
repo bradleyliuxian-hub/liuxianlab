@@ -77,6 +77,7 @@ evidence only and is not loaded by default.
 - Excel Review = Node routes + PostgreSQL + private server storage + Python (`server/excel-review/`, `services/excel_review/`).
 - Excel Tail-Risk (尾差检查) & Hardcode (死数检查) = **browser-local Vanilla JS** (`private/tools/excel-decimal-check/`, `private/tools/excel-hardcode-check/`, shared `private/shared/`); no server storage.
 - Contract review = Node routes + PostgreSQL + Python service/worker (`server/contracts/`, `services/contract_review/`).
+- Equity structure = Node routes + PostgreSQL + **dedicated** `.equity-venv` (PaddleOCR/OpenCV, no LLM): `server/equity-structure/`, `services/equity_structure/`; setup via `scripts/local/setup-equity-ocr.sh`.
 - Runtime data (gitignored): `sessions/`, `storage/`, `logs/`, `data/`.
 - Production direction: Nginx + HTTPS -> Node on `127.0.0.1:8080` (PM2 via `ecosystem.config.js`). Never expose the Node port.
 
@@ -167,3 +168,7 @@ Commands: `/checkpoint` (save; no commit/push/deploy), `/resume` and `/recover` 
 ## 12. Output standard
 
 Default: 完成 / 修改 / 验证 / 未验证 / 下一步 — short bullets. Do not narrate tool calls, repeat the request, paste whole files, re-list passing checks, or write long summaries.
+
+## 13. Version update rule (web/tool UI)
+
+Every release that bumps a tool/page version or ships a user-visible feature/fix must also update an on-page version-notes entry (what changed in this version), and keep the page version, `config/tools.json` version and notes in sync. Chat-only explanations are not enough.

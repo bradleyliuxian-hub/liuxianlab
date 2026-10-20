@@ -1,0 +1,13 @@
+# Dedicated equity-structure OCR environment (install into .equity-venv).
+# Paddle 2.6 hangs and Paddle 3.0 has an allocator error on consecutive
+# arm64 macOS inference calls; 3.3.1 is verified with the PaddleOCR 2.10 API.
+paddlepaddle==3.3.1
+paddleocr==2.10.0
+numpy<2
+# Paddle 3.3.1 + PaddleOCR 2.10 verified with this protobuf version.
+protobuf==3.20.2
+Pillow>=10.4
+rapidfuzz>=3.9
+openpyxl>=3.1
+reportlab>=4.2
+cairosvg>=2.7

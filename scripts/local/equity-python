@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Run the dedicated equity OCR/export environment with local macOS Cairo paths.
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  export DYLD_FALLBACK_LIBRARY_PATH="/opt/homebrew/opt/cairo/lib:/opt/homebrew/lib:/usr/local/opt/cairo/lib:/usr/local/lib:${DYLD_FALLBACK_LIBRARY_PATH:-}"
+fi
+cd "$ROOT"
+exec "$ROOT/.equity-venv/bin/python" "$@"

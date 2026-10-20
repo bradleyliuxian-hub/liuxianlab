@@ -157,5 +157,26 @@
       "检查",
       "引用"
     ]
+  },
+  {
+    "slug": "equity-structure",
+    "name": "股权结构图识别",
+    "description": "上传完整股权结构截图，使用本地 PaddleOCR + OpenCV 识别节点、连线与持股比例，重建股权拓扑并支持人工复核与 SVG/PNG/Excel/PDF 导出。",
+    "category": "数据",
+    "status": "ready",
+    "version": "v1.0.8",
+    "icon": "EQ",
+    "keywords": [
+      "股权",
+      "结构图",
+      "天眼查",
+      "截图",
+      "OCR",
+      "图像",
+      "持股比例",
+      "PaddleOCR",
+      "拓扑",
+      "equity"
+    ]
   }
 ]

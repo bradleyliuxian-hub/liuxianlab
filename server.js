@@ -18,6 +18,7 @@ const { createExcelReviewRouter } = require('./server/excel-review/routes');
 const { createExcelReviewControlLogRouter } = require('./server/excel-review/control-log-routes');
 const { createJournalEntryRouter } = require('./server/journal-entry/routes');
 const { createPurchaseReconciliationRouter } = require('./server/purchase-reconciliation/routes');
+const { createEquityRouter } = require('./server/equity-structure/routes');
 require('dotenv').config();
 
 const app = express();
@@ -103,9 +104,23 @@ app.use(
           )
       );
 
+    const isEquityResultSave =
+      (
+        req.method === 'PUT'
+        &&
+        /^\/api\/equity-structures\/[0-9a-f-]{36}\/(result|layout)\/?$/i
+          .test(req.path)
+      );
+
+    const isEquityPngExport =
+      req.method === 'POST'
+      && req.path === '/api/equity-structures/export/png';
+
 
     if (
       isContractDraftSave
+      || isEquityResultSave
+      || isEquityPngExport
     ) {
 
       return next();
@@ -365,6 +380,12 @@ app.use('/api/journal-entry-analyses', requireAuth, sameOriginForStateChange, cr
  * 源文件、结果与导出保存在 storage/purchase-reconciliation/<uuid>/，按 owner 隔离。
  */
 app.use('/api/purchase-reconciliations', requireAuth, sameOriginForStateChange, createPurchaseReconciliationRouter({ root: ROOT }));
+
+/*
+ * 股权结构图识别：上传大图 -> 后台 PaddleOCR/OpenCV 识别 -> 人工复核 -> SVG/PNG/Excel/PDF。
+ * 原图与结果保存在 storage/equity-structure/<uuid>/，按 owner 隔离。
+ */
+app.use('/api/equity-structures', requireAuth, sameOriginForStateChange, createEquityRouter({ root: ROOT }));
 
 /*
  * Excel Review Control Log (V1.4): aggregates several excel-review jobs into
