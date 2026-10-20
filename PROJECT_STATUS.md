@@ -32,6 +32,7 @@ Updated: 2026-10-20
 - 前端 `private/tools/purchase-reconciliation/`
   - 原生 App Shell + 既有 Card/Table/Tabs/Drawer/Toast 视觉
   - 上传、sheet/header 重新识别、字段完整度、规则说明、进度
+  - 历史任务中的待确认草稿可“继续确认”，上传成功后直接进入字段确认面板（v1.0.1）
   - 10 项 KPI、金额结构条形图、移动类型表、FIFO 配对段 / 已对抵 / 剩余 / 未匹配
   - 服务端分页（默认 50，最大 200）、搜索、排序、追溯 Drawer
 - 接入：`server.js`、`config/tools.json`、`private/script.js` IA（Excel → 专业分析）、README、PROJECT_INDEX、pre-push-check。
@@ -49,6 +50,7 @@ Updated: 2026-10-20
 - Node：`npm test` = **275 passed**（新增 8 个路由/分页/下载测试）。
 - 真实 HTTP 全链路：上传 201（1.4s）→ start 202 → completed；summary/matches/matched/remaining/unmatched/segment/detail/download 均 200。
 - Chrome Headless UI 冒烟：上传 → 识别 34,297 行 / 12 字段 → 开始 → Dashboard → 四个 Tab 分页 → Drawer → XLSX ready；**无 console error / exception**。
+- 草稿恢复冒烟：上传后刷新 → 历史“继续确认” → 重新识别 34,297 行 → 开始并完成；**无 console error / exception**。
 - XLSX 程序化打开：5 个 sheet；对抵分段 635 行（含表头）、已对抵明细 949、剩余 33,502。
 - `journal_entry` Python 回归：235 passed（未改该模块行为）。
 

@@ -7,7 +7,7 @@
   <title>采购与退货对抵 · Liuxian Lab</title>
   <link rel="stylesheet" href="/design-tokens.css?v=1.0.0" />
   <link rel="stylesheet" href="/app/app-shell.css?v=1.0.0" />
-  <link rel="stylesheet" href="/app/tools/purchase-reconciliation/styles.css?v=1.0.0" />
+  <link rel="stylesheet" href="/app/tools/purchase-reconciliation/styles.css?v=1.0.1" />
 </head>
 <body>
   <div class="page-shell">
@@ -18,7 +18,7 @@
         <div><strong>采购与退货对抵</strong><small>Liuxian Lab / Purchase Reconciliation</small></div>
       </div>
       <div class="header-actions">
-        <span class="version-chip" title="当前工具版本">v1.0.0</span>
+        <span class="version-chip" title="当前工具版本">v1.0.1</span>
         <span class="private-badge"><i></i>私有处理</span>
         <button class="ghost-button" id="newJobButton" type="button">新建对抵</button>
       </div>
@@ -34,7 +34,7 @@
       <section class="workspace-card" id="uploadPanel">
         <div class="card-heading">
           <div><span class="step-no">01</span><div><h2>上传原始数据</h2><p>支持 <code>.xlsx</code> / <code>.xlsm</code>；单个文件最大 50 MB。SAP 导出的百万空行不会拖慢解析。</p></div></div>
-          <span class="profile-chip">FIFO v1.0.0</span>
+          <span class="profile-chip">FIFO v1.0.1</span>
         </div>
 
         <label class="drop-zone" id="dropZone" for="fileInput">
@@ -230,7 +230,7 @@
       </section>
     </main>
 
-    <footer class="tool-footer"><span>Liuxian Lab</span><span>Purchase &amp; Returns Reconciliation v1.0.0</span></footer>
+    <footer class="tool-footer"><span>Liuxian Lab</span><span>Purchase &amp; Returns Reconciliation v1.0.1</span></footer>
   </div>
 
   <div class="detail-backdrop" id="detailBackdrop" hidden></div>
@@ -244,6 +244,6 @@
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <script src="/app/app-shell.js?v=1.0.0"></script>
-  <script src="/app/tools/purchase-reconciliation/script.js?v=1.0.0"></script>
+  <script src="/app/tools/purchase-reconciliation/script.js?v=1.0.1"></script>
 </body>
 </html>

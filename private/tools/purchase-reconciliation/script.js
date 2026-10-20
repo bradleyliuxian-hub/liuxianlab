@@ -349,21 +349,12 @@ function handleUploaded(payload) {
   state.job = payload.job || null;
   state.inspection = payload.inspection || null;
   if (!state.job) return;
-  if (!state.inspection || !state.inspection.ok) {
-    els.detectPanel.hidden = false;
-    els.rulePanel.hidden = true;
-    els.detectSubtitle.textContent = '自动识别没有完成，请选择工作表与表头行后重新识别。';
-    setJobStatus(els.detectStatus, 'draft');
-    showError(els.detectError, state.inspection?.error || '无法自动识别表头，请手动指定。');
-    populateSheets();
-    els.headerRowInput.value = state.job.headerRow || 1;
-    clear(els.fieldGrid);
-    clear(els.sampleTable);
-    return;
-  }
+  els.uploadPanel.hidden = true;
+  els.resultPanel.hidden = true;
+  els.processPanel.hidden = true;
   renderInspection(state.inspection);
   els.detectPanel.hidden = false;
-  els.rulePanel.hidden = false;
+  els.rulePanel.hidden = !(state.inspection && state.inspection.ok);
   els.detectPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
@@ -385,13 +376,33 @@ function populateSheets() {
 }
 
 function renderInspection(inspection) {
-  state.inspection = inspection;
+  state.inspection = inspection || { ok: false, sheets: [], headers: [], sampleRows: [] };
   populateSheets();
-  els.headerRowInput.value = inspection.headerRow || 1;
-  els.detectedRows.textContent = fmtInt(inspection.dataRowCount);
-  const schema = inspection.fieldSchema || state.meta?.fieldSchema || [];
-  const mapping = inspection.mapping || {};
-  const missing = new Set(inspection.missing || []);
+  els.headerRowInput.value = state.inspection.headerRow || state.job?.headerRow || 1;
+  setJobStatus(els.detectStatus, 'draft');
+
+  if (!state.inspection.ok) {
+    els.detectedRows.textContent = '—';
+    els.detectedFields.textContent = '—';
+    clear(els.fieldGrid);
+    clear(els.fieldWarnings);
+    els.fieldWarnings.append(el('div', {
+      class: 'warning-line error',
+      text: state.inspection.error || '无法自动识别该文件，请选择工作表与表头行后重新识别。'
+    }));
+    clear(els.sampleTable);
+    els.sampleTable.append(el('p', { class: 'empty-state', text: '尚未识别到可预览的数据。' }));
+    els.sampleMeta.textContent = '—';
+    els.detectSubtitle.textContent = '需要手动指定工作表与表头行。';
+    els.startButton.disabled = true;
+    showError(els.detectError, '');
+    return;
+  }
+
+  els.detectedRows.textContent = fmtInt(state.inspection.dataRowCount);
+  const schema = state.inspection.fieldSchema || state.meta?.fieldSchema || [];
+  const mapping = state.inspection.mapping || {};
+  const missing = new Set(state.inspection.missing || []);
   els.detectedFields.textContent = `${schema.length - missing.size} / ${schema.length}`;
   showError(els.detectError, '');
 
@@ -1177,6 +1188,11 @@ async function loadHistory() {
         open.addEventListener('click', () => openHistoryJob(job));
         actions.append(open);
       }
+      if (job.status === 'draft') {
+        const resume = el('button', { type: 'button', text: '继续确认' });
+        resume.addEventListener('click', () => resumeDraftJob(job));
+        actions.append(resume);
+      }
       if (!['queued', 'running'].includes(job.status)) {
         const remove = el('button', { type: 'button', text: '删除', class: 'danger' });
         remove.addEventListener('click', () => deleteJob(job));
@@ -1187,6 +1203,51 @@ async function loadHistory() {
   } catch (error) {
     clear(els.historyList);
     els.historyList.append(el('p', { class: 'empty-note', text: `历史任务加载失败：${error.message}` }));
+  }
+}
+
+async function resumeDraftJob(job) {
+  stopTimers();
+  state.job = job;
+  state.inspection = null;
+  state.summary = null;
+  els.uploadPanel.hidden = true;
+  els.resultPanel.hidden = true;
+  els.processPanel.hidden = true;
+  els.detectPanel.hidden = false;
+  els.rulePanel.hidden = true;
+  els.detectSubtitle.textContent = '正在读取已上传的文件并识别字段…';
+  els.startButton.disabled = true;
+  setJobStatus(els.detectStatus, 'draft');
+  showError(els.detectError, '');
+  els.detectPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  try {
+    const payload = await api(`/${job.id}/inspect`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sheetName: job.sheetName || '',
+        headerRow: job.headerRow || 1
+      })
+    });
+    state.job = payload.job || job;
+    renderInspection(payload.inspection);
+    els.rulePanel.hidden = !(payload.inspection && payload.inspection.ok);
+  } catch (error) {
+    const inspection = error.payload && error.payload.inspection;
+    if (inspection) {
+      state.job = error.payload.job || job;
+      renderInspection(inspection);
+    } else {
+      renderInspection({
+        ok: false,
+        error: error.message,
+        sheets: [],
+        headers: [],
+        sampleRows: []
+      });
+    }
+    showError(els.detectError, error.message);
   }
 }
 

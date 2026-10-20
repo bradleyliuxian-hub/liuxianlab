@@ -11,6 +11,8 @@ Layout、Card、Table、Upload、Tabs、Drawer、Toast 与设计 token；FIFO �
 2. 上传后同步执行 Python inspection（OOXML 流式读取），返回工作表、表头行、
    数据行数、字段映射、缺失字段、3 行样本。
 3. 用户在页面确认工作表 / 表头行；`POST .../:id/inspect` 可重新识别。
+   上传成功后页面直接进入字段确认面板；历史任务中的 `draft` 草稿可通过
+   “继续确认”重新打开，无需重新上传。
 4. `POST .../:id/start` 再次校验表头与必要字段，写入 `request.json`，置为 `queued`
    并进入 Node 进程内队列。
 5. Node runner `claim` 行后 spawn `python -m services.purchase_reconciliation.worker`。

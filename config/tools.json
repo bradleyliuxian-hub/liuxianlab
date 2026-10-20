@@ -23,7 +23,7 @@
     "description": "上传 SAP 采购收货与退货/冲销明细，按供应商、采购订单、行项目、物料、单位与单价构建业务键，FIFO 自动对抵并输出可追溯的剩余净数据。",
     "category": "数据",
     "status": "ready",
-    "version": "v1.0.0",
+    "version": "v1.0.1",
     "icon": "FIFO",
     "keywords": [
       "excel",
