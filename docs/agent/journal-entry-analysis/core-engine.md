@@ -110,5 +110,5 @@ Fixtures are real `.xlsx` files generated from
 `services/journal_entry/tests/fixture_factory.py`.
 
 XLSX is supported via openpyxl. XLS is supported via xlrd 2.0.2
-(`services/journal_entry/requirements.txt`). No Office converter or subprocess
-is used. See `docs/agent/journal-entry-analysis/input-adapters.md`.
+(both pinned in the shared `workers/excel/requirements.txt`). No Office
+converter or subprocess is used. See `docs/agent/journal-entry-analysis/input-adapters.md`.

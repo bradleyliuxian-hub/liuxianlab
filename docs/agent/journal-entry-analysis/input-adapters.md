@@ -205,10 +205,10 @@ XLSX: SUPPORTED (openpyxl)
 XLS:  SUPPORTED (xlrd 2.0.2)
 ```
 
-Formal dependency:
+Formal dependency (shared Python environment):
 
 ```text
-services/journal_entry/requirements.txt
+workers/excel/requirements.txt
   openpyxl==3.1.5
   xlrd==2.0.2
 ```

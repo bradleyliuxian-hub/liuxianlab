@@ -36,6 +36,7 @@ Updated: 2026-10-20
   - 服务端分页（默认 50，最大 200）、搜索、排序、追溯 Drawer
 - 接入：`server.js`、`config/tools.json`、`private/script.js` IA（Excel → 专业分析）、README、PROJECT_INDEX、pre-push-check。
 - 文档：`docs/agent/purchase-reconciliation/web-integration.md`。
+- Python 依赖清单已归并到共享 `workers/excel/requirements.txt`（`openpyxl==3.1.5` + `xlrd==2.0.2`）；删除 `services/journal_entry/requirements.txt`，避免部署器把新增 per-service manifest 当作未评审依赖变更。
 - 本地数据库已应用 migration 001（`purchase_reconciliation_jobs`）。
 
 ## Verification

@@ -25,7 +25,7 @@ Set in `.env` (never commit, never print values):
 
 ## Preconditions for production
 
-- Python workers available: MinerU environment (`.mineru/`) + `workers/excel/requirements.txt` installed (the Excel standardizer shares the same `openpyxl` in `.venv`).
+- Python workers available: MinerU environment (`.mineru/`) + `workers/excel/requirements.txt` installed (shared `.venv`: `openpyxl==3.1.5`, `xlrd==2.0.2`; `xlrd` is required for journal-entry `.xls` uploads).
 - PostgreSQL reachable and migrations applied (`server/contracts/migrations/`).
 - `data/users.json` present with real users (admin-created).
 
