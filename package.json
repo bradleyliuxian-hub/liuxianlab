@@ -10,7 +10,7 @@
     "start": "NODE_ENV=production node server.js",
     "user:create": "node create-user.js",
     "user:list": "node list-users.js",
-    "test": "node --test tests/contracts/*.test.js tests/excel-decimal-check/*.test.js tests/excel-hardcode-check/*.test.js tests/excel-review/*.test.js",
+    "test": "node --test tests/contracts/*.test.js tests/excel-decimal-check/*.test.js tests/excel-hardcode-check/*.test.js tests/excel-review/*.test.js tests/journal-entry/*.test.js tests/purchase-reconciliation/*.test.js",
     "bench:hardcode": "node scripts/local/hardcode-benchmark.js"
   },
   "engines": {

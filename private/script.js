@@ -22,6 +22,7 @@ const EXCEL_GROUPS = [
   { key: 'all', label: '全部' },
   { key: 'general', label: '通用处理', accent: 'blue' },
   { key: 'check', label: '检查', accent: 'amber' },
+  { key: 'analysis', label: '专业分析', accent: 'teal' },
   { key: 'template', label: '模板分析', accent: 'teal' }
 ];
 
@@ -31,12 +32,14 @@ const TOOL_IA = {
   'excel-decimal-check': { fileType: 'excel', group: 'check' },
   'excel-hardcode-check': { fileType: 'excel', group: 'check' },
   'sales-income-analysis': { fileType: 'excel', group: 'template' },
+  'journal-entry-analysis': { fileType: 'excel', group: 'analysis' },
+  'purchase-reconciliation': { fileType: 'excel', group: 'analysis' },
   'contract-review': { fileType: 'pdf', group: 'pdf' }
 };
 
-const GROUP_LABEL = { general: '通用处理', check: '检查', template: '模板分析', pdf: 'PDF' };
-const GROUP_ACCENT = { general: 'blue', check: 'amber', template: 'teal', pdf: 'navy' };
-const GROUP_ORDER = { general: 0, check: 1, template: 2, pdf: 0 };
+const GROUP_LABEL = { general: '通用处理', check: '检查', analysis: '专业分析', template: '模板分析', pdf: 'PDF' };
+const GROUP_ACCENT = { general: 'blue', check: 'amber', analysis: 'teal', template: 'teal', pdf: 'navy' };
+const GROUP_ORDER = { general: 0, check: 1, analysis: 2, template: 3, pdf: 0 };
 
 const iaOf = (tool) => TOOL_IA[tool && tool.slug] || { fileType: 'other', group: '' };
 

@@ -374,6 +374,42 @@ if [ "$MODE" = full ] && [ "$FAILS" -eq 0 ]; then
     fi
   fi
 
+  if printf '%s\n' "$CHANGED" | grep -Eq '^(services/journal_entry/|server/journal-entry/|private/tools/journal-entry-analysis/|tests/journal-entry/)'; then
+    ran_any=1
+    printf '  [journal-entry] .venv/bin/python -m unittest discover -s services/journal_entry/tests -t .\n'
+    if [ -x .venv/bin/python ]; then
+      if .venv/bin/python -m unittest discover -s services/journal_entry/tests -t . ; then printf '  PASS\n';
+      else fail "journal_entry regression tests failed."; printf '  FAIL\n'; fi
+    else
+      warn ".venv/bin/python missing — journal_entry tests skipped."
+    fi
+    printf '  [journal-entry] node --test tests/journal-entry/*.test.js\n'
+    if have node; then
+      if node --test tests/journal-entry/*.test.js ; then printf '  PASS\n';
+      else fail "journal-entry Node tests failed."; printf '  FAIL\n'; fi
+    else
+      warn "node missing — journal-entry Node tests skipped."
+    fi
+  fi
+
+  if printf '%s\n' "$CHANGED" | grep -Eq '^(services/purchase_reconciliation/|server/purchase-reconciliation/|private/tools/purchase-reconciliation/|tests/purchase-reconciliation/)'; then
+    ran_any=1
+    printf '  [purchase-reconciliation] .venv/bin/python -m unittest discover -s services/purchase_reconciliation/tests -t .\n'
+    if [ -x .venv/bin/python ]; then
+      if .venv/bin/python -m unittest discover -s services/purchase_reconciliation/tests -t . ; then printf '  PASS\n';
+      else fail "purchase_reconciliation regression tests failed."; printf '  FAIL\n'; fi
+    else
+      warn ".venv/bin/python missing — purchase_reconciliation tests skipped."
+    fi
+    printf '  [purchase-reconciliation] node --test tests/purchase-reconciliation/*.test.js\n'
+    if have node; then
+      if node --test tests/purchase-reconciliation/*.test.js ; then printf '  PASS\n';
+      else fail "purchase-reconciliation Node tests failed."; printf '  FAIL\n'; fi
+    else
+      warn "node missing — purchase-reconciliation Node tests skipped."
+    fi
+  fi
+
   if printf '%s\n' "$CHANGED" | grep -Eq '^(services/excel_review/|server/excel-review/|private/tools/excel-review/)'; then
     ran_any=1
     printf '  [excel-review] .venv/bin/python -m unittest discover -s services/excel_review/tests\n'

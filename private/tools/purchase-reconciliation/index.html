@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Liuxian Lab 采购与退货对抵工具" />
+  <title>采购与退货对抵 · Liuxian Lab</title>
+  <link rel="stylesheet" href="/design-tokens.css?v=1.0.0" />
+  <link rel="stylesheet" href="/app/app-shell.css?v=1.0.0" />
+  <link rel="stylesheet" href="/app/tools/purchase-reconciliation/styles.css?v=1.0.0" />
+</head>
+<body>
+  <div class="page-shell">
+    <header class="tool-header">
+      <a class="back-link" href="/" aria-label="返回工作台">←</a>
+      <div class="tool-brand">
+        <span class="tool-mark">FIFO</span>
+        <div><strong>采购与退货对抵</strong><small>Liuxian Lab / Purchase Reconciliation</small></div>
+      </div>
+      <div class="header-actions">
+        <span class="version-chip" title="当前工具版本">v1.0.0</span>
+        <span class="private-badge"><i></i>私有处理</span>
+        <button class="ghost-button" id="newJobButton" type="button">新建对抵</button>
+      </div>
+    </header>
+
+    <main class="tool-main">
+      <section class="intro-section">
+        <p class="eyebrow">PURCHASE &amp; RETURNS RECONCILIATION</p>
+        <h1>把正负流水，按业务键与 FIFO 对干净。</h1>
+        <p>上传 SAP 采购收货、退货/冲销的正负数量明细，系统按供应商、采购订单、行项目、物料、单位与单价构建业务键，在同一业务键内按送货日期和原始行号执行 FIFO。原始文件不会被修改；每条结果保留原始行号，导出文件仅归属于当前登录用户。</p>
+      </section>
+
+      <section class="workspace-card" id="uploadPanel">
+        <div class="card-heading">
+          <div><span class="step-no">01</span><div><h2>上传原始数据</h2><p>支持 <code>.xlsx</code> / <code>.xlsm</code>；单个文件最大 50 MB。SAP 导出的百万空行不会拖慢解析。</p></div></div>
+          <span class="profile-chip">FIFO v1.0.0</span>
+        </div>
+
+        <label class="drop-zone" id="dropZone" for="fileInput">
+          <input id="fileInput" type="file" accept=".xlsx,.xlsm,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel.sheet.macroEnabled.12" hidden />
+          <span class="drop-icon">↥</span>
+          <strong>拖入 SAP 采购/退货明细，或点击选择文件</strong>
+          <small>只读取真实有数据的行 · 原文件不会被修改 · 上传后自动识别字段</small>
+        </label>
+
+        <div class="selected-file" id="selectedFile" hidden>
+          <span class="file-icon">XLS</span>
+          <div class="file-copy"><strong id="fileName"></strong><small id="fileMeta"></small></div>
+          <button class="icon-button" id="clearFileButton" type="button" aria-label="移除文件">×</button>
+        </div>
+
+        <div class="upload-progress" id="uploadProgress" hidden>
+          <div class="progress-track"><span id="uploadProgressBar"></span></div>
+          <small id="uploadProgressText">正在上传…</small>
+        </div>
+
+        <div class="upload-actions">
+          <p>文件保存在受保护的服务器存储目录；任务、结果与下载均需登录并通过归属校验。</p>
+          <button class="primary-button" id="uploadButton" type="button" disabled>上传并识别字段 <span>→</span></button>
+        </div>
+        <div class="error-box" id="uploadError" hidden></div>
+      </section>
+
+      <section class="workspace-card" id="detectPanel" hidden>
+        <div class="card-heading">
+          <div><span class="step-no">02</span><div><h2>确认数据与字段</h2><p id="detectSubtitle">系统已读取表头并匹配字段；请核对后开始对抵。</p></div></div>
+          <span class="job-status" id="detectStatus">DRAFT</span>
+        </div>
+
+        <div class="detect-toolbar">
+          <label class="field-control">
+            <span>工作表</span>
+            <select id="sheetSelect"></select>
+          </label>
+          <label class="field-control">
+            <span>表头行</span>
+            <div class="inline-control">
+              <input id="headerRowInput" type="number" min="1" step="1" inputmode="numeric" />
+              <button class="mini-button" id="redetectButton" type="button">重新识别</button>
+            </div>
+          </label>
+          <div class="detect-stat">
+            <span>检测到的数据行</span>
+            <strong id="detectedRows">—</strong>
+          </div>
+          <div class="detect-stat">
+            <span>字段完整度</span>
+            <strong id="detectedFields">—</strong>
+          </div>
+        </div>
+
+        <div class="field-grid" id="fieldGrid"></div>
+        <div class="field-warnings" id="fieldWarnings"></div>
+
+        <div class="sample-block">
+          <div class="sample-head"><strong>原始数据预览</strong><small id="sampleMeta">前 3 行</small></div>
+          <div class="table-wrap compact" id="sampleTable"></div>
+        </div>
+        <div class="error-box" id="detectError" hidden></div>
+      </section>
+
+      <section class="workspace-card" id="rulePanel" hidden>
+        <div class="card-heading">
+          <div><span class="step-no">03</span><div><h2>对抵规则</h2><p>同一业务键内正负数量互抵；方向只由数量正负决定，移动类型用于审计。</p></div></div>
+          <span class="profile-chip">DEFAULT</span>
+        </div>
+
+        <div class="rule-grid">
+          <div class="rule-block">
+            <h3>匹配字段 <small>必须全部一致</small></h3>
+            <div class="rule-chips" id="ruleMatchFields"></div>
+            <p>不跨采购订单、行项目、物料、单位或单价凑金额。</p>
+          </div>
+          <div class="rule-block">
+            <h3>排序与方式</h3>
+            <ol class="rule-order">
+              <li><span>1</span>送货日期 ASC</li>
+              <li><span>2</span>原始 Excel 行号 ASC</li>
+            </ol>
+            <div class="rule-method"><span>FIFO</span><small>先进先出；日期相同按原始行号稳定排序</small></div>
+          </div>
+          <div class="rule-block">
+            <h3>剩余与金额</h3>
+            <p>正向剩余 = 原数量 − 已对抵；负向剩余 = 原数量 + 已对抵。</p>
+            <p>剩余金额按原始金额同比例分摊，不重新猜测价格。</p>
+          </div>
+        </div>
+
+        <details class="advanced">
+          <summary>高级设置（V1 固定）</summary>
+          <p>V1 固定使用默认匹配键与 FIFO。后端已抽象 <code>ReconciliationConfig</code>，后续可扩展自定义匹配键、日期优先级、LIFO、金额与数量容差，而无需重写引擎。</p>
+        </details>
+
+        <div class="mapping-actions">
+          <p>处理约 35,000 行时通常需要数秒；关闭页面后任务仍会继续。</p>
+          <button class="primary-button" id="startButton" type="button">开始对抵 <span>→</span></button>
+        </div>
+        <div class="error-box" id="startError" hidden></div>
+      </section>
+
+      <section class="workspace-card process-card" id="processPanel" hidden>
+        <div class="card-heading">
+          <div><span class="step-no">04</span><div><h2>处理进度</h2><p id="processMessage">正在准备任务…</p></div></div>
+          <span class="job-status" id="jobStatus">QUEUED</span>
+        </div>
+        <div class="progress-track large"><span id="progressBar"></span></div>
+        <div class="progress-meta"><strong id="progressValue">0%</strong><span id="jobIdLabel"></span></div>
+        <div class="process-note" id="processNote">页面会自动刷新进度；关闭页面后任务仍会继续。</div>
+        <div class="error-box" id="processError" hidden></div>
+      </section>
+
+      <section class="workspace-card result-card" id="resultPanel" hidden>
+        <div class="card-heading">
+          <div><span class="step-no">05</span><div><h2>对抵结果</h2><p id="resultSubtitle">—</p></div></div>
+          <div class="result-actions">
+            <button class="ghost-button" id="refreshResultButton" type="button">刷新</button>
+            <a class="ghost-button" id="csvButton" href="#" hidden>下载 CSV ZIP</a>
+            <a class="ghost-button" id="xlsxButton" href="#" hidden>下载 XLSX</a>
+            <a class="primary-button small" id="primaryDownloadButton" href="#" hidden>下载结果 <span>↓</span></a>
+          </div>
+        </div>
+
+        <div class="summary-metrics" id="resultMetrics"></div>
+        <div class="conservation" id="conservationBanner" hidden></div>
+
+        <div class="result-tabs" role="tablist" aria-label="对抵结果分类">
+          <button class="result-tab active" data-tab="overview" type="button" role="tab" aria-selected="true">概览</button>
+          <button class="result-tab" data-tab="matched" type="button" role="tab" aria-selected="false">已对抵</button>
+          <button class="result-tab" data-tab="remaining" type="button" role="tab" aria-selected="false">剩余数据</button>
+          <button class="result-tab" data-tab="unmatched" type="button" role="tab" aria-selected="false">异常 / 未匹配</button>
+        </div>
+
+        <div class="tab-panel" id="overviewPanel">
+          <div class="chart-grid">
+            <div class="chart-card">
+              <div class="chart-head"><strong>金额结构</strong><small>原始 → 对抵 → 剩余</small></div>
+              <div class="bar-chart" id="amountBars"></div>
+            </div>
+            <div class="chart-card">
+              <div class="chart-head"><strong>移动类型</strong><small>数量与金额分布</small></div>
+              <div class="table-wrap compact" id="movementTable"></div>
+            </div>
+          </div>
+          <div class="overview-notes" id="overviewNotes"></div>
+        </div>
+
+        <div class="tab-panel" id="matchedPanel" hidden>
+          <div class="sub-tabs" role="tablist" aria-label="已对抵视角">
+            <button class="sub-tab active" data-subtab="segments" type="button" role="tab" aria-selected="true">FIFO 配对段</button>
+            <button class="sub-tab" data-subtab="records" type="button" role="tab" aria-selected="false">已对抵原始记录</button>
+          </div>
+          <div class="table-toolbar">
+            <input class="search-input" id="matchedSearch" type="search" placeholder="搜索行号、业务键、匹配ID…" />
+            <label class="toolbar-field"><span>排序</span><select id="matchedSort"></select></label>
+            <label class="toolbar-field"><span>每页</span><select id="pageSizeSelect"><option value="50">50</option><option value="100">100</option><option value="200">200</option></select></label>
+          </div>
+          <div class="table-wrap" id="matchedTable"></div>
+          <div class="pager" id="matchedPager"></div>
+        </div>
+
+        <div class="tab-panel" id="remainingPanel" hidden>
+          <div class="table-toolbar">
+            <input class="search-input" id="remainingSearch" type="search" placeholder="搜索供应商、订单、物料、行号…" />
+            <label class="toolbar-field"><span>方向</span><select id="remainingDirection"><option value="">全部</option><option value="正向">正向剩余</option><option value="负向">负向剩余</option></select></label>
+            <label class="toolbar-field"><span>排序</span><select id="remainingSort"></select></label>
+            <label class="toolbar-field"><span>每页</span><select id="remainingPageSize"><option value="50">50</option><option value="100">100</option><option value="200">200</option></select></label>
+          </div>
+          <div class="table-wrap" id="remainingTable"></div>
+          <div class="pager" id="remainingPager"></div>
+        </div>
+
+        <div class="tab-panel" id="unmatchedPanel" hidden>
+          <div class="unmatched-note"><strong>未匹配退货/冲销</strong><span id="unmatchedSummary">这些记录在业务键内没有足够的正向数量可对抵，需要业务人工核查；不一定是程序错误。</span></div>
+          <div class="table-toolbar">
+            <input class="search-input" id="unmatchedSearch" type="search" placeholder="搜索供应商、订单、物料、行号…" />
+            <label class="toolbar-field"><span>排序</span><select id="unmatchedSort"></select></label>
+          </div>
+          <div class="table-wrap" id="unmatchedTable"></div>
+          <div class="pager" id="unmatchedPager"></div>
+        </div>
+      </section>
+
+      <section class="workspace-card" id="historyPanel">
+        <div class="card-heading">
+          <div><span class="step-no">H</span><div><h2>历史任务</h2><p>仅显示当前登录用户的任务；完成结果可在有效期内重新打开。</p></div></div>
+          <button class="ghost-button" id="refreshHistoryButton" type="button">刷新</button>
+        </div>
+        <div class="history-list" id="historyList"><p class="empty-note">正在载入历史任务…</p></div>
+      </section>
+    </main>
+
+    <footer class="tool-footer"><span>Liuxian Lab</span><span>Purchase &amp; Returns Reconciliation v1.0.0</span></footer>
+  </div>
+
+  <div class="detail-backdrop" id="detailBackdrop" hidden></div>
+  <aside class="detail-drawer" id="detailDrawer" hidden aria-label="对抵详情" role="dialog" aria-modal="true">
+    <div class="detail-head">
+      <div><p class="eyebrow">RECONCILIATION DETAIL</p><h2 id="detailTitle">对抵详情</h2><p id="detailSubtitle"></p></div>
+      <button class="icon-button" id="closeDetailButton" type="button" aria-label="关闭详情">×</button>
+    </div>
+    <div class="detail-body" id="detailBody"></div>
+  </aside>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="/app/app-shell.js?v=1.0.0"></script>
+  <script src="/app/tools/purchase-reconciliation/script.js?v=1.0.0"></script>
+</body>
+</html>

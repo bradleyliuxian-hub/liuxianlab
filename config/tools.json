@@ -18,6 +18,28 @@
     ]
   },
   {
+    "slug": "purchase-reconciliation",
+    "name": "采购与退货对抵",
+    "description": "上传 SAP 采购收货与退货/冲销明细，按供应商、采购订单、行项目、物料、单位与单价构建业务键，FIFO 自动对抵并输出可追溯的剩余净数据。",
+    "category": "数据",
+    "status": "ready",
+    "version": "v1.0.0",
+    "icon": "FIFO",
+    "keywords": [
+      "excel",
+      "xlsx",
+      "采购",
+      "收货",
+      "退货",
+      "冲销",
+      "对抵",
+      "FIFO",
+      "SAP",
+      "核销",
+      "reconciliation"
+    ]
+  },
+  {
     "slug": "sales-income-analysis",
     "name": "销售 / 收入分析",
     "description": "分析销售或收入明细，并输出抵消明细。",
@@ -52,6 +74,26 @@
       "风险",
       "contract",
       "legal"
+    ]
+  },
+  {
+    "slug": "journal-entry-analysis",
+    "name": "序时账分析",
+    "description": "上传序时账，确认字段映射后异步完成清洗、凭证汇总、业务分类、对方科目与异常凭证分析，并导出 Excel 报告。",
+    "category": "数据",
+    "status": "ready",
+    "version": "v1.0.0",
+    "icon": "JE",
+    "keywords": [
+      "序时账",
+      "日记账",
+      "journal",
+      "凭证",
+      "分录",
+      "业务分类",
+      "对方科目",
+      "异常凭证",
+      "审计"
     ]
   },
   {

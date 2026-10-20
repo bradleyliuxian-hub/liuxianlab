@@ -49,6 +49,8 @@ private/tools/<slug>/
 - `sales-income-analysis` — 销售收入分析（`server/sales-income/`、`workers/excel/sales_income/`）
 - `contract-review` — 合同数字化审阅（Node 路由 + PostgreSQL + Python worker：`server/contracts/`、`services/contract_review/`、迁移在 `server/contracts/migrations/`）
 - `excel-review` — Excel 复核意见（逻辑在 `services/excel_review/`、`server/excel-review/`）
+- `journal-entry-analysis` — 序时账分析（Node 路由 + PostgreSQL + Python worker：`server/journal-entry/`、`services/journal_entry/`，迁移在 `server/journal-entry/migrations/`）
+- `purchase-reconciliation` — 采购与退货对抵（Node 路由 + PostgreSQL + Python worker：`server/purchase-reconciliation/`、`services/purchase_reconciliation/`，迁移在 `server/purchase-reconciliation/migrations/`）
 - `excel-decimal-check` — Excel 小数检查（纯浏览器本地处理，`private/tools/excel-decimal-check/`）
 
 ## 断点续连（Checkpoint / Resume）
@@ -65,9 +67,15 @@ liuxianlab-online/
 ├── server/                   # 各工具的 Node 路由与持久化
 │   ├── contracts/            #   合同审阅（PostgreSQL + PDF 解析）
 │   ├── excel-standardizer/   #   Excel 标准化
+│   ├── excel-review/         #   Excel 批注整理
+│   ├── journal-entry/        #   序时账分析（PostgreSQL）
+│   ├── purchase-reconciliation/ #   采购与退货对抵（PostgreSQL）
 │   └── sales-income/         #   销售收入分析
 ├── services/                 # Python 服务 / worker
 │   ├── contract_review/      #   合同审阅
+│   ├── excel_review/         #   Excel 批注整理
+│   ├── journal_entry/        #   序时账分析
+│   ├── purchase_reconciliation/ #   采购与退货对抵
 │   └── excel_standardizer/   #   Excel 标准化
 ├── workers/excel/            # 销售分析 Python worker（sales_income/）
 ├── private/                  # 需登录的工作台与工具页面

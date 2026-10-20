@@ -16,6 +16,8 @@ const { createSalesIncomeRunRouter } = require('./server/sales-income/run-routes
 const { createContractRouter } = require('./server/contracts/routes');
 const { createExcelReviewRouter } = require('./server/excel-review/routes');
 const { createExcelReviewControlLogRouter } = require('./server/excel-review/control-log-routes');
+const { createJournalEntryRouter } = require('./server/journal-entry/routes');
+const { createPurchaseReconciliationRouter } = require('./server/purchase-reconciliation/routes');
 require('dotenv').config();
 
 const app = express();
@@ -351,6 +353,18 @@ app.use('/api/sales-income', requireAuth, sameOriginForStateChange, createSalesI
  * API. Files stay private under storage/excel-reviews/<id>/.
  */
 app.use('/api/excel-reviews', requireAuth, sameOriginForStateChange, createExcelReviewRouter({ root: ROOT }));
+
+/*
+ * 序时账分析：上传 -> 字段映射 -> 异步分析 -> 结果 / Excel 导出。
+ * 文件与结果保存在 storage/journal-entry/<uuid>/，接口按 owner 隔离。
+ */
+app.use('/api/journal-entry-analyses', requireAuth, sameOriginForStateChange, createJournalEntryRouter({ root: ROOT, requireAuth, sameOriginForStateChange }));
+
+/*
+ * 采购与退货对抵：SAP 正负数据按业务键 + FIFO 对抵，Dashboard + 分页结果 + 下载。
+ * 源文件、结果与导出保存在 storage/purchase-reconciliation/<uuid>/，按 owner 隔离。
+ */
+app.use('/api/purchase-reconciliations', requireAuth, sameOriginForStateChange, createPurchaseReconciliationRouter({ root: ROOT }));
 
 /*
  * Excel Review Control Log (V1.4): aggregates several excel-review jobs into

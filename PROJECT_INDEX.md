@@ -66,6 +66,17 @@ Frontend tools are Vanilla HTML/CSS/JS. Do not introduce React/Vue/Tailwind with
 | Config | `config/excel_profiles/default.json` |
 | Docs | `docs/agent/excel-and-sales.md` |
 
+## 采购与退货对抵 （purchase-reconciliation / PostgreSQL）
+
+| Item | Location |
+|---|---|
+| Node | `server/purchase-reconciliation/` (routes, repository, job-factory, inspection-runner, worker-runner, result-store) |
+| Python | `services/purchase_reconciliation/` (schema, column_mapper, excel_reader, engine, exporters, inspection, worker) |
+| Frontend | `private/tools/purchase-reconciliation/` |
+| Migration | `server/purchase-reconciliation/migrations/001_purchase_reconciliation.sql` |
+| Docs | `docs/agent/purchase-reconciliation/web-integration.md` |
+| Tests | `tests/purchase-reconciliation/*`, `services/purchase_reconciliation/tests/*` |
+
 ## 合同审阅 （contract-review / PostgreSQL）
 
 | Item | Location |
