@@ -20,14 +20,15 @@ Specific rows must appear before generic rows. Existing shared/special environme
 
 ## Behavior
 
-- `--dry-run` only reports changed manifests and the resolved environment. It does not create a venv or install packages.
-- A real deployment asks `[y/N]` before proceeding when Python dependency manifests changed.
-- If unchanged manifests are found to need packages, the deployer asks before installation.
+- The target release is extracted to a temporary tree and checked **before backup or code switch**. `--dry-run` runs this full check and reports missing/out-of-spec environments, but never installs or creates a venv.
+- A real deployment prompts `[y/N]` before installing missing packages; cancelling leaves production code untouched.
+- After approval and a successful backup, installation runs **before** the code switch. A post-switch `check` verifies the installed environments again.
 - `--yes-python-deps` is an explicit opt-in for non-interactive deployments; use it only when unattended installation is approved.
-- The manager uses pip's dry-run/report mode to detect missing or out-of-constraint packages before installing. It runs `pip check` and registered smoke imports after installation.
+- The manager uses pip's dry-run/report mode; for older pip it falls back to a read-only PEP 508 check using pip's vendored packaging library. It runs registered smoke imports after installation.
 - Deleting a manifest does not automatically uninstall packages from the environment.
-- Unknown Python manifest formats (`pyproject.toml`, `poetry.lock`, `uv.lock`, `Pipfile`) are detected but remain fail-closed until a corresponding package-manager handler is implemented. Do not silently route these formats through `pip install -r`.
-- Dependency installation can modify a Python environment even if a later deployment stage rolls code back. The manager isolates new module dependencies by default, but shared environments should only be mapped intentionally.
+- Unknown Python manifest formats (`pyproject.toml`, `poetry.lock`, `uv.lock`, `Pipfile`) and unregistered `requirements*.txt` paths fail closed. There is no guessed `.<module>-venv` fallback; add an explicit registry row.
+- `workers/*/requirements*.txt` maps to the shared `.venv`.
+- Dependency installation can modify a Python environment even if a later deployment stage rolls code back. The manager isolates new module dependencies only when explicitly mapped, and shared environments should only be mapped intentionally.
 
 ## Test
 

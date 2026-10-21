@@ -17,11 +17,12 @@ approval after the preflight.
    且无正在运行的 parser/worker 进程。等待人工审核的项不阻塞。
 4. 发布身份 —— 预期的 annotated tag、从当前 commit 可 fast-forward、
    可从 `origin/main` 到达。
-5. 依赖检查 —— Node 依赖段变更需要匹配的 lockfile 变更；Python
-   `requirements*.txt` 通过 `scripts/local/python-dependency-manager.sh check`
-   按 registry 检查，缺失包需显式批准后安装；`pyproject.toml` / Poetry / uv /
-   Pipenv 仍 fail-closed，必须人工评审。首次应用新 deploy 脚本前备份生产脚本，
-   安装/回滚都在测试环境验证；代码回滚不会卸载 Python 包。
+5. 依赖检查 —— Node 依赖段变更需要匹配的 lockfile 变更；部署器会先提取目标
+   release，在备份/切换代码之前通过
+   `scripts/local/python-dependency-manager.sh check` 按 registry 检查完整目标
+   `requirements*.txt` 与已登记环境。dry-run 只检查/展示计划，不安装、不建 venv。
+   缺失包需显式批准后，在备份之后、代码切换之前安装并复检；未登记清单/环境
+   fail-closed。首次应用新 deploy 脚本前备份生产脚本；代码回滚不会卸载 Python 包。
 6. 迁移检查 —— 仅新增的 migration 文件；无历史 migration 被修改/重命名/删除；
    破坏性 SQL 停下。
 7. 存在备份点。

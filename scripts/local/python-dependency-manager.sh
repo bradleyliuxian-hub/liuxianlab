@@ -8,8 +8,9 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 
 ROOT="${LIUXIANLAB_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
+ENV_ROOT="${LIUXIANLAB_ENV_ROOT:-$ROOT}"
 CONFIG_REL="scripts/python-environments.tsv"
-CONFIG="$ROOT/$CONFIG_REL"
+CONFIG="${LIUXIANLAB_CONFIG:-$ROOT/$CONFIG_REL}"
 MODE="${1:-}"
 
 usage() {
@@ -44,21 +45,9 @@ resolve_env() {
     done < "$config_file"
   fi
 
-  if [[ "$manifest" == requirements*.txt || "$manifest" == requirements/* ]]; then
-    printf '.venv\n'
-    return 0
-  fi
-
-  if [[ "$manifest" =~ ^services/([^/]+)/requirements[^/]*\.txt$ ]]; then
-    local slug="${BASH_REMATCH[1]//_/-}"
-    printf '.%s-venv\n' "$slug"
-    return 0
-  fi
-
-  local parent slug
-  parent="$(dirname "$manifest")"
-  slug="$(basename "$parent" | tr '_' '-')"
-  printf '.%s-venv\n' "$slug"
+  echo "ERROR: no Python environment mapping for manifest: $manifest" >&2
+  echo "       Add an explicit row to scripts/python-environments.tsv before deploying." >&2
+  return 1
 }
 
 resolve_smoke_import() {
@@ -90,9 +79,15 @@ list_changed_manifests() {
 }
 
 list_tracked_manifests() {
-  git -C "$ROOT" ls-tree -r --name-only HEAD | while IFS= read -r path; do
-    if is_requirements_manifest "$path"; then printf '%s\n' "$path"; fi
-  done
+  if git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    git -C "$ROOT" ls-tree -r --name-only HEAD | while IFS= read -r path; do
+      if is_requirements_manifest "$path"; then printf '%s\n' "$path"; fi
+    done
+  else
+    # Deploy-time target tree extracted with git archive (no .git).
+    find "$ROOT" -type d \( -name node_modules -o -name .venv -o -name '*-venv' -o -name .git -o -name .mineru \) -prune -o \
+      -type f -name 'requirements*.txt' -print | sed "s#^$ROOT/##" | sort
+  fi
 }
 
 run_import_check() {
@@ -172,7 +167,7 @@ PY
 # actual resolver/manifest error. No packages are installed in check mode.
 check_requirements() {
   local manifest="$1" venv="$2" python_bin report output
-  python_bin="$ROOT/$venv/bin/python"
+  python_bin="$ENV_ROOT/$venv/bin/python"
   if [[ ! -x "$python_bin" ]]; then
     echo "NEEDS_INSTALL|$manifest|$venv|virtual environment is missing"
     return 10
@@ -233,7 +228,9 @@ check_all() {
   local manifest env smoke installer rc needs=0
   while IFS= read -r manifest; do
     [[ -z "$manifest" ]] && continue
-    env="$(resolve_env "$manifest")"
+    if ! env="$(resolve_env "$manifest")"; then
+      return 1
+    fi
     smoke="$(resolve_smoke_import "$manifest" || true)"
     if check_requirements "$manifest" "$env"; then
       if [[ -x "$ROOT/$env/bin/python" ]] && [[ -n "$smoke" && "$smoke" != "-" ]]; then
@@ -255,7 +252,7 @@ check_all() {
     while IFS=$'\t' read -r pattern env mode smoke installer; do
       [[ "${pattern:-}" == "@always" ]] || continue
       [[ -n "${env:-}" && -n "${installer:-}" && "$installer" != "-" ]] || continue
-      if [[ ! -x "$ROOT/$env/bin/python" ]] || ! run_import_check "$ROOT/$env/bin/python" "$smoke" 2>/dev/null; then
+      if [[ ! -x "$ENV_ROOT/$env/bin/python" ]] || ! run_import_check "$ENV_ROOT/$env/bin/python" "$smoke" 2>/dev/null; then
         echo "NEEDS_INSTALL|@always|$env|registered environment check failed"
         needs=1
       fi
@@ -273,19 +270,21 @@ install_all() {
     while IFS=$'\t' read -r pattern env mode smoke installer; do
       [[ "${pattern:-}" == "@always" ]] || continue
       [[ -n "${env:-}" && -n "${installer:-}" && "$installer" != "-" ]] || continue
-      if [[ ! -x "$ROOT/$env/bin/python" ]] || ! run_import_check "$ROOT/$env/bin/python" "$smoke" 2>/dev/null; then
+      if [[ ! -x "$ENV_ROOT/$env/bin/python" ]] || ! run_import_check "$ENV_ROOT/$env/bin/python" "$smoke" 2>/dev/null; then
         [[ -f "$ROOT/$installer" ]] || { echo "ERROR: registered installer missing: $installer" >&2; return 1; }
         echo "Running registered installer for $env: $installer"
-        (cd "$ROOT" && bash "$installer")
+        (cd "$ROOT" && EQUITY_VENV_DIR="$ENV_ROOT/$env" bash "$ROOT/$installer")
       fi
     done < "$CONFIG"
   fi
 
   while IFS= read -r manifest; do
     [[ -z "$manifest" ]] && continue
-    env="$(resolve_env "$manifest")"
+    if ! env="$(resolve_env "$manifest")"; then
+      return 1
+    fi
     smoke="$(resolve_smoke_import "$manifest" || true)"
-    python_bin="$ROOT/$env/bin/python"
+    python_bin="$ENV_ROOT/$env/bin/python"
     status=0
     check_requirements "$manifest" "$env" >/dev/null || status=$?
     if [[ "$status" -eq 0 ]]; then
@@ -299,7 +298,7 @@ install_all() {
     [[ "$env" != /* && "$env" != *..* ]] || { echo "ERROR: unsafe venv path in config: $env" >&2; return 1; }
     if [[ ! -x "$python_bin" ]]; then
       echo "Creating Python environment: $env"
-      python3 -m venv "$ROOT/$env"
+      python3 -m venv "$ENV_ROOT/$env"
     fi
     [[ -x "$python_bin" ]] || { echo "ERROR: venv creation failed: $env" >&2; return 1; }
     echo "Installing $manifest into $env"
@@ -337,7 +336,11 @@ case "$MODE" in
       fi
       case "$(basename "$manifest")" in
         requirements*.txt)
-          env="$(resolve_env "$manifest" "$TARGET_CONFIG")"
+          if ! env="$(resolve_env "$manifest" "$TARGET_CONFIG")"; then
+            echo "  UNSUPPORTED AUTOMATIC INSTALLER: $manifest (no environment mapping)"
+            unsupported=1
+            continue
+          fi
           echo "  $manifest -> $env"
           ;;
         *)

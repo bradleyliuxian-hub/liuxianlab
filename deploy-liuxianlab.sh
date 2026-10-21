@@ -44,6 +44,7 @@ TAG="${1:-}"
 DRY_RUN=0
 AUTO_CONFIRM_PY_DEPS=0
 PYTHON_DEPS_APPROVED=0
+PYTHON_DEPS_NEEDED=0
 CODE_SWITCHED=0
 
 for option in "${@:2}"; do
@@ -101,7 +102,7 @@ require_cmd flock
 exec 9>/tmp/liuxianlab-deploy.lock
 flock -n 9 || die "another Liuxian Lab deployment is already running"
 
-for cmd in git curl psql node npm python3 pm2 sha256sum grep awk sed find; do
+for cmd in git curl psql node npm python3 pm2 sha256sum grep awk sed find tar; do
   require_cmd "$cmd"
 done
 
@@ -298,7 +299,16 @@ else
 fi
 
 TMP_DEP_DIR="$(mktemp -d)"
-trap 'rm -rf "$TMP_DEP_DIR"' EXIT
+TARGET_TREE="$(mktemp -d)"
+trap 'rm -rf "$TMP_DEP_DIR" "$TARGET_TREE"' EXIT
+
+if ! git archive "$TARGET_COMMIT" | tar -x -C "$TARGET_TREE"; then
+  die "could not extract target release for Python dependency preflight"
+fi
+TARGET_MANAGER="$TARGET_TREE/scripts/local/python-dependency-manager.sh"
+TARGET_CONFIG="$TARGET_TREE/scripts/python-environments.tsv"
+[[ -f "$TARGET_MANAGER" ]] || die "target release does not include scripts/local/python-dependency-manager.sh"
+[[ -f "$TARGET_CONFIG" ]] || die "target release does not include scripts/python-environments.tsv"
 
 git show "$OLD_COMMIT:package.json" > "$TMP_DEP_DIR/old-package.json" 2>/dev/null || echo '{}' > "$TMP_DEP_DIR/old-package.json"
 git show "$TARGET_COMMIT:package.json" > "$TMP_DEP_DIR/new-package.json" 2>/dev/null || echo '{}' > "$TMP_DEP_DIR/new-package.json"
@@ -332,39 +342,47 @@ PY_DEP_CHANGES="$(
 if [[ -n "$PY_DEP_CHANGES" ]]; then
   echo "Python dependency manifest changes:"
   printf '%s\n' "$PY_DEP_CHANGES"
-
-  # The manager is part of the target release. Extract it for a read-only plan
-  # before switching production code.
-  git cat-file -e "$TARGET_COMMIT:scripts/python-environments.tsv" 2>/dev/null \
-    || die "target release changes Python dependency manifests but does not include scripts/python-environments.tsv"
-  git show "$TARGET_COMMIT:scripts/local/python-dependency-manager.sh" \
-    > "$TMP_DEP_DIR/python-dependency-manager.sh" 2>/dev/null \
-    || die "target release changes Python dependency manifests but does not include scripts/local/python-dependency-manager.sh"
-  chmod 700 "$TMP_DEP_DIR/python-dependency-manager.sh"
-
-  if ! LIUXIANLAB_ROOT="$APP" bash "$TMP_DEP_DIR/python-dependency-manager.sh" plan "$OLD_COMMIT" "$TARGET_COMMIT"; then
+  if ! LIUXIANLAB_ROOT="$APP" LIUXIANLAB_CONFIG="$TARGET_CONFIG" \
+    bash "$TARGET_MANAGER" plan "$OLD_COMMIT" "$TARGET_COMMIT"; then
     die "Python dependency change is not supported by the generic dependency manager; add an explicit installer mapping before deployment"
   fi
+else
+  echo "No Python dependency manifest changes in this release."
+fi
 
-  if [[ "$DRY_RUN" -eq 0 ]]; then
+# Full target-release dependency preflight. This runs before backup, code
+# switch, migrations, or service restart, and never installs.
+PY_PRE_STATUS=0
+LIUXIANLAB_ROOT="$TARGET_TREE" \
+LIUXIANLAB_ENV_ROOT="$APP" \
+LIUXIANLAB_CONFIG="$TARGET_CONFIG" \
+bash "$TARGET_MANAGER" check || PY_PRE_STATUS=$?
+
+if [[ "$PY_PRE_STATUS" -eq 10 ]]; then
+  PYTHON_DEPS_NEEDED=1
+  echo "Python dependency preflight: one or more registered environments are missing packages or are out of specification."
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    echo "DRY-RUN: would install the target release requirements into the registered environments."
+    echo "DRY-RUN: no Python package was installed; no virtual environment was created."
+  else
     if [[ "$AUTO_CONFIRM_PY_DEPS" -eq 1 ]]; then
       PYTHON_DEPS_APPROVED=1
       echo "Python dependency installation approved by --yes-python-deps."
     else
-      [[ -t 0 ]] || die "Python dependencies changed but no interactive terminal is available. Re-run interactively or explicitly pass --yes-python-deps."
+      [[ -t 0 ]] || die "Python packages are missing/out of specification but no interactive terminal is available. Re-run interactively or explicitly pass --yes-python-deps."
       echo
-      echo "The deployment will check all registered Python environments and install missing/out-of-spec packages."
-      read -r -p "Proceed with Python dependency installation if needed? [y/N] " answer
+      echo "The deployment will install missing/out-of-spec packages before switching production code."
+      read -r -p "Proceed with Python dependency installation? [y/N] " answer
       case "$answer" in
         y|Y|yes|YES) PYTHON_DEPS_APPROVED=1 ;;
         *) die "deployment cancelled by user; no production code has been changed" ;;
       esac
     fi
-  else
-    echo "DRY-RUN: Python dependencies will not be installed."
   fi
+elif [[ "$PY_PRE_STATUS" -eq 0 ]]; then
+  echo "Python dependency preflight passed: target release requirements are already satisfied."
 else
-  echo "No Python dependency manifest changes in this release."
+  die "Python dependency preflight failed; see diagnostics above"
 fi
 
 # ---------------------------------------------------------------------------
@@ -501,6 +519,31 @@ on_error() {
 trap 'on_error $LINENO' ERR
 
 # ---------------------------------------------------------------------------
+# Python dependency installation: after backup, before code switch.
+# Code rollback cannot undo packages installed into Python environments.
+# ---------------------------------------------------------------------------
+if [[ "$PYTHON_DEPS_NEEDED" -eq 1 ]]; then
+  section "6A. PYTHON DEPENDENCIES (PRE-SWITCH INSTALL)"
+  [[ "$PYTHON_DEPS_APPROVED" -eq 1 ]] \
+    || die "Python dependency installation was required but not approved; production code has not been changed"
+  echo "Installing target release requirements into registered Python environments..."
+  LIUXIANLAB_ROOT="$TARGET_TREE" \
+  LIUXIANLAB_ENV_ROOT="$APP" \
+  LIUXIANLAB_CONFIG="$TARGET_CONFIG" \
+  bash "$TARGET_MANAGER" install \
+    || die "Python dependency installation failed before code switch; production code has not been changed"
+  LIUXIANLAB_ROOT="$TARGET_TREE" \
+  LIUXIANLAB_ENV_ROOT="$APP" \
+  LIUXIANLAB_CONFIG="$TARGET_CONFIG" \
+  bash "$TARGET_MANAGER" check \
+    || die "Python dependency verification failed after installation; production code has not been changed"
+  echo "Python dependencies installed and verified before code switch."
+  echo "NOTE: code rollback will not uninstall packages already installed into Python environments."
+else
+  echo "Python dependencies already satisfied; no installation before code switch."
+fi
+
+# ---------------------------------------------------------------------------
 # Switch code to the exact release tag.
 # ---------------------------------------------------------------------------
 section "7. SWITCH CODE"
@@ -532,36 +575,19 @@ fi
 # - Installs only when missing/out-of-spec packages are detected and the user
 #   has approved the operation.
 # ---------------------------------------------------------------------------
-section "8A. PYTHON DEPENDENCIES"
+section "8A. PYTHON DEPENDENCIES (POST-SWITCH VERIFY)"
 
 [[ -x scripts/local/python-dependency-manager.sh ]] \
   || die "generic Python dependency manager missing from target release"
 [[ -f scripts/python-environments.tsv ]] \
   || die "Python environment registry missing from target release"
 
-PY_CHECK_STATUS=0
-bash scripts/local/python-dependency-manager.sh check || PY_CHECK_STATUS=$?
-
-if [[ "$PY_CHECK_STATUS" -eq 10 ]]; then
-  if [[ "$PYTHON_DEPS_APPROVED" -ne 1 ]]; then
-    if [[ "$AUTO_CONFIRM_PY_DEPS" -eq 1 ]]; then
-      PYTHON_DEPS_APPROVED=1
-    else
-      [[ -t 0 ]] || die "Python packages are missing/out of specification but no interactive terminal is available. Re-run interactively or explicitly pass --yes-python-deps."
-      echo
-      read -r -p "Missing Python packages were detected. Install them and continue? [y/N] " answer
-      case "$answer" in
-        y|Y|yes|YES) PYTHON_DEPS_APPROVED=1 ;;
-        *) die "deployment cancelled by user because Python dependencies are missing" ;;
-      esac
-    fi
-  fi
-  bash scripts/local/python-dependency-manager.sh install
-  bash scripts/local/python-dependency-manager.sh check \
-    || die "Python dependency verification still fails after installation"
-elif [[ "$PY_CHECK_STATUS" -ne 0 ]]; then
-  die "Python dependency preflight failed; see diagnostics above"
+if ! bash scripts/local/python-dependency-manager.sh check; then
+  echo "Python dependencies changed or are invalid after code switch." >&2
+  echo "Rolling back code will NOT uninstall packages already installed in Python environments." >&2
+  die "Python dependency verification failed after code switch"
 fi
+echo "Python dependency verification passed after code switch."
 
 # ---------------------------------------------------------------------------
 # Syntax validation.
