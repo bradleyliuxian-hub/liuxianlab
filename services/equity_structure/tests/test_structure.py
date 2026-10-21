@@ -56,6 +56,20 @@ class StructureTest(unittest.TestCase):
         self.assertEqual(result.edges, [])
         self.assertTrue(any("注销" in warning for warning in result.warnings))
 
+
+    def test_validate_result_accepts_institution_and_edge_client_id(self):
+        result = validate_result({
+            "nodes": [
+                {"id": "n1", "name": "某机构", "entity_type": "institution"},
+                {"id": "n2", "name": "核心公司"},
+            ],
+            "edges": [
+                {"source": "n1", "target": "n2", "percentage": "49.5%", "__id": "e_stable"}
+            ],
+        })
+        self.assertEqual(result.nodes[0].entity_type, "institution")
+        self.assertEqual(result.edges[0].client_id, "e_stable")
+
     def test_validate_result_rejects_duplicate_ids(self):
         with self.assertRaises(SchemaError):
             validate_result({

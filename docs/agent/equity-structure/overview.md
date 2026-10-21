@@ -108,12 +108,17 @@ similarity），并在页面展示。
 - 比例拖动：只更新 `labels[edgeId]`，`manual=true`
 - 保存：`PUT /api/equity-structures/:id/layout` → `manual-layout.json`
 - 刷新：`GET /layout` 合并到自动布局
-- Undo/Redo：pointerup 时记录一次快照，栈上限 50
+- Undo/Redo：记录业务数据 + 布局 + 样式全量快照；pointerup 时只记录一次，栈上限 50
 - SVG/PNG：使用当前编辑器布局；PDF：服务端读取 `manual-layout.json`
 - 导出模式不渲染选择框、resize handles、辅助线
-- 布局状态示例：`{nodes:{id:{x,y,width,height,manualPosition,locked}}, labels:{edgeId:{x,y,manual}}, buses:{shareholder:{y,manual},direct:{y,manual}}, canvas:{width,height}}`
+- 布局状态示例：`{nodes:{id:{x,y,width,height,manualPosition,locked}}, labels:{edgeId:{x,y,manual}}, buses:{shareholder:{y,manual},direct:{y,manual}}, styles:{nodes,edges,labels,canvas,theme}, defaultTheme, canvas:{width,height,background}}`
 - 已实现：节点/比例拖拽、连线跟随、保存/恢复、Undo/Redo、Zoom/Pan、Fit、锁定、Shift 多选、顶部/居中对齐、水平均分、四角 resize、键盘微调
-- 尚未实现：总线直接拖动、属性侧栏数值编辑、框选、手工 bend point、多人并发编辑锁
+- v1.1.0 新增：添加公司/个人/基金/机构/其他节点；添加/删除连线；添加/隐藏/拖动比例；属性面板编辑坐标、尺寸、颜色、边框、圆角、字体、线型/箭头；画布背景；审计米金/简约灰白/蓝灰商务/自定义主题；Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y / Delete / Esc；业务数据、布局与样式分离保存
+- v1.1.1 新增：导出前保存队列 `flushSaves`，串行等待旧保存并校验快照；PDF/Excel 不会读取未完成的旧状态。
+- v1.2.0 新增：“＋关联公司”一次创建上游股东/下游被投资公司 + edge + 比例；支持关联对象选择、实体类型、0–100% 高精度比例校验；一次 Undo/Redo 恢复整套关系。
+- v1.2.1：标题基线上移，内容顶部固定留白，背景/画布 bounds 随内容自动扩展；上游/下游新增后保持顶部和底部呼吸感；旧 manual layout 自动整体下移保护标题。
+- v1.2.2：修复一级股东继续添加上游时层级不增长的问题；level=1 目标自动 rebase 全图层级，人工布局整体下移一层。
+- 尚未实现：总线直接拖动、框选、手工 bend point、多人并发编辑锁、多人冲突合并
 
 ## PNG 后端导出（CairoSVG）
 
@@ -171,5 +176,6 @@ similarity），并在页面展示。
 - PDF 优先输出股权图（A3 横向自动缩放），超宽图会缩小；完整数据请用 Excel。
 - PDF 中文字体使用系统 CJK 字体（Noto/WQY/微软雅黑/Arial Unicode）；若服务器没有
   可用字体，中文可能无法正确显示，需要在部署机上安装字体。
+- v1.2.2 的页面交互（添加/删除/一键关联公司/连线/比例/属性面板/主题）已完成代码实现，并通过 headless Chrome + mock API 冒烟；真实登录浏览器与人工截图验收仍待执行。
 - 注销状态依赖节点内/邻近文本命中“注销/吊销/撤销”，不会做语义推断。
 - 人工修改默认保存在 `manual-result.json`；删除任务会一并删除。

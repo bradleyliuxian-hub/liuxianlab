@@ -15,7 +15,7 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas
 
-from .layout import Layout, PositionedNode, build_routes, edge_points, layout_structure, percentage_label
+from .layout import Layout, PositionedNode, TITLE_BASELINE, build_routes, edge_points, layout_structure, percentage_label
 from .schemas import StructureResult
 
 NODE_FILL = "#FFF8EE"
@@ -26,33 +26,60 @@ TEXT_COLOR = "#17191C"
 LINE_COLOR = "#777D83"
 
 
+def _hex_rgb(value: str, fallback: str = "#777D83") -> tuple[float, float, float]:
+    text = str(value or "").strip().lstrip("#")
+    if len(text) != 6:
+        text = str(fallback or "#777D83").lstrip("#")
+    try:
+        return tuple(int(text[index:index + 2], 16) / 255 for index in (0, 2, 4))  # type: ignore[return-value]
+    except ValueError:
+        return (0.47, 0.49, 0.51)
+
+
 # --------------------------------------------------------------------------- SVG
 
 
 def build_svg(result: StructureResult, layout_overrides: dict | None = None) -> str:
     layout = layout_structure(result, layout_overrides)
     positions = layout.nodes
+    styles = (layout_overrides or {}).get("styles") if isinstance((layout_overrides or {}).get("styles"), dict) else {}
+    node_styles = styles.get("nodes") if isinstance(styles.get("nodes"), dict) else {}
+    edge_styles = styles.get("edges") if isinstance(styles.get("edges"), dict) else {}
+    label_styles = styles.get("labels") if isinstance(styles.get("labels"), dict) else {}
+    canvas_style = styles.get("canvas") if isinstance(styles.get("canvas"), dict) else {}
     parts = [
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{layout.width:.0f}" height="{layout.height:.0f}" '
         f'viewBox="0 0 {layout.width:.0f} {layout.height:.0f}">',
-        f'<rect width="100%" height="100%" fill="#ffffff"/>',
-        f'<text x="{layout.width / 2:.1f}" y="46" text-anchor="middle" font-size="28" font-weight="700" '
+        f'<rect width="100%" height="100%" fill="{escape(str(canvas_style.get("background") or "#ffffff"))}"/>',
+        f'<text x="{layout.width / 2:.1f}" y="{TITLE_BASELINE}" text-anchor="middle" font-size="30" font-weight="700" '
         f'fill="{TEXT_COLOR}" font-family="PingFang SC, Noto Sans CJK SC, Noto Sans SC, Microsoft YaHei, Arial Unicode MS, WenQuanYi Zen Hei, sans-serif">'
         f'{escape(result.title)}</text>',
     ]
     routes = build_routes(result, layout, layout_overrides)
     for line in routes.lines:
         role = f' data-role="{line.role}"' if line.role != "edge" else ""
+        style = edge_styles.get(line.edge_id) or {}
+        stroke = str(style.get("stroke") or LINE_COLOR)
+        width = float(style.get("strokeWidth", 1.4) or 1.4)
+        dash = str(style.get("dash") or "none")
+        dash_attr = f' stroke-dasharray="{escape(dash)}"' if dash != "none" else ""
         parts.append(
             f'<path{role} d="M{line.x1:.1f} {line.y1:.1f} L{line.x2:.1f} {line.y2:.1f}" '
-            f'fill="none" stroke="{LINE_COLOR}" stroke-width="1.4"/>'
+            f'fill="none" stroke="{escape(stroke)}" stroke-width="{width}"{dash_attr}/>'
         )
     for x, y in routes.arrows:
         parts.append(f'<polygon points="{x - 4:.1f},{y - 8:.1f} {x + 4:.1f},{y - 8:.1f} {x:.1f},{y:.1f}" fill="{LINE_COLOR}"/>')
     for label in routes.labels:
-        parts.append(f'<rect x="{label.x:.1f}" y="{label.y:.1f}" width="{label.width:.1f}" height="{label.height:.1f}" rx="3" fill="#ffffff"/>')
+        style = label_styles.get(label.edge_id) or {}
+        bg = escape(str(style.get("background") or "#ffffff"))
+        color = escape(str(style.get("color") or "#333333"))
+        font_size = float(style.get("fontSize", 11) or 11)
+        pad_x = float(style.get("paddingX", 5) or 0)
+        pad_y = float(style.get("paddingY", 3) or 0)
+        radius = float(style.get("radius", 3) or 0)
+        parts.append(f'<rect x="{label.x:.1f}" y="{label.y:.1f}" width="{label.width:.1f}" height="{label.height:.1f}" rx="{radius}" fill="{bg}"/>')
         parts.append(
-            f'<text x="{label.x + 5:.1f}" y="{label.y + label.height - 5:.1f}" font-size="11" fill="#333333" '
+            f'<text x="{label.x + pad_x:.1f}" y="{label.y + label.height - pad_y - 1:.1f}" font-size="{font_size}" fill="{color}" '
             f'font-family="PingFang SC, Noto Sans CJK SC, Noto Sans SC, Microsoft YaHei, Arial Unicode MS, WenQuanYi Zen Hei, sans-serif">{escape(label.text)}</text>'
         )
     for node in result.nodes:
@@ -61,29 +88,34 @@ def build_svg(result: StructureResult, layout_overrides: dict | None = None) -> 
         position = positions.get(node.id)
         if not position:
             continue
-        _svg_node(parts, position, node.name == result.core_company)
+        _svg_node(parts, position, node.name == result.core_company, node_styles.get(node.id) or {})
     parts.append("</svg>")
     return "\n".join(parts)
 
 
-def _svg_node(parts: List[str], position: PositionedNode, core: bool) -> None:
-    fill = CORE_FILL if core else NODE_FILL
-    stroke = CORE_STROKE if core else NODE_STROKE
+def _svg_node(parts: List[str], position: PositionedNode, core: bool, style: dict | None = None) -> None:
+    style = style or {}
+    fill = style.get("fill") or (CORE_FILL if core else NODE_FILL)
+    stroke = style.get("stroke") or (CORE_STROKE if core else NODE_STROKE)
+    text_color = style.get("textColor") or TEXT_COLOR
+    stroke_width = float(style.get("strokeWidth", 2 if core else 1.35) or (2 if core else 1.35))
+    radius = float(style.get("radius", 10) or 0)
+    font_size = float(style.get("fontSize", 21 if core else 15) or (21 if core else 15))
+    font_weight = int(style.get("fontWeight", 700 if core else 500) or (700 if core else 500))
     parts.append(f'<g data-name="{escape(position.node.name)}"><title>{escape(position.node.name)}</title>')
     parts.append(
         f'<rect x="{position.x:.1f}" y="{position.y:.1f}" width="{position.width:.1f}" '
-        f'height="{position.height:.1f}" rx="10" fill="{fill}" stroke="{stroke}" '
-        f'stroke-width="{2 if core else 1.35}"/>'
+        f'height="{position.height:.1f}" rx="{radius}" fill="{escape(str(fill))}" stroke="{escape(str(stroke))}" '
+        f'stroke-width="{stroke_width}"/>'
     )
-    font_size = 21 if core else 15
-    line_height = 30 if core else 24
+    line_height = max(18.0, font_size * 1.42)
     total = len(position.lines) * line_height
     start_y = position.y + position.height / 2 - total / 2 + font_size
     for index, line in enumerate(position.lines):
         parts.append(
             f'<text x="{position.x + position.width / 2:.1f}" y="{start_y + index * line_height:.1f}" '
-            f'text-anchor="middle" font-size="{font_size}" font-weight="{700 if core else 500}" '
-            f'fill="{TEXT_COLOR}" font-family="PingFang SC, Noto Sans CJK SC, Noto Sans SC, Microsoft YaHei, Arial Unicode MS, WenQuanYi Zen Hei, sans-serif">'
+            f'text-anchor="middle" font-size="{font_size}" font-weight="{font_weight}" '
+            f'fill="{escape(str(text_color))}" font-family="PingFang SC, Noto Sans CJK SC, Noto Sans SC, Microsoft YaHei, Arial Unicode MS, WenQuanYi Zen Hei, sans-serif">'
             f'{escape(line)}</text>'
         )
     parts.append('</g>')
@@ -195,6 +227,11 @@ def build_pdf(result: StructureResult, layout_overrides: dict | None = None) -> 
 
 def _draw_pdf_chart(document: canvas.Canvas, page, font: str, result: StructureResult, layout_overrides: dict | None = None) -> None:
     layout = layout_structure(result, layout_overrides)
+    styles = (layout_overrides or {}).get("styles") if isinstance((layout_overrides or {}).get("styles"), dict) else {}
+    node_styles = styles.get("nodes") if isinstance(styles.get("nodes"), dict) else {}
+    edge_styles = styles.get("edges") if isinstance(styles.get("edges"), dict) else {}
+    label_styles = styles.get("labels") if isinstance(styles.get("labels"), dict) else {}
+    canvas_style = styles.get("canvas") if isinstance(styles.get("canvas"), dict) else {}
     page_width, page_height = page
     margin = 24
     scale = min(
@@ -211,27 +248,63 @@ def _draw_pdf_chart(document: canvas.Canvas, page, font: str, result: StructureR
     def y(value: float) -> float:
         return page_height - offset_y - value * scale
 
-    document.setFillColorRGB(1, 1, 1)
+    def node_style(node) -> dict:
+        core = node.name == result.core_company
+        fallback = {
+            "fill": CORE_FILL if core else NODE_FILL,
+            "stroke": CORE_STROKE if core else NODE_STROKE,
+            "textColor": TEXT_COLOR,
+            "fontSize": 21 if core else 15,
+            "strokeWidth": 2 if core else 1.35,
+            "radius": 10,
+        }
+        return {**fallback, **(node_styles.get(node.id) or {})}
+
+    def edge_style(edge_id: str) -> dict:
+        return {"stroke": LINE_COLOR, "strokeWidth": 1.4, "dash": "none", **((edge_styles.get(edge_id) or {}))}
+
+    def label_style(edge_id: str) -> dict:
+        return {"color": "#333333", "background": "#ffffff", "fontSize": 11, "paddingX": 5, "paddingY": 3, "radius": 3, **((label_styles.get(edge_id) or {}))}
+
+    document.setFillColorRGB(*_hex_rgb(canvas_style.get("background"), "#ffffff"))
     document.rect(0, 0, page_width, page_height, fill=1, stroke=0)
     document.setFont(font, max(12, 22 * scale))
-    document.setFillColorRGB(0.09, 0.1, 0.11)
-    document.drawCentredString(x(layout.width / 2), y(46), result.title)
+    document.setFillColorRGB(*_hex_rgb(TEXT_COLOR))
+    document.drawCentredString(x(layout.width / 2), y(TITLE_BASELINE), result.title)
 
-    document.setStrokeColorRGB(0.47, 0.49, 0.51)
-    document.setFillColorRGB(0.47, 0.49, 0.51)
-    document.setLineWidth(max(0.35, 1.4 * scale))
     routes = build_routes(result, layout, layout_overrides)
     for line in routes.lines:
+        style = edge_style(line.edge_id)
+        document.setStrokeColorRGB(*_hex_rgb(style.get("stroke"), LINE_COLOR))
+        document.setLineWidth(max(0.35, float(style.get("strokeWidth", 1.4)) * scale))
+        dash = str(style.get("dash") or "none")
+        if dash != "none":
+            document.setDash([3 * scale, 2 * scale])
         document.line(x(line.x1), y(line.y1), x(line.x2), y(line.y2))
+        if dash != "none":
+            document.setDash([])
+    document.setFillColorRGB(*_hex_rgb(LINE_COLOR))
+    document.setFont(font, max(6, 9 * scale))
     for arrow_x, arrow_y in routes.arrows:
-        document.setFillColorRGB(0.47, 0.49, 0.51)
-        document.setFont(font, max(6, 9 * scale))
         document.drawString(x(arrow_x - 3), y(arrow_y - 4), "▼")
-    document.setFillColorRGB(0.2, 0.2, 0.2)
-    document.setFont(font, max(6, 11 * scale))
+
     for label in routes.labels:
-        document.drawString(x(label.x), y(label.y + label.height - 5), label.text)
-    document.setFont(font, max(12, 22 * scale))
+        style = label_style(label.edge_id)
+        pad_x = float(style.get("paddingX", 5))
+        pad_y = float(style.get("paddingY", 3))
+        radius = float(style.get("radius", 3))
+        background = _hex_rgb(style.get("background"), "#ffffff")
+        color = _hex_rgb(style.get("color"), "#333333")
+        document.setFillColorRGB(*background)
+        document.setStrokeColorRGB(*background)
+        document.roundRect(
+            x(label.x), y(label.y + label.height),
+            label.width * scale, label.height * scale,
+            max(0, radius * scale), fill=1, stroke=0,
+        )
+        document.setFillColorRGB(*color)
+        document.setFont(font, max(6, float(style.get("fontSize", 11)) * scale))
+        document.drawString(x(label.x + pad_x), y(label.y + label.height - pad_y - 1), label.text)
 
     for node in result.nodes:
         if node.status == "excluded_cancelled":
@@ -239,26 +312,27 @@ def _draw_pdf_chart(document: canvas.Canvas, page, font: str, result: StructureR
         position = layout.nodes.get(node.id)
         if not position:
             continue
-        core = node.name == result.core_company
-        document.setFillColorRGB(1.0, 0.973 if not core else 0.949, 0.933 if not core else 0.859)
-        document.setStrokeColorRGB(0.83 if not core else 0.78, 0.60 if not core else 0.49, 0.26 if not core else 0.09)
+        style = node_style(node)
+        document.setFillColorRGB(*_hex_rgb(style.get("fill"), NODE_FILL))
+        document.setStrokeColorRGB(*_hex_rgb(style.get("stroke"), NODE_STROKE))
+        document.setLineWidth(max(0.2, float(style.get("strokeWidth", 1.35)) * scale))
         document.roundRect(
             x(position.x), y(position.y + position.height),
             position.width * scale, position.height * scale,
-            6 * scale, fill=1, stroke=1,
+            max(0, float(style.get("radius", 10)) * scale), fill=1, stroke=1,
         )
-        document.setFillColorRGB(0.09, 0.1, 0.11)
+        document.setFillColorRGB(*_hex_rgb(style.get("textColor"), TEXT_COLOR))
         max_chars = max((len(line) for line in position.lines), default=1)
         fitted_font = (position.width * scale - 10) / max(1, max_chars) * 0.92
-        font_size = min(max(6, (21 if core else 15) * scale), max(5, fitted_font))
+        font_size = min(max(6, float(style.get("fontSize", 15)) * scale), max(5, fitted_font))
         document.setFont(font, font_size)
-        line_height = (30 if core else 24) * scale
+        line_height = font_size * 1.42
         total = len(position.lines) * line_height
-        start_y = position.y + position.height / 2 - total / 2 + (21 if core else 15) * scale
+        start_y = position.y + position.height / 2 - total / 2 + font_size
         for index, line in enumerate(position.lines):
             document.drawCentredString(
                 x(position.x + position.width / 2),
-                y(start_y + index * (30 if core else 24)),
+                y(start_y + index * line_height),
                 line,
             )
 

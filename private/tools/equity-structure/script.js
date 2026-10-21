@@ -4,8 +4,62 @@ const API = '/api/equity-structures';
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
 
-const CURRENT_VERSION = 'v1.0.8';
+const CURRENT_VERSION = 'v1.2.2';
 const VERSION_NOTES = [
+  {
+    version: 'v1.2.2',
+    date: '2026-10-21',
+    items: [
+      '修复“一级股东再添加上游股东”只生成节点、不形成新层级的问题。',
+      '当上游目标 level=1 时自动 rebase 全图层级：所有节点 level+1，人工布局整体下移一层，新节点占用新的 level 1。',
+      '新增更高层后画布 bounds 自动增加一行高度；标题、总线、比例标签和导出使用同一布局。',
+      '核心主体 shareholder bus 仍只有一条；一级股东以上的父层使用 investment 局部树状分支，不并入总 bus。'
+    ]
+  },
+  {
+    version: 'v1.2.1',
+    date: '2026-10-21',
+    items: [
+      '重做标题区、内容区、背景区的布局关系：标题基线上移，内容顶部固定留白，背景随内容 bounds 自动扩展。',
+      '上游股东默认从内容顶部开始排布，不再贴标题；下游公司保留更大的底部 footer 留白。',
+      '加载旧 layout 时，如果人工节点/标签高于内容顶部，会整体下移并保留 manualPosition 相对关系。',
+      '拖动/属性修改节点时限制在标题区下方；导出 SVG/PNG/PDF 使用同一套新布局常量。'
+    ]
+  },
+  {
+    version: 'v1.2.0',
+    date: '2026-10-21',
+    items: [
+      '新增“＋关联公司”：一次创建上游股东或下游被投资公司、股权关系和持股比例。',
+      '关联对象默认使用当前选中节点，也可在弹窗中选择；关系和比例方向明确。',
+      '支持 0–100% 高精度比例（如 12.3456%），保留输入精度；非法/空值阻止创建。',
+      '一键创建复用现有节点/edge/标签/样式/布局数据模型，Undo/Redo 一次恢复整套关系。',
+      '保留独立添加节点、添加连线、添加比例、复制、删除、属性编辑和导出功能。'
+    ]
+  },
+  {
+    version: 'v1.1.1',
+    date: '2026-10-21',
+    items: [
+      '导出前新增保存队列与 flushSaves 同步：取消防抖计时、串行等待旧保存、保存当前快照并复核未发生新编辑后再导出。',
+      'PDF/Excel 不再在自动保存未完成时读取旧数据；保存失败会明确阻止导出。',
+      '自动保存失败会显示可见错误状态；连续保存请求串行执行，避免旧响应覆盖新状态。',
+      '补充真实/专用环境验收记录：PNG API、样式保存、Headless Chrome 交互冒烟与 PDF 样式渲染；真实登录验收状态按实际结果标记。',
+      '未新增框选、手动 bend point、总线拖动或多人并发功能。'
+    ]
+  },
+  {
+    version: 'v1.1.0',
+    date: '2026-10-21',
+    items: [
+      '新增公司/个人/基金/机构/其他节点工具，可在画布中直接添加、复制和删除。',
+      '新增连线与比例工具：选择源/目标节点创建关系，比例标签可独立编辑、拖动、隐藏和恢复自动位置。',
+      '新增属性面板：节点/连线/比例/画布的颜色、字体、边框、圆角、线型、箭头和坐标可编辑。',
+      '新增审计米金、简约灰白、蓝灰商务主题；支持仅新建默认或应用到整张图。',
+      'Undo/Redo 覆盖新增/删除、名称/比例、布局、尺寸和颜色；支持 Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y、Delete、Esc。',
+      '业务数据、布局与样式分离保存；SVG/PNG/PDF 使用当前编辑布局和样式。'
+    ]
+  },
   {
     version: 'v1.0.8',
     date: '2026-10-20',
@@ -111,8 +165,13 @@ const state = {
     nodes: {},
     labels: {},
     buses: {},
+    styles: { nodes: {}, edges: {}, labels: {}, canvas: {}, theme: 'audit' },
     selectedNodes: new Set(),
+    selectedEdge: null,
     selectedLabel: null,
+    linkMode: null,
+    panelBefore: null,
+    defaultTheme: 'audit',
     history: [],
     future: [],
     drag: null,
@@ -120,6 +179,8 @@ const state = {
     panning: false,
     spaceDown: false,
     saveTimer: null,
+    resultSaveTimer: null,
+    saveChains: { result: Promise.resolve(), layout: Promise.resolve() },
     raf: null,
     zoom: 1
   }
@@ -155,6 +216,19 @@ const els = {
   downloadPdfButton: $('#downloadPdfButton'), downloadDebugSvgButton: $('#downloadDebugSvgButton'),
   historyList: $('#historyList'), refreshHistoryButton: $('#refreshHistoryButton'),
   newJobButton: $('#newJobButton'), toast: $('#toast'),
+  editorToolbar: $('#editorToolbar'), propertyPanel: $('#propertyPanel'),
+  addCompanyButton: $('#addCompanyButton'), addPersonButton: $('#addPersonButton'),
+  addFundButton: $('#addFundButton'), addInstitutionButton: $('#addInstitutionButton'),
+  addOtherButton: $('#addOtherButton'), addRelatedButton: $('#addRelatedButton'),
+  addEdgeButton: $('#addEdgeButton'), addLabelButton: $('#addLabelButton'),
+  duplicateButton: $('#duplicateButton'), deleteButton: $('#deleteButton'),
+  relatedBackdrop: $('#relatedBackdrop'), relatedDialog: $('#relatedDialog'),
+  closeRelatedButton: $('#closeRelatedButton'), cancelRelatedButton: $('#cancelRelatedButton'),
+  relatedForm: $('#relatedForm'), relatedTarget: $('#relatedTarget'), relatedName: $('#relatedName'),
+  relatedType: $('#relatedType'), relatedPercentage: $('#relatedPercentage'),
+  relatedPreview: $('#relatedPreview'), relatedError: $('#relatedError'),
+  createRelatedButton: $('#createRelatedButton'), relatedTargetField: $('#relatedTargetField'),
+  relatedPercentageField: $('#relatedPercentageField'),
   undoButton: $('#undoButton'), redoButton: $('#redoButton'),
   fitButton: $('#fitButton'), saveLayoutButton: $('#saveLayoutButton'),
   resetLayoutButton: $('#resetLayoutButton'), layoutStatus: $('#layoutStatus'),
@@ -406,8 +480,16 @@ async function loadResult(job) {
     state.editor.nodes = savedLayout && savedLayout.nodes ? savedLayout.nodes : {};
     state.editor.labels = savedLayout && savedLayout.labels ? savedLayout.labels : {};
     state.editor.buses = savedLayout && savedLayout.buses ? savedLayout.buses : {};
+    state.editor.styles = savedLayout && savedLayout.styles
+      ? savedLayout.styles
+      : { nodes: {}, edges: {}, labels: {}, canvas: {}, theme: 'audit' };
+    state.editor.defaultTheme = savedLayout?.defaultTheme || state.editor.styles.theme || 'audit';
+    editorStyles();
+    const layoutShifted = normalizeManualLayout();
     state.editor.selectedNodes = new Set();
+    state.editor.selectedEdge = null;
     state.editor.selectedLabel = null;
+    state.editor.linkMode = null;
     state.editor.history = [];
     state.editor.future = [];
     state.editor.zoom = 1;
@@ -417,6 +499,7 @@ async function loadResult(job) {
     els.resultPanel.hidden = false;
     setPreview(job);
     renderResult();
+    if (layoutShifted) scheduleLayoutSave();
     await loadHistory();
   } catch (error) {
     showError(els.processError, error.message);
@@ -440,6 +523,7 @@ function renderResult() {
   renderCorrections();
   renderExcluded();
   syncJsonEditor();
+  renderPropertyPanel();
   els.resultPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
@@ -473,8 +557,11 @@ function renderWarnings() {
 }
 
 const LAYOUT = {
-  chartPaddingX: 80,
-  chartPaddingY: 50,
+  chartPaddingX: 90,
+  titleTopPadding: 24,
+  titleBaseline: 54,
+  contentTop: 120,
+  footerPadding: 80,
   siblingGap: 18,
   levelGap: 160,
   shareholderBusRatio: 0.42,
@@ -494,6 +581,92 @@ const LAYOUT = {
   maxCanvasDimension: 16000,
   maxCanvasPixels: 120000000
 };
+
+const BASE_NODE_STYLE = {
+  fill: '#fff8ee', stroke: '#d49a43', textColor: '#17191c',
+  fontSize: 15, fontWeight: 500, strokeWidth: 1.35, radius: 10
+};
+const CORE_NODE_STYLE = {
+  fill: '#fff2db', stroke: '#c67d18', textColor: '#17191c',
+  fontSize: 21, fontWeight: 700, strokeWidth: 2, radius: 10
+};
+const BASE_EDGE_STYLE = {
+  stroke: '#777d83', strokeWidth: 1.4, dash: 'none', arrow: true
+};
+const BASE_LABEL_STYLE = {
+  color: '#333333', background: '#ffffff', fontSize: 11,
+  fontWeight: 400, paddingX: 5, paddingY: 3, radius: 3, hidden: false
+};
+const THEMES = {
+  audit: {
+    name: '审计米金',
+    nodes: { fill: '#fff8ee', stroke: '#d49a43', textColor: '#17191c' },
+    edges: { stroke: '#777d83' },
+    labels: { color: '#333333', background: '#ffffff' },
+    canvas: { background: '#ffffff' }
+  },
+  minimal: {
+    name: '简约灰白',
+    nodes: { fill: '#ffffff', stroke: '#cfd5dd', textColor: '#17202a' },
+    edges: { stroke: '#98a2b3' },
+    labels: { color: '#344054', background: '#ffffff' },
+    canvas: { background: '#ffffff' }
+  },
+  business: {
+    name: '蓝灰商务',
+    nodes: { fill: '#eef4ff', stroke: '#84adff', textColor: '#102a56' },
+    edges: { stroke: '#667085' },
+    labels: { color: '#1849a9', background: '#ffffff' },
+    canvas: { background: '#f8fafc' }
+  },
+  custom: {
+    name: '自定义主题',
+    nodes: {}, edges: {}, labels: {}, canvas: {}
+  }
+};
+
+function cloneJson(value) {
+  return JSON.parse(JSON.stringify(value ?? null));
+}
+
+function editorStyles() {
+  if (!state.editor.styles || typeof state.editor.styles !== 'object') {
+    state.editor.styles = { nodes: {}, edges: {}, labels: {}, canvas: {}, theme: 'audit' };
+  }
+  const styles = state.editor.styles;
+  for (const key of ['nodes', 'edges', 'labels', 'canvas']) {
+    if (!styles[key] || typeof styles[key] !== 'object' || Array.isArray(styles[key])) styles[key] = {};
+  }
+  if (!styles.theme) styles.theme = 'audit';
+  return styles;
+}
+
+function nodeStyle(node) {
+  const core = node && node.name === state.data?.core_company;
+  return { ...BASE_NODE_STYLE, ...(core ? CORE_NODE_STYLE : {}), ...(editorStyles().nodes[node?.id] || {}) };
+}
+
+function edgeStyle(edgeId) {
+  return { ...BASE_EDGE_STYLE, ...(editorStyles().edges[edgeId] || {}) };
+}
+
+function labelStyle(edgeId) {
+  return { ...BASE_LABEL_STYLE, ...(editorStyles().labels[edgeId] || {}) };
+}
+
+function canvasStyle() {
+  return { background: '#ffffff', ...(editorStyles().canvas || {}) };
+}
+
+function styleValue(style, key, fallback) {
+  const value = style && style[key];
+  return value === undefined || value === null || value === '' ? fallback : value;
+}
+
+function strokeAttrs(style, extra = '') {
+  const dash = style.dash && style.dash !== 'none' ? ` stroke-dasharray="${esc(style.dash)}"` : '';
+  return `stroke="${esc(style.stroke || BASE_EDGE_STYLE.stroke)}" stroke-width="${Number(style.strokeWidth) || BASE_EDGE_STYLE.strokeWidth}"${dash}${extra}`;
+}
 
 function normalizeDisplayText(value) {
   let text = String(value ?? '').normalize('NFKC')
@@ -560,10 +733,32 @@ function ensureEdgeIds(data) {
   });
 }
 
+function normalizeManualLayout() {
+  const nodeYs = Object.values(state.editor.nodes || {})
+    .map((node) => Number(node?.y))
+    .filter(Number.isFinite);
+  const labelYs = Object.values(state.editor.labels || {})
+    .map((label) => Number(label?.y))
+    .filter(Number.isFinite);
+  const minY = Math.min(...nodeYs, ...labelYs);
+  if (!Number.isFinite(minY) || minY >= LAYOUT.contentTop) return false;
+  const delta = LAYOUT.contentTop - minY;
+  for (const node of Object.values(state.editor.nodes || {})) {
+    if (Number.isFinite(Number(node?.y))) node.y = Math.round(Number(node.y) + delta);
+  }
+  for (const label of Object.values(state.editor.labels || {})) {
+    if (Number.isFinite(Number(label?.y))) label.y = Math.round(Number(label.y) + delta);
+  }
+  for (const bus of Object.values(state.editor.buses || {})) {
+    if (Number.isFinite(Number(bus?.y))) bus.y = Math.round(Number(bus.y) + delta);
+  }
+  return true;
+}
+
 function buildLayout() {
   const data = state.data;
   const active = (data.nodes || []).filter((node) => node.status !== 'excluded_cancelled');
-  if (!active.length) return { width: 1200, height: 400, positions: new Map(), levels: [] };
+  if (!active.length) return { width: 1200, height: 500, positions: new Map(), levels: [], titleY: LAYOUT.titleBaseline };
   const levels = {};
   for (const node of active) {
     const level = Number(node.level) || 1;
@@ -598,11 +793,11 @@ function buildLayout() {
     rows.push({ level, entries, total });
   }
   const maxWidth = Math.max(...rows.map((row) => row.total), LAYOUT.minNodeWidth);
-  const width = Math.max(1000, maxWidth + LAYOUT.chartPaddingX * 2);
-  const top = LAYOUT.chartPaddingY + 36;
+  const width = Math.max(1100, maxWidth + LAYOUT.chartPaddingX * 2);
+  const top = LAYOUT.contentTop;
   const bottomLevel = levelKeys[levelKeys.length - 1];
   const maxRowHeight = Math.max(...rows.flatMap((row) => row.entries.map((entry) => entry.height)), 70);
-  const height = top + (bottomLevel - 1) * LAYOUT.levelGap + maxRowHeight + LAYOUT.chartPaddingY + 42;
+  const height = top + (bottomLevel - 1) * LAYOUT.levelGap + maxRowHeight + LAYOUT.footerPadding;
   const positions = new Map();
   for (const row of rows) {
     let x = (width - row.total) / 2;
@@ -623,7 +818,13 @@ function buildLayout() {
     const charWidth = position.core ? 19 : 14;
     const charsPerLine = Math.max(8, Math.floor((width - LAYOUT.nodePaddingX * 2) / charWidth));
     const lines = wrapName(position.node.name, charsPerLine);
-    positions.set(id, { ...position, x, y, width, height, lines, manual: true, locked: Boolean(override.locked) });
+    const style = editorStyles().nodes[id] || {};
+    const fontSize = Number(style.fontSize || (position.core ? CORE_NODE_STYLE.fontSize : BASE_NODE_STYLE.fontSize));
+    const minHeight = lines.length * Math.max(18, fontSize * 1.42) + LAYOUT.nodePaddingY * 2;
+    positions.set(id, {
+      ...position, x, y, width, height: Math.max(height, minHeight),
+      lines, manual: true, locked: Boolean(override.locked)
+    });
   }
 
   let maxRight = 0;
@@ -632,11 +833,14 @@ function buildLayout() {
     maxRight = Math.max(maxRight, position.x + position.width);
     maxBottom = Math.max(maxBottom, position.y + position.height);
   }
+  const titleText = String(data.title || '股权结构图');
+  const titleWidth = [...titleText].reduce((sum, char) => sum + (char.codePointAt(0) > 127 ? 30 : 16.8), 0) + LAYOUT.chartPaddingX * 2;
   return {
-    width: Math.max(width, maxRight + LAYOUT.chartPaddingX),
-    height: Math.max(height, maxBottom + LAYOUT.chartPaddingY + 30),
+    width: Math.max(width, maxRight + LAYOUT.chartPaddingX, titleWidth),
+    height: Math.max(height, maxBottom + LAYOUT.footerPadding),
     positions,
-    levels: levelKeys
+    levels: levelKeys,
+    titleY: LAYOUT.titleBaseline
   };
 }
 
@@ -665,8 +869,8 @@ function placeLabel(label, placed, nodeBoxes, layout, preferredDirection = 'up')
   ];
   const minX = LAYOUT.chartPaddingX;
   const maxX = layout.width - LAYOUT.chartPaddingX - label.width;
-  const minY = LAYOUT.chartPaddingY;
-  const maxY = layout.height - LAYOUT.chartPaddingY - label.height;
+  const minY = LAYOUT.contentTop;
+  const maxY = layout.height - LAYOUT.footerPadding - label.height;
   for (const [dx, dy] of attempts) {
     const candidate = {
       ...label,
@@ -703,21 +907,32 @@ function buildRoutes(layout, exportMode = false) {
     x: position.x, y: position.y, width: position.width, height: position.height
   }));
 
-  const addArrow = (x, y) => {
-    paths.push(`<polygon points="${x - 4},${y - 8} ${x + 4},${y - 8} ${x},${y}" fill="#777d83"/>`);
+  const addArrow = (x, y, style) => {
+    const line = style || BASE_EDGE_STYLE;
+    if (line.arrow === false) return;
+    paths.push(`<polygon points="${x - 4},${y - 8} ${x + 4},${y - 8} ${x},${y}" fill="${esc(line.stroke || BASE_EDGE_STYLE.stroke)}"/>`);
   };
   const addLabel = (edge, x, y, busY, direction) => {
     if (!edge || !edge.percentage) return;
-    const width = Math.max(34, normalizeDisplayText(edge.percentage).length * 7 + LAYOUT.edgeLabelPaddingX * 2);
+    const style = labelStyle(edge.__id);
+    if (style.hidden) return;
+    const text = normalizeDisplayText(edge.percentage);
+    const fontSize = Number(style.fontSize) || BASE_LABEL_STYLE.fontSize;
+    const padX = Number(style.paddingX ?? BASE_LABEL_STYLE.paddingX);
+    const padY = Number(style.paddingY ?? BASE_LABEL_STYLE.paddingY);
+    const textWidth = [...text].reduce((sum, char) => sum + (char.codePointAt(0) > 127 ? fontSize : fontSize * 0.56), 0);
+    const width = Math.max(34, textWidth + padX * 2);
+    const height = Math.max(17, fontSize + padY * 2);
     rawLabels.push({
       id: edge.__id,
-      text: edge.percentage,
+      text,
       x,
-      y: y - LAYOUT.labelHeight + 4,
+      y: y - height + padY + 1,
       width,
-      height: LAYOUT.labelHeight,
+      height,
       busY,
-      direction
+      direction,
+      style
     });
   };
 
@@ -737,21 +952,24 @@ function buildRoutes(layout, exportMode = false) {
         busY = Number(shareholderBus.y);
       }
 
+      const busStyle = edgeStyle('__bus');
       const xs = shareholders.map((position) => position.x + position.width / 2);
       const coreX = corePosition.x + corePosition.width / 2;
       for (const position of shareholders) {
+        const edge = shareholderEdges.find((item) => item.source === position.node.id);
+        const style = edgeStyle(edge?.__id);
         const x = position.x + position.width / 2;
-        paths.push(`<path d="M${x} ${position.y + position.height} V${busY}" fill="none" stroke="#777d83" stroke-width="1.4"/>`);
+        const edgeClass = !exportMode && state.editor.selectedEdge === edge?.__id ? 'edge-path is-selected' : 'edge-path';
+        paths.push(`<path class="${edgeClass}" data-edge-id="${esc(edge?.__id || '')}" d="M${x} ${position.y + position.height} V${busY}" fill="none" ${strokeAttrs(style)}/>`);
       }
-      paths.push(`<path data-role="shareholder-bus" d="M${Math.min(...xs)} ${busY} H${Math.max(...xs)}" fill="none" stroke="#777d83" stroke-width="1.4"/>`);
-      paths.push(`<path data-role="shareholder-core" d="M${coreX} ${busY} V${corePosition.y}" fill="none" stroke="#777d83" stroke-width="1.4"/>`);
-      addArrow(coreX, corePosition.y);
+      paths.push(`<path data-role="shareholder-bus" d="M${Math.min(...xs)} ${busY} H${Math.max(...xs)}" fill="none" ${strokeAttrs(busStyle)}/>`);
+      paths.push(`<path data-role="shareholder-core" d="M${coreX} ${busY} V${corePosition.y}" fill="none" ${strokeAttrs(busStyle)}/>`);
+      addArrow(coreX, corePosition.y, busStyle);
 
       for (const edge of shareholderEdges) {
         const position = positions.get(edge.source);
         const x = position.x + position.width / 2;
         const segmentLength = busY - (position.y + position.height);
-        if (!edge.percentage) continue;
         const y = segmentLength <= 22 ? busY - 10 : position.y + position.height + segmentLength * 0.55;
         addLabel(edge, x + LAYOUT.edgeLabelOffsetX, y, busY, 'up');
       }
@@ -773,20 +991,23 @@ function buildRoutes(layout, exportMode = false) {
         childBusY = Number(directBus.y);
       }
 
+      const busStyle = edgeStyle('__bus');
       const xs = directChildren.map((position) => position.x + position.width / 2);
       const coreX = corePosition.x + corePosition.width / 2;
-      paths.push(`<path data-role="direct-core" d="M${coreX} ${coreBottom} V${childBusY}" fill="none" stroke="#777d83" stroke-width="1.4"/>`);
-      paths.push(`<path data-role="direct-bus" d="M${Math.min(...xs, coreX)} ${childBusY} H${Math.max(...xs, coreX)}" fill="none" stroke="#777d83" stroke-width="1.4"/>`);
+      paths.push(`<path data-role="direct-core" d="M${coreX} ${coreBottom} V${childBusY}" fill="none" ${strokeAttrs(busStyle)}/>`);
+      paths.push(`<path data-role="direct-bus" d="M${Math.min(...xs, coreX)} ${childBusY} H${Math.max(...xs, coreX)}" fill="none" ${strokeAttrs(busStyle)}/>`);
       for (const position of directChildren) {
+        const edge = directEdges.find((item) => item.target === position.node.id);
+        const style = edgeStyle(edge?.__id);
         const x = position.x + position.width / 2;
-        paths.push(`<path d="M${x} ${childBusY} V${position.y}" fill="none" stroke="#777d83" stroke-width="1.4"/>`);
-        addArrow(x, position.y);
+        const edgeClass = !exportMode && state.editor.selectedEdge === edge?.__id ? 'edge-path is-selected' : 'edge-path';
+        paths.push(`<path class="${edgeClass}" data-edge-id="${esc(edge?.__id || '')}" d="M${x} ${childBusY} V${position.y}" fill="none" ${strokeAttrs(style)}/>`);
+        addArrow(x, position.y, style);
       }
       for (const edge of directEdges) {
         const position = positions.get(edge.target);
         const x = position.x + position.width / 2;
         const segmentLength = position.y - childBusY;
-        if (!edge.percentage) continue;
         const y = childBusY + Math.max(10, segmentLength * 0.55);
         addLabel(edge, x + LAYOUT.edgeLabelOffsetX, y, childBusY, 'down');
       }
@@ -798,8 +1019,10 @@ function buildRoutes(layout, exportMode = false) {
     const parent = positions.get(edge.source);
     const child = positions.get(edge.target);
     const { x1, y1, x2, y2, mid } = edgePoints(parent, child);
-    paths.push(`<path d="M${x1} ${y1} V${mid} H${x2} V${y2}" fill="none" stroke="#777d83" stroke-width="1.4"/>`);
-    addArrow(x2, y2);
+    const style = edgeStyle(edge.__id);
+    const edgeClass = !exportMode && state.editor.selectedEdge === edge.__id ? 'edge-path is-selected' : 'edge-path';
+    paths.push(`<path class="${edgeClass}" data-edge-id="${esc(edge.__id || '')}" d="M${x1} ${y1} V${mid} H${x2} V${y2}" fill="none" ${strokeAttrs(style)}/>`);
+    addArrow(x2, y2, style);
     if (edge.percentage) {
       const segmentLength = Math.abs(y2 - mid);
       const y = segmentLength <= 22 ? y2 - 10 : mid + (y2 - mid) * 0.55;
@@ -816,7 +1039,7 @@ function buildRoutes(layout, exportMode = false) {
       placedLabel = {
         ...label,
         x: Math.max(LAYOUT.chartPaddingX, Math.min(layout.width - LAYOUT.chartPaddingX - label.width, Number(manual.x))),
-        y: Math.max(LAYOUT.chartPaddingY, Math.min(layout.height - LAYOUT.chartPaddingY - label.height, Number(manual.y)))
+        y: Math.max(LAYOUT.contentTop, Math.min(layout.height - LAYOUT.footerPadding - label.height, Number(manual.y)))
       };
       placed.push(placedLabel);
     } else {
@@ -824,8 +1047,11 @@ function buildRoutes(layout, exportMode = false) {
     }
     labelItems.push(placedLabel);
     const selected = !exportMode && state.editor.selectedLabel === label.id;
-    return `<g class="percentage-label${selected ? ' is-selected' : ''}" data-edge-id="${esc(label.id)}"><rect x="${placedLabel.x}" y="${placedLabel.y}" width="${placedLabel.width}" height="${placedLabel.height}" rx="3" fill="#ffffff"/>
-<text x="${placedLabel.x + LAYOUT.edgeLabelPaddingX}" y="${placedLabel.y + placedLabel.height - 5}" font-size="11" fill="#333333">${esc(placedLabel.text)}</text></g>`;
+    const style = placedLabel.style || BASE_LABEL_STYLE;
+    const textX = placedLabel.x + Number(style.paddingX ?? BASE_LABEL_STYLE.paddingX);
+    const textY = placedLabel.y + placedLabel.height - Number(style.paddingY ?? BASE_LABEL_STYLE.paddingY) - 1;
+    return `<g class="percentage-label${selected ? ' is-selected' : ''}" data-edge-id="${esc(label.id)}"><rect x="${placedLabel.x}" y="${placedLabel.y}" width="${placedLabel.width}" height="${placedLabel.height}" rx="${Number(style.radius) || 0}" fill="${esc(style.background || '#ffffff')}"/>
+<text x="${textX}" y="${textY}" font-size="${Number(style.fontSize) || 11}" font-weight="${Number(style.fontWeight) || 400}" fill="${esc(style.color || '#333333')}">${esc(placedLabel.text)}</text></g>`;
   });
   return { paths, labels, labelItems };
 }
@@ -837,8 +1063,8 @@ function buildSvgString(exportMode = false) {
   const routes = buildRoutes(layout, exportMode);
   const parts = [
     `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${layout.width}" height="${layout.height}" viewBox="0 0 ${layout.width} ${layout.height}" font-family="PingFang SC, Noto Sans CJK SC, Noto Sans SC, Microsoft YaHei, Arial Unicode MS, WenQuanYi Zen Hei, sans-serif">`,
-    '<rect width="100%" height="100%" fill="#ffffff"/>',
-    `<text x="${layout.width / 2}" y="${LAYOUT.chartPaddingY + 2}" text-anchor="middle" font-size="28" font-weight="700" fill="#17191c">${esc(data.title || '股权结构图')}</text>`
+    `<rect width="100%" height="100%" fill="${esc(canvasStyle().background || '#ffffff')}"/>`,
+    `<text x="${layout.width / 2}" y="${layout.titleY ?? LAYOUT.titleBaseline}" text-anchor="middle" font-size="30" font-weight="700" fill="#17191c">${esc(data.title || '股权结构图')}</text>`
   ];
   parts.push(...routes.paths);
   parts.push(...routes.labels);
@@ -846,16 +1072,21 @@ function buildSvgString(exportMode = false) {
     if (node.status === 'excluded_cancelled') continue;
     const position = positions.get(node.id);
     if (!position) continue;
-    const fill = position.core ? '#fff2db' : '#fff8ee';
-    const stroke = position.core ? '#c67d18' : '#d49a43';
+    const style = nodeStyle(node);
+    const fill = styleValue(style, 'fill', position.core ? CORE_NODE_STYLE.fill : BASE_NODE_STYLE.fill);
+    const stroke = styleValue(style, 'stroke', position.core ? CORE_NODE_STYLE.stroke : BASE_NODE_STYLE.stroke);
+    const textColor = styleValue(style, 'textColor', BASE_NODE_STYLE.textColor);
+    const fontSize = Number(styleValue(style, 'fontSize', position.core ? CORE_NODE_STYLE.fontSize : BASE_NODE_STYLE.fontSize));
+    const fontWeight = Number(styleValue(style, 'fontWeight', position.core ? CORE_NODE_STYLE.fontWeight : BASE_NODE_STYLE.fontWeight));
+    const strokeWidth = Number(styleValue(style, 'strokeWidth', position.core ? CORE_NODE_STYLE.strokeWidth : BASE_NODE_STYLE.strokeWidth));
+    const radius = Number(styleValue(style, 'radius', BASE_NODE_STYLE.radius));
     const selected = !exportMode && state.editor.selectedNodes.has(node.id);
     parts.push(`<g class="node-group${selected ? ' is-selected' : ''}" data-node-id="${esc(node.id)}" data-name="${esc(node.name)}" aria-label="${esc(node.name)}"><title>${esc(node.name)}</title>`);
-    parts.push(`<rect x="${position.x}" y="${position.y}" width="${position.width}" height="${position.height}" rx="10" fill="${fill}" stroke="${stroke}" stroke-width="${position.core ? 2 : 1.35}"/>`);
-    const fontSize = position.core ? 21 : 15;
-    const lineHeight = position.core ? 28 : 22;
+    parts.push(`<rect x="${position.x}" y="${position.y}" width="${position.width}" height="${position.height}" rx="${radius}" fill="${esc(fill)}" stroke="${esc(stroke)}" stroke-width="${strokeWidth}"/>`);
+    const lineHeight = Math.max(18, fontSize * 1.42);
     const startY = position.y + position.height / 2 - (position.lines.length * lineHeight) / 2 + fontSize;
     position.lines.forEach((line, index) => {
-      parts.push(`<text x="${position.x + position.width / 2}" y="${startY + index * lineHeight}" text-anchor="middle" font-size="${fontSize}" font-weight="${position.core ? 700 : 500}" fill="#17191c">${esc(line)}</text>`);
+      parts.push(`<text x="${position.x + position.width / 2}" y="${startY + index * lineHeight}" text-anchor="middle" font-size="${fontSize}" font-weight="${fontWeight}" fill="${esc(textColor)}">${esc(line)}</text>`);
     });
     if (!exportMode && selected) {
       const corners = [
@@ -913,18 +1144,27 @@ function renderChart() {
 
 function snapshotLayout() {
   return {
-    nodes: JSON.parse(JSON.stringify(state.editor.nodes || {})),
-    labels: JSON.parse(JSON.stringify(state.editor.labels || {})),
-    buses: JSON.parse(JSON.stringify(state.editor.buses || {}))
+    data: cloneJson(state.data),
+    nodes: cloneJson(state.editor.nodes || {}),
+    labels: cloneJson(state.editor.labels || {}),
+    buses: cloneJson(state.editor.buses || {}),
+    styles: cloneJson(editorStyles())
   };
 }
 
 function restoreLayout(snapshot) {
-  state.editor.nodes = snapshot.nodes || {};
-  state.editor.labels = snapshot.labels || {};
-  state.editor.buses = snapshot.buses || {};
-  state.editor.selectedNodes = new Set([...state.editor.selectedNodes].filter((id) => state.editor.nodes[id] || true));
-  renderChart();
+  if (!snapshot) return;
+  if (snapshot.data) state.data = cloneJson(snapshot.data);
+  state.editor.nodes = cloneJson(snapshot.nodes || {});
+  state.editor.labels = cloneJson(snapshot.labels || {});
+  state.editor.buses = cloneJson(snapshot.buses || {});
+  state.editor.styles = cloneJson(snapshot.styles || { nodes: {}, edges: {}, labels: {}, canvas: {}, theme: 'audit' });
+  if (state.data) ensureEdgeIds(state.data);
+  const nodeIds = new Set((state.data?.nodes || []).map((node) => node.id));
+  state.editor.selectedNodes = new Set([...state.editor.selectedNodes].filter((id) => nodeIds.has(id)));
+  if (state.editor.selectedEdge && !(state.data?.edges || []).some((edge) => edge.__id === state.editor.selectedEdge)) state.editor.selectedEdge = null;
+  if (state.editor.selectedLabel && !(state.data?.edges || []).some((edge) => edge.__id === state.editor.selectedLabel)) state.editor.selectedLabel = null;
+  refreshEditorViews();
 }
 
 function pushHistory(before) {
@@ -941,7 +1181,7 @@ function undoLayout() {
   if (!previous) return;
   state.editor.future.push(snapshotLayout());
   restoreLayout(previous);
-  scheduleLayoutSave();
+  scheduleSaveAll();
   setLayoutStatus('已撤销。', '');
 }
 
@@ -950,7 +1190,7 @@ function redoLayout() {
   if (!next) return;
   state.editor.history.push(snapshotLayout());
   restoreLayout(next);
-  scheduleLayoutSave();
+  scheduleSaveAll();
   setLayoutStatus('已重做。', '');
 }
 
@@ -967,33 +1207,86 @@ function layoutPayload() {
     nodes: state.editor.nodes,
     labels: state.editor.labels,
     buses: state.editor.buses,
-    canvas: info ? { width: info.width, height: info.height } : {}
+    styles: editorStyles(),
+    defaultTheme: state.editor.defaultTheme,
+    canvas: info ? { width: info.width, height: info.height, background: canvasStyle().background } : {}
   };
+}
+
+function queueSave(kind, task) {
+  const previous = state.editor.saveChains[kind] || Promise.resolve();
+  const next = previous.catch(() => {}).then(task);
+  state.editor.saveChains[kind] = next.catch(() => {});
+  return next;
 }
 
 async function saveLayout({ silent = false } = {}) {
   if (!state.job || !state.data) return false;
-  try {
-    setLayoutStatus('正在保存布局…', 'saving');
-    await api(`/${state.job.id}/layout`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(layoutPayload())
-    });
-    setLayoutStatus('布局已保存。', 'saved');
-    if (!silent) toast('布局已保存。');
-    return true;
-  } catch (error) {
-    setLayoutStatus(`布局保存失败：${error.message}`, 'error');
-    if (!silent) toast(`布局保存失败：${error.message}`);
-    return false;
-  }
+  return queueSave('layout', async () => {
+    try {
+      setLayoutStatus('正在保存布局…', 'saving');
+      await api(`/${state.job.id}/layout`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(layoutPayload())
+      });
+      setLayoutStatus('布局已保存。', 'saved');
+      if (!silent) toast('布局已保存。');
+      return true;
+    } catch (error) {
+      setLayoutStatus(`布局保存失败：${error.message}`, 'error');
+      if (!silent) toast(`布局保存失败：${error.message}`);
+      return false;
+    }
+  });
 }
 
 function scheduleLayoutSave() {
   clearTimeout(state.editor.saveTimer);
   setLayoutStatus('有未保存的布局调整…', '');
   state.editor.saveTimer = setTimeout(() => saveLayout({ silent: true }), 1400);
+}
+
+function scheduleResultSave() {
+  clearTimeout(state.editor.resultSaveTimer);
+  state.editor.resultSaveTimer = setTimeout(() => saveEdits({ silent: true }), 1400);
+}
+
+function scheduleSaveAll() {
+  scheduleResultSave();
+  scheduleLayoutSave();
+}
+
+async function flushSaves() {
+  if (!state.job || !state.data) return false;
+  clearTimeout(state.editor.saveTimer);
+  clearTimeout(state.editor.resultSaveTimer);
+  state.editor.saveTimer = null;
+  state.editor.resultSaveTimer = null;
+  // Serialize against existing saves, then save a snapshot and verify that no
+  // edit happened while the requests were in flight. This makes PDF/Excel
+  // exports use the same state as the editor at the moment of export.
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    clearTimeout(state.editor.saveTimer);
+    clearTimeout(state.editor.resultSaveTimer);
+    state.editor.saveTimer = null;
+    state.editor.resultSaveTimer = null;
+    await state.editor.saveChains.result.catch(() => {});
+    await state.editor.saveChains.layout.catch(() => {});
+    const before = JSON.stringify(snapshotLayout());
+    const dataSaved = await saveEdits({ silent: true });
+    if (!dataSaved) return false;
+    const layoutSaved = await saveLayout({ silent: true });
+    if (!layoutSaved) return false;
+    if (JSON.stringify(snapshotLayout()) === before) {
+      clearTimeout(state.editor.saveTimer);
+      clearTimeout(state.editor.resultSaveTimer);
+      state.editor.saveTimer = null;
+      state.editor.resultSaveTimer = null;
+      return true;
+    }
+  }
+  return false;
 }
 
 function screenToSvg(event) {
@@ -1016,14 +1309,26 @@ function selectNode(id, additive) {
   if (!additive) state.editor.selectedNodes.clear();
   if (additive && state.editor.selectedNodes.has(id)) state.editor.selectedNodes.delete(id);
   else state.editor.selectedNodes.add(id);
+  state.editor.selectedEdge = null;
   state.editor.selectedLabel = null;
   renderChart();
+  renderPropertyPanel();
+}
+
+function selectEdge(id) {
+  state.editor.selectedNodes.clear();
+  state.editor.selectedLabel = null;
+  state.editor.selectedEdge = id;
+  renderChart();
+  renderPropertyPanel();
 }
 
 function selectLabel(id) {
   state.editor.selectedNodes.clear();
+  state.editor.selectedEdge = null;
   state.editor.selectedLabel = id;
   renderChart();
+  renderPropertyPanel();
 }
 
 function onCanvasPointerDown(event) {
@@ -1032,8 +1337,15 @@ function onCanvasPointerDown(event) {
   const resizeHandle = target.closest('.resize-handle');
   const labelGroup = target.closest('.percentage-label');
   const nodeGroup = target.closest('.node-group');
+  const edgePath = target.closest('[data-edge-id]');
   const svg = els.chartWrap.querySelector('svg');
   if (!svg) return;
+
+  if (edgePath && !nodeGroup && !labelGroup) {
+    event.preventDefault();
+    selectEdge(edgePath.dataset.edgeId);
+    return;
+  }
 
   // Background: pan with Space or middle mouse; otherwise clear selection.
   if (!labelGroup && !nodeGroup) {
@@ -1042,10 +1354,16 @@ function onCanvasPointerDown(event) {
       startPan(event, svg);
       return;
     }
+    if (state.editor.linkMode) {
+      cancelLinkMode();
+      return;
+    }
     if (event.button === 0) {
       state.editor.selectedNodes.clear();
+      state.editor.selectedEdge = null;
       state.editor.selectedLabel = null;
       renderChart();
+      renderPropertyPanel();
     }
     return;
   }
@@ -1073,6 +1391,12 @@ function onCanvasPointerDown(event) {
     const id = nodeGroup.dataset.nodeId;
     const position = nodeLayoutPosition(id);
     if (!position) return;
+    if (state.editor.linkMode) {
+      event.preventDefault();
+      event.stopPropagation();
+      handleLinkNode(id);
+      return;
+    }
     if (!event.shiftKey && !state.editor.selectedNodes.has(id)) {
       state.editor.selectedNodes.clear();
     }
@@ -1082,8 +1406,10 @@ function onCanvasPointerDown(event) {
     } else {
       state.editor.selectedNodes.add(id);
     }
+    state.editor.selectedEdge = null;
     state.editor.selectedLabel = null;
     renderChart();
+    renderPropertyPanel();
     startDrag(event, 'node', { id });
   }
 }
@@ -1141,6 +1467,10 @@ function startDrag(event, type, payload) {
       height = Math.max(48, Math.round(height / 5) * 5);
       if (drag.payload.corner.includes('w')) x = original.x + original.width - width;
       if (drag.payload.corner.includes('n')) y = original.y + original.height - height;
+      if (y < LAYOUT.contentTop) {
+        height = Math.max(48, height - (LAYOUT.contentTop - y));
+        y = LAYOUT.contentTop;
+      }
       state.editor.nodes[drag.payload.id] = {
         ...(state.editor.nodes[drag.payload.id] || {}),
         x, y, width, height, manualPosition: true
@@ -1163,7 +1493,7 @@ function startDrag(event, type, payload) {
         state.editor.nodes[id] = {
           ...manual,
           x: Math.max(10, snap(original.x + dx)),
-          y: Math.max(10, snap(original.y + dy)),
+          y: Math.max(LAYOUT.contentTop, snap(original.y + dy)),
           width: manual.width || original.width,
           height: manual.height || original.height,
           manualPosition: true
@@ -1182,6 +1512,7 @@ function startDrag(event, type, payload) {
     window.removeEventListener('pointercancel', onUp);
     state.editor.drag = null;
     renderChart();
+    renderPropertyPanel();
     if (drag.moved) {
       pushHistory(drag.before);
       scheduleLayoutSave();
@@ -1284,11 +1615,851 @@ function resetAutoLayout() {
   state.editor.labels = {};
   state.editor.buses = {};
   state.editor.selectedNodes.clear();
+  state.editor.selectedEdge = null;
   state.editor.selectedLabel = null;
+  state.editor.linkMode = null;
   pushHistory(before);
+  refreshEditorViews();
+  scheduleSaveAll();
+  toast('已恢复自动排版；颜色样式保留。');
+}
+
+
+function nodeById(id) {
+  return (state.data?.nodes || []).find((node) => node.id === id) || null;
+}
+
+function edgeById(id) {
+  return (state.data?.edges || []).find((edge) => edge.__id === id) || null;
+}
+
+function currentEdge() {
+  return state.editor.selectedEdge ? edgeById(state.editor.selectedEdge) : null;
+}
+
+function newStableId(prefix) {
+  const value = globalThis.crypto?.randomUUID?.() || `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+  return `${prefix}_${value}`;
+}
+
+function refreshEditorViews() {
+  if (!state.data) return;
+  ensureEdgeIds(state.data);
+  renderMetrics();
+  renderWarnings();
   renderChart();
+  renderNodeTable();
+  renderEdgeTable();
+  renderOcrText();
+  renderReview();
+  renderCorrections();
+  renderExcluded();
+  syncJsonEditor();
+  renderPropertyPanel();
+}
+
+function commitEditorChange(before, { result = false, layout = true, message = '' } = {}) {
+  if (before) pushHistory(before);
+  if (result) {
+    state.dirty = true;
+    scheduleResultSave();
+  }
+  if (layout) scheduleLayoutSave();
+  refreshEditorViews();
+  if (message) setLayoutStatus(message, '');
+}
+
+function bindPropertyControl(control, apply, { result = false, layout = true, live = false } = {}) {
+  let before = null;
+  const capture = () => { if (!before) before = snapshotLayout(); };
+  control.addEventListener('focus', capture);
+  control.addEventListener('pointerdown', capture);
+  if (live) {
+    control.addEventListener('input', () => {
+      apply(control.type === 'checkbox' ? control.checked : control.value);
+      renderChart();
+    });
+  }
+  control.addEventListener('change', () => {
+    const snapshot = before || snapshotLayout();
+    apply(control.type === 'checkbox' ? control.checked : control.value);
+    commitEditorChange(snapshot, { result, layout, message: '属性已更新。' });
+    before = null;
+  });
+  return control;
+}
+
+function propertyField(label, control, wide = false) {
+  return el('label', { class: `property-field${wide ? ' wide' : ''}` }, [
+    el('span', { text: label }),
+    control
+  ]);
+}
+
+function propertySelect(options, value) {
+  const select = el('select');
+  for (const [optionValue, label] of options) {
+    select.append(el('option', { value: optionValue, text: label, ...(String(value) === optionValue ? { selected: 'selected' } : {}) }));
+  }
+  return select;
+}
+
+function propertyColor(value, onApply) {
+  const wrap = el('div', { class: 'color-control' });
+  const input = el('input', { type: 'color', value: String(value || '#ffffff') });
+  const hex = el('input', { type: 'text', value: String(value || '#ffffff'), class: 'color-hex', maxlength: '7', spellcheck: 'false' });
+  bindPropertyControl(input, (next) => {
+    hex.value = next;
+    onApply(next);
+  }, { live: true });
+  bindPropertyControl(hex, (next) => {
+    const text = String(next || '').trim();
+    if (!/^#?[0-9a-f]{6}$/i.test(text)) {
+      hex.value = input.value;
+      toast('请输入有效的 HEX 颜色，例如 #1a2b3c。');
+      return;
+    }
+    const normalized = text.startsWith('#') ? text : `#${text}`;
+    input.value = normalized;
+    hex.value = normalized;
+    onApply(normalized);
+  });
+  wrap.append(input, hex);
+  return wrap;
+}
+
+function propertyNumber(value, onApply, { min = '', max = '', step = '1', result = false } = {}) {
+  const input = el('input', { type: 'number', value: String(value ?? ''), min: String(min), max: String(max), step: String(step) });
+  bindPropertyControl(input, onApply, { result });
+  return input;
+}
+
+function propertyText(value, onApply, placeholder = '', options = {}) {
+  const input = el('input', { type: 'text', value: String(value ?? ''), placeholder });
+  bindPropertyControl(input, onApply, options);
+  return input;
+}
+
+function propertyAction(label, action, tone = '') {
+  return el('button', { class: `mini-button${tone ? ` ${tone}` : ''}`, type: 'button', text: label, onclick: action });
+}
+
+function renderPropertyPanel() {
+  const panel = els.propertyPanel;
+  if (!panel) return;
+  clear(panel);
+  const row = panel.parentElement;
+  if (row) row.classList.toggle('has-panel', Boolean(state.data));
+  if (!state.data) {
+    panel.hidden = true;
+    return;
+  }
+  panel.hidden = false;
+  editorStyles();
+
+  if (state.editor.selectedLabel) {
+    renderLabelPanel(panel);
+    return;
+  }
+  if (state.editor.selectedNodes.size > 0) {
+    renderNodePanel(panel);
+    return;
+  }
+  if (state.editor.selectedEdge) {
+    renderEdgePanel(panel);
+    return;
+  }
+  renderCanvasPanel(panel);
+}
+
+function renderCanvasPanel(panel) {
+  panel.append(
+    el('div', { class: 'property-head' }, [
+      el('strong', { text: '画布与主题' }),
+      el('small', { text: '未选中对象' })
+    ])
+  );
+  const theme = propertySelect(
+    [['audit', '审计米金'], ['minimal', '简约灰白'], ['business', '蓝灰商务'], ['custom', '自定义主题']],
+    state.editor.defaultTheme || 'audit'
+  );
+  const themeSection = el('div', { class: 'property-section' }, [
+    el('strong', { text: '配色主题' }),
+    propertyField('默认主题（新建组件）', theme),
+    el('div', { class: 'property-actions' }, [
+      propertyAction('应用到整张图', () => applyThemeToAll(theme.value)),
+      propertyAction('仅设为默认', () => { const before = snapshotLayout(); state.editor.defaultTheme = theme.value; pushHistory(before); scheduleLayoutSave(); toast('新建组件将使用该主题。'); })
+    ]),
+    el('p', { class: 'property-note', text: '应用到整张图会覆盖已有节点/连线/比例的人工颜色，操作前会确认。' })
+  ]);
+  bindPropertyControl(theme, (value) => { state.editor.defaultTheme = value; }, { layout: true });
+  const background = propertyColor(canvasStyle().background, (value) => {
+    editorStyles().canvas.background = value;
+  });
+  panel.append(
+    themeSection,
+    el('div', { class: 'property-section' }, [
+      el('strong', { text: '画布' }),
+      propertyField('背景颜色', background),
+      el('p', { class: 'property-note', text: '背景颜色会同步到 SVG、PNG、PDF。拖动空白区域可取消选择。' })
+    ])
+  );
+}
+
+function renderNodePanel(panel) {
+  const ids = [...state.editor.selectedNodes];
+  if (ids.length > 1) {
+    panel.append(
+      el('div', { class: 'property-head' }, [el('strong', { text: `${ids.length} 个节点` }), el('small', { text: '批量样式' })]),
+      el('div', { class: 'property-section' }, [
+        el('strong', { text: '批量颜色' }),
+        propertyField('填充颜色', propertyColor(BASE_NODE_STYLE.fill, (value) => {
+          for (const id of ids) editorStyles().nodes[id] = { ...(editorStyles().nodes[id] || {}), fill: value };
+        }), true),
+        propertyField('边框颜色', propertyColor(BASE_NODE_STYLE.stroke, (value) => {
+          for (const id of ids) editorStyles().nodes[id] = { ...(editorStyles().nodes[id] || {}), stroke: value };
+        }), true),
+        el('p', { class: 'property-note', text: '只修改所选节点的样式，不改变名称、坐标或股权关系。' }),
+        el('div', { class: 'property-actions' }, [
+          propertyAction('复制所选', duplicateSelection),
+          propertyAction('删除所选', deleteSelection, 'danger')
+        ])
+      ])
+    );
+    return;
+  }
+
+  const node = nodeById(ids[0]);
+  if (!node) return;
+  const style = nodeStyle(node);
+  const position = nodeLayoutPosition(node.id) || { x: 0, y: 0, width: 180, height: 70 };
+  panel.append(
+    el('div', { class: 'property-head' }, [el('strong', { text: node.name || '未命名节点' }), el('small', { text: node.id })]),
+    el('div', { class: 'property-section' }, [
+      el('strong', { text: '业务信息' }),
+      propertyField('名称', propertyText(node.name, (value) => { node.name = value.trim(); }, '公司名称', { result: true }), true),
+      propertyField('类型', bindPropertyControl(propertySelect([
+        ['company', '公司'], ['person', '个人'], ['fund', '基金'], ['institution', '机构'], ['other', '其他']
+      ], node.entity_type), (value) => { node.entity_type = value; }, { result: true })),
+      propertyField('层级', propertyNumber(node.level || 1, (value) => { node.level = Math.max(1, Number(value) || 1); }, { min: 1, result: true }), false),
+      propertyField('状态', bindPropertyControl(propertySelect([
+        ['active', '有效'], ['excluded_cancelled', '已注销/排除'], ['unknown', '未知']
+      ], node.status), (value) => { node.status = value; }, { result: true })),
+      propertyField('置信度', propertyNumber(node.confidence ?? 0, (value) => { node.confidence = Math.max(0, Math.min(1, Number(value) || 0)); }, { min: 0, max: 1, step: 0.01, result: true }))
+    ]),
+    el('div', { class: 'property-section' }, [
+      el('strong', { text: '位置与尺寸（只改布局）' }),
+      el('div', { class: 'property-grid' }, [
+        propertyField('X', propertyNumber(position.x, (value) => setNodeLayout(node.id, { x: value }), { step: 5 })),
+        propertyField('Y', propertyNumber(position.y, (value) => setNodeLayout(node.id, { y: value }), { step: 5 })),
+        propertyField('宽度', propertyNumber(position.width, (value) => setNodeLayout(node.id, { width: value }), { min: 100, step: 5 })),
+        propertyField('高度', propertyNumber(position.height, (value) => setNodeLayout(node.id, { height: value }), { min: 48, step: 5 }))
+      ]),
+      el('div', { class: 'property-actions' }, [
+        propertyAction('重置自动位置', () => resetNodePosition(node.id)),
+        propertyAction('锁定位置', () => toggleNodeLock(node.id))
+      ])
+    ]),
+    el('div', { class: 'property-section' }, [
+      el('strong', { text: '节点样式' }),
+      el('div', { class: 'property-grid' }, [
+        propertyField('填充', propertyColor(style.fill, (value) => updateNodeStyle(node.id, 'fill', value))),
+        propertyField('边框', propertyColor(style.stroke, (value) => updateNodeStyle(node.id, 'stroke', value))),
+        propertyField('文字颜色', propertyColor(style.textColor, (value) => updateNodeStyle(node.id, 'textColor', value))),
+        propertyField('字体大小', propertyNumber(style.fontSize, (value) => updateNodeStyle(node.id, 'fontSize', Number(value)), { min: 8, max: 48 })),
+        propertyField('字重', bindPropertyControl(propertySelect([['400', '常规'], ['500', '中等'], ['700', '粗体']], String(style.fontWeight)), (value) => updateNodeStyle(node.id, 'fontWeight', Number(value)), { layout: true })),
+        propertyField('边框粗细', propertyNumber(style.strokeWidth, (value) => updateNodeStyle(node.id, 'strokeWidth', Number(value)), { min: 0, max: 10, step: 0.25 })),
+        propertyField('圆角', propertyNumber(style.radius, (value) => updateNodeStyle(node.id, 'radius', Number(value)), { min: 0, max: 40 })),
+        propertyField('锁定', (() => { const input = el('input', { type: 'checkbox' }); input.checked = Boolean(position.locked); bindPropertyControl(input, (value) => setNodeLock(node.id, value)); return input; })())
+      ]),
+      el('div', { class: 'property-actions' }, [
+        propertyAction('复制节点', duplicateSelection),
+        propertyAction('删除节点', deleteSelection, 'danger')
+      ])
+    ])
+  );
+}
+
+function renderEdgePanel(panel) {
+  const edge = currentEdge();
+  if (!edge) { state.editor.selectedEdge = null; renderCanvasPanel(panel); return; }
+  const style = edgeStyle(edge.__id);
+  const nodes = state.data.nodes || [];
+  panel.append(
+    el('div', { class: 'property-head' }, [el('strong', { text: '股权连线' }), el('small', { text: edge.__id })]),
+    el('div', { class: 'property-section' }, [
+      el('strong', { text: '业务关系' }),
+      propertyField('出资方', bindPropertyControl(propertySelect(nodes.map((node) => [node.id, node.name]), edge.source), (value) => { edge.source = value; }, { result: true }), true),
+      propertyField('被投资方', bindPropertyControl(propertySelect(nodes.map((node) => [node.id, node.name]), edge.target), (value) => { edge.target = value; }, { result: true }), true),
+      propertyField('持股比例', propertyText(edge.percentage || '', (value) => {
+        edge.percentage = value.trim();
+        edge.percentage_source = edge.percentage ? 'manual' : 'missing';
+      }, '如 30.4498%', { result: true }), true),
+      propertyField('关系类型', bindPropertyControl(propertySelect([
+        ['shareholder_to_core', '股东 → 核心'], ['investment', '投资'], ['subsidiary', '子公司']
+      ], edge.relation), (value) => { edge.relation = value; }, { result: true }), true),
+      propertyField('置信度', propertyNumber(edge.confidence ?? 0, (value) => { edge.confidence = Math.max(0, Math.min(1, Number(value) || 0)); }, { min: 0, max: 1, step: 0.01, result: true }))
+    ]),
+    el('div', { class: 'property-section' }, [
+      el('strong', { text: '连线样式' }),
+      el('div', { class: 'property-grid' }, [
+        propertyField('线条颜色', propertyColor(style.stroke, (value) => updateEdgeStyle(edge.__id, 'stroke', value))),
+        propertyField('线宽', propertyNumber(style.strokeWidth, (value) => updateEdgeStyle(edge.__id, 'strokeWidth', Number(value)), { min: 0.5, max: 8, step: 0.25 })),
+        propertyField('线型', bindPropertyControl(propertySelect([['none', '实线'], ['5 3', '虚线'], ['2 3', '点线']], style.dash), (value) => updateEdgeStyle(edge.__id, 'dash', value))),
+        propertyField('箭头', (() => { const input = el('input', { type: 'checkbox' }); input.checked = style.arrow !== false; bindPropertyControl(input, (value) => updateEdgeStyle(edge.__id, 'arrow', value)); return input; })())
+      ]),
+      el('div', { class: 'property-actions' }, [
+        propertyAction('添加/显示比例', () => addPercentageToEdge(edge)),
+        propertyAction('隐藏比例标签', () => hideEdgeLabel(edge)),
+        propertyAction('删除连线', () => deleteEdge(edge), 'danger')
+      ])
+    ])
+  );
+}
+
+function renderLabelPanel(panel) {
+  const edge = edgeById(state.editor.selectedLabel);
+  if (!edge) { state.editor.selectedLabel = null; renderCanvasPanel(panel); return; }
+  const style = labelStyle(edge.__id);
+  const info = (state.editor.renderInfo?.labelItems || []).find((item) => item.id === edge.__id) || {};
+  const manual = state.editor.labels[edge.__id] || {};
+  panel.append(
+    el('div', { class: 'property-head' }, [el('strong', { text: '持股比例标签' }), el('small', { text: edge.__id })]),
+    el('div', { class: 'property-section' }, [
+      el('strong', { text: '业务数值（同步关系）' }),
+      propertyField('比例文字', propertyText(edge.percentage || '', (value) => {
+        edge.percentage = value.trim();
+        edge.percentage_source = edge.percentage ? 'manual' : 'missing';
+      }, '如 30.4498%', { result: true }), true)
+    ]),
+    el('div', { class: 'property-section' }, [
+      el('strong', { text: '位置（只改标签）' }),
+      el('div', { class: 'property-grid' }, [
+        propertyField('X', propertyNumber(manual.x ?? info.x ?? 0, (value) => setLabelLayout(edge.__id, { x: Number(value) }), { step: 5 })),
+        propertyField('Y', propertyNumber(manual.y ?? info.y ?? 0, (value) => setLabelLayout(edge.__id, { y: Number(value) }), { step: 5 }))
+      ]),
+      el('div', { class: 'property-actions' }, [
+        propertyAction('恢复自动位置', () => resetLabelPosition(edge.__id)),
+        propertyAction('隐藏标签', () => hideEdgeLabel(edge)),
+        propertyAction('删除连线', () => deleteEdge(edge), 'danger')
+      ])
+    ]),
+    el('div', { class: 'property-section' }, [
+      el('strong', { text: '标签样式' }),
+      el('div', { class: 'property-grid' }, [
+        propertyField('文字颜色', propertyColor(style.color, (value) => updateLabelStyle(edge.__id, 'color', value))),
+        propertyField('背景色', propertyColor(style.background, (value) => updateLabelStyle(edge.__id, 'background', value))),
+        propertyField('字体大小', propertyNumber(style.fontSize, (value) => updateLabelStyle(edge.__id, 'fontSize', Number(value)), { min: 8, max: 30 })),
+        propertyField('字重', bindPropertyControl(propertySelect([['400', '常规'], ['500', '中等'], ['700', '粗体']], String(style.fontWeight)), (value) => updateLabelStyle(edge.__id, 'fontWeight', Number(value)))),
+        propertyField('左右边距', propertyNumber(style.paddingX, (value) => updateLabelStyle(edge.__id, 'paddingX', Number(value)), { min: 0, max: 20 })),
+        propertyField('上下边距', propertyNumber(style.paddingY, (value) => updateLabelStyle(edge.__id, 'paddingY', Number(value)), { min: 0, max: 20 })),
+        propertyField('圆角', propertyNumber(style.radius, (value) => updateLabelStyle(edge.__id, 'radius', Number(value)), { min: 0, max: 20 }))
+      ])
+    ])
+  );
+}
+
+function setNodeLayout(id, patch) {
+  const position = nodeLayoutPosition(id);
+  if (!position) return;
+  const next = {
+    x: position.x, y: position.y, width: position.width, height: position.height,
+    manualPosition: true, ...(state.editor.nodes[id] || {})
+  };
+  for (const [key, value] of Object.entries(patch)) {
+    const number = Number(value);
+    if (Number.isFinite(number)) {
+      const value = key === 'width' || key === 'height' ? Math.max(key === 'width' ? 100 : 48, Math.round(number)) : Math.round(number);
+      next[key] = key === 'y' ? Math.max(LAYOUT.contentTop, value) : value;
+    }
+  }
+  state.editor.nodes[id] = next;
+}
+
+function setNodeLock(id, locked) {
+  const position = nodeLayoutPosition(id);
+  state.editor.nodes[id] = {
+    ...(state.editor.nodes[id] || {}),
+    x: position?.x, y: position?.y, width: position?.width, height: position?.height,
+    manualPosition: Boolean(state.editor.nodes[id]?.manualPosition),
+    locked: Boolean(locked)
+  };
+}
+
+function toggleNodeLock(id) {
+  const before = snapshotLayout();
+  const current = Boolean(state.editor.nodes[id]?.locked || nodeLayoutPosition(id)?.locked);
+  setNodeLock(id, !current);
+  commitEditorChange(before, { layout: true, message: current ? '已解锁节点。' : '已锁定节点。' });
+}
+
+function resetNodePosition(id) {
+  const before = snapshotLayout();
+  const locked = Boolean(state.editor.nodes[id]?.locked);
+  if (locked) state.editor.nodes[id] = { locked: true };
+  else delete state.editor.nodes[id];
+  commitEditorChange(before, { layout: true, message: '已恢复自动位置。' });
+}
+
+function updateNodeStyle(id, key, value) {
+  const styles = editorStyles();
+  const current = styles.nodes[id] || {};
+  styles.nodes[id] = { ...current, [key]: value };
+}
+
+function updateEdgeStyle(id, key, value) {
+  const styles = editorStyles();
+  styles.edges[id] = { ...(styles.edges[id] || {}), [key]: value };
+}
+
+function updateLabelStyle(id, key, value) {
+  const styles = editorStyles();
+  styles.labels[id] = { ...(styles.labels[id] || {}), [key]: value };
+}
+
+function setLabelLayout(id, patch) {
+  const info = (state.editor.renderInfo?.labelItems || []).find((item) => item.id === id) || {};
+  const current = state.editor.labels[id] || {};
+  state.editor.labels[id] = {
+    ...current,
+    x: Number.isFinite(Number(patch.x)) ? Number(patch.x) : (Number.isFinite(Number(current.x)) ? Number(current.x) : info.x),
+    y: Number.isFinite(Number(patch.y)) ? Number(patch.y) : (Number.isFinite(Number(current.y)) ? Number(current.y) : info.y),
+    manual: true
+  };
+}
+
+function resetLabelPosition(id) {
+  const before = snapshotLayout();
+  delete state.editor.labels[id];
+  const style = editorStyles().labels[id];
+  if (style && style.hidden) delete style.hidden;
+  commitEditorChange(before, { layout: true, message: '比例标签已恢复自动位置。' });
+}
+
+function addPercentageToEdge(edge) {
+  if (!edge) return toast('请先选择一条股权连线。');
+  const current = edge.percentage || '';
+  const value = window.prompt('输入持股比例（保留原始精度，例如 30.4498%）', current);
+  if (value === null) return;
+  const text = value.trim();
+  if (!text) return;
+  const before = snapshotLayout();
+  edge.percentage = text;
+  edge.percentage_source = 'manual';
+  editorStyles().labels[edge.__id] = { ...(editorStyles().labels[edge.__id] || {}), hidden: false };
+  state.editor.selectedEdge = edge.__id;
+  state.editor.selectedLabel = null;
+  commitEditorChange(before, { result: true, layout: true, message: '持股比例已更新。' });
+}
+
+function hideEdgeLabel(edge) {
+  if (!edge) return;
+  const before = snapshotLayout();
+  editorStyles().labels[edge.__id] = { ...(editorStyles().labels[edge.__id] || {}), hidden: true };
+  state.editor.selectedLabel = null;
+  commitEditorChange(before, { layout: true, message: '比例标签已隐藏；关系数据保留。' });
+}
+
+function deleteEdge(edge) {
+  if (!edge) return;
+  const before = snapshotLayout();
+  state.data.edges = (state.data.edges || []).filter((item) => item !== edge);
+  delete state.editor.labels[edge.__id];
+  delete editorStyles().edges[edge.__id];
+  delete editorStyles().labels[edge.__id];
+  state.editor.selectedEdge = null;
+  state.editor.selectedLabel = null;
+  commitEditorChange(before, { result: true, layout: true, message: '连线已删除，可撤销。' });
+}
+
+function deleteSelection() {
+  const hasNodes = state.editor.selectedNodes.size > 0;
+  const edge = currentEdge();
+  const labelId = state.editor.selectedLabel;
+  if (!hasNodes && !edge && !labelId) return toast('请先选择节点、连线或比例标签。');
+  if (labelId) return hideEdgeLabel(edgeById(labelId));
+  const before = snapshotLayout();
+  if (edge) {
+    state.data.edges = (state.data.edges || []).filter((item) => item !== edge);
+    delete state.editor.labels[edge.__id];
+    delete editorStyles().edges[edge.__id];
+    delete editorStyles().labels[edge.__id];
+    state.editor.selectedEdge = null;
+    commitEditorChange(before, { result: true, layout: true, message: '连线已删除，可撤销。' });
+    return;
+  }
+  const ids = new Set(state.editor.selectedNodes);
+  state.data.nodes = (state.data.nodes || []).filter((node) => !ids.has(node.id));
+  const removedEdges = (state.data.edges || []).filter((item) => ids.has(item.source) || ids.has(item.target));
+  state.data.edges = (state.data.edges || []).filter((item) => !ids.has(item.source) && !ids.has(item.target));
+  for (const id of ids) {
+    delete state.editor.nodes[id];
+    delete editorStyles().nodes[id];
+  }
+  for (const item of removedEdges) {
+    delete state.editor.labels[item.__id];
+    delete editorStyles().edges[item.__id];
+    delete editorStyles().labels[item.__id];
+  }
+  state.editor.selectedNodes.clear();
+  commitEditorChange(before, { result: true, layout: true, message: '节点及关联关系已删除，可撤销。' });
+}
+
+function insertNode(entityType = 'company', options = {}) {
+  if (!state.data) throw new Error('尚未加载股权结构。');
+  const labels = { company: '新公司', person: '新个人', fund: '新基金', institution: '新机构', other: '新节点' };
+  const id = options.id || newStableId('n');
+  const layoutInfo = state.editor.renderInfo?.layout;
+  const canvasWidth = layoutInfo?.width || 1200;
+  const canvasHeight = layoutInfo?.height || 600;
+  const existing = (state.data.nodes || []).length;
+  const maxLevel = Math.max(1, ...(state.data.nodes || []).map((item) => Number(item.level) || 1));
+  const width = Number(options.width) || 180;
+  const height = Number(options.height) || 70;
+  const node = {
+    id,
+    name: String(options.name ?? labels[entityType] ?? '新节点'),
+    entity_type: entityType,
+    level: Number.isFinite(Number(options.level)) ? Math.max(1, Number(options.level)) : maxLevel + 1,
+    status: 'active',
+    confidence: 1,
+    bbox: null
+  };
+  state.data.nodes = state.data.nodes || [];
+  state.data.nodes.push(node);
+  const position = options.position || {
+    x: Math.round(canvasWidth / 2 - width / 2 + (existing % 4) * 24),
+    y: Math.round(Math.max(120, canvasHeight / 2 - height / 2 + (existing % 3) * 18)),
+    width,
+    height
+  };
+  state.editor.nodes[id] = {
+    x: Math.round(Number(position.x) || 10),
+    y: Math.round(Number(position.y) || 10),
+    width: Math.round(Number(position.width) || width),
+    height: Math.round(Number(position.height) || height),
+    manualPosition: true,
+    locked: false
+  };
+  const theme = THEMES[state.editor.defaultTheme] || THEMES.audit;
+  editorStyles().nodes[id] = {
+    ...(theme.nodes || {}),
+    ...(options.style || {})
+  };
+  state.editor.selectedNodes = new Set([id]);
+  state.editor.selectedEdge = null;
+  state.editor.selectedLabel = null;
+  return id;
+}
+
+function addNode(entityType = 'company', options = {}) {
+  if (!state.data) return;
+  const before = snapshotLayout();
+  const labels = { company: '新公司', person: '新个人', fund: '新基金', institution: '新机构', other: '新节点' };
+  insertNode(entityType, options);
+  commitEditorChange(before, { result: true, layout: true, message: `已添加${labels[entityType] || '节点'}，可继续编辑名称和样式。` });
+  if (els.chartWrap) els.chartWrap.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+
+function isCoreNode(node) {
+  if (!node) return false;
+  if (state.data?.core_company) return node.name === state.data.core_company;
+  return Number(node.level) === 2;
+}
+
+function relatedDirection() {
+  return document.querySelector('input[name="relatedDirection"]:checked')?.value || 'upstream';
+}
+
+function relatedTargetNode() {
+  return nodeById(els.relatedTarget?.value || '');
+}
+
+function parseRelatedPercentage(raw) {
+  const original = String(raw ?? '').trim();
+  if (!original) return { ok: false, error: '请输入持股比例。' };
+  const text = original.replace(/\s+/g, '').replace(/％/g, '%');
+  if (!/^\d+(?:\.\d+)?%?$/.test(text)) return { ok: false, error: '持股比例必须是 0–100 的数字，可带 %。' };
+  const numeric = Number(text.replace('%', ''));
+  if (!Number.isFinite(numeric) || numeric < 0 || numeric > 100) {
+    return { ok: false, error: '持股比例必须在 0% 至 100% 之间。' };
+  }
+  return { ok: true, value: text.endsWith('%') ? text : `${text}%`, numeric };
+}
+
+function fillRelatedTargets() {
+  const select = els.relatedTarget;
+  if (!select) return;
+  clear(select);
+  select.append(el('option', { value: '', text: '请选择关联公司' }));
+  const active = (state.data?.nodes || [])
+    .filter((node) => node.status !== 'excluded_cancelled')
+    .sort((a, b) => (Number(a.level) || 1) - (Number(b.level) || 1) || String(a.name).localeCompare(String(b.name), 'zh-CN'));
+  for (const node of active) {
+    select.append(el('option', {
+      value: node.id,
+      text: `L${Number(node.level) || 1} · ${node.name}`
+    }));
+  }
+  const selected = state.editor.selectedNodes.size === 1 ? [...state.editor.selectedNodes][0] : '';
+  if (selected && active.some((node) => node.id === selected)) select.value = selected;
+}
+
+function updateRelatedForm() {
+  if (!els.relatedDialog || els.relatedDialog.hidden) return;
+  const mode = relatedDirection();
+  const only = mode === 'only';
+  if (els.relatedTargetField) els.relatedTargetField.hidden = only;
+  if (els.relatedPercentageField) els.relatedPercentageField.hidden = only;
+  if (els.relatedTarget) els.relatedTarget.required = !only;
+  if (els.relatedPercentage) els.relatedPercentage.required = !only;
+  if (els.createRelatedButton) els.createRelatedButton.innerHTML = only ? '仅添加公司 <span>→</span>' : '创建关联关系 <span>→</span>';
+  const target = relatedTargetNode();
+  const targetLabel = target ? target.name : '请选择关联公司';
+  if (els.relatedPreview) {
+    els.relatedPreview.textContent = only
+      ? '仅创建独立公司节点，不创建连线和比例。'
+      : mode === 'upstream'
+        ? `新公司 → ${targetLabel}`
+        : `${targetLabel} → 新公司`;
+  }
+  showError(els.relatedError, '');
+}
+
+function openRelatedDialog() {
+  if (!state.data) return toast('请先完成识别。');
+  if (!els.relatedDialog) return;
+  fillRelatedTargets();
+  els.relatedName.value = '';
+  els.relatedType.value = 'company';
+  els.relatedPercentage.value = '';
+  const upstream = els.relatedForm?.querySelector('input[name="relatedDirection"][value="upstream"]');
+  if (upstream) upstream.checked = true;
+  showError(els.relatedError, '');
+  updateRelatedForm();
+  els.relatedDialog.hidden = false;
+  els.relatedBackdrop.hidden = false;
+  document.body.classList.add('modal-open');
+  els.relatedName.focus();
+}
+
+function closeRelatedDialog() {
+  if (!els.relatedDialog) return;
+  els.relatedDialog.hidden = true;
+  els.relatedBackdrop.hidden = true;
+  document.body.classList.remove('modal-open');
+  showError(els.relatedError, '');
+}
+
+function nextRelatedPosition(targetPosition, direction, width, height) {
+  const positions = [...(state.editor.renderInfo?.layout?.positions?.values?.() || [])];
+  const centerX = targetPosition.x + targetPosition.width / 2 - width / 2;
+  const baseY = direction === 'upstream'
+    ? Math.max(LAYOUT.contentTop, targetPosition.y - height - 120)
+    : targetPosition.y + targetPosition.height + 120;
+  const offsets = [0, -(width + 28), width + 28, -2 * (width + 28), 2 * (width + 28), -3 * (width + 28), 3 * (width + 28)];
+  for (const offset of offsets) {
+    const candidate = {
+      x: Math.max(10, Math.round(centerX + offset)),
+      y: Math.max(LAYOUT.contentTop, Math.round(baseY)),
+      width, height
+    };
+    if (!positions.some((position) => boxesOverlap(candidate, position, 20))) return candidate;
+  }
+  return { x: Math.max(10, Math.round(centerX)), y: Math.max(LAYOUT.contentTop, Math.round(baseY)), width, height };
+}
+
+function persistAutoLabel(edgeId) {
+  const item = (state.editor.renderInfo?.labelItems || []).find((label) => label.id === edgeId);
+  if (!item) return;
+  state.editor.labels[edgeId] = { x: item.x, y: item.y, manual: false, auto: true };
   scheduleLayoutSave();
-  toast('已恢复自动排版。');
+}
+
+function rebaseLevels(shift = 1) {
+  if (!state.data || !shift) return;
+  for (const node of state.data.nodes || []) {
+    node.level = Math.max(1, (Number(node.level) || 1) + shift);
+  }
+  const dy = LAYOUT.levelGap * shift;
+  for (const node of Object.values(state.editor.nodes || {})) {
+    if (Number.isFinite(Number(node?.y))) node.y = Math.round(Number(node.y) + dy);
+  }
+  for (const label of Object.values(state.editor.labels || {})) {
+    if (Number.isFinite(Number(label?.y))) label.y = Math.round(Number(label.y) + dy);
+  }
+  for (const bus of Object.values(state.editor.buses || {})) {
+    if (Number.isFinite(Number(bus?.y))) bus.y = Math.round(Number(bus.y) + dy);
+  }
+}
+
+function createRelatedCompany() {
+  if (!state.data) return;
+  const mode = relatedDirection();
+  const name = String(els.relatedName.value || '').trim();
+  const entityType = String(els.relatedType.value || 'company');
+  let target = mode === 'only' ? null : relatedTargetNode();
+  if (!name) return showError(els.relatedError, '请输入新公司名称。');
+  if (mode !== 'only' && !target) return showError(els.relatedError, '请选择关联公司。');
+  if (mode !== 'only' && target?.status === 'excluded_cancelled') return showError(els.relatedError, '已注销节点不能作为关联对象。');
+  let percentage = null;
+  if (mode !== 'only') {
+    const parsed = parseRelatedPercentage(els.relatedPercentage.value);
+    if (!parsed.ok) return showError(els.relatedError, parsed.error);
+    percentage = parsed.value;
+  }
+
+  const before = snapshotLayout();
+  let committed = false;
+  let rebased = false;
+  try {
+    if (mode === 'upstream' && target && (Number(target.level) || 1) <= 1) {
+      rebaseLevels(1);
+      target = nodeById(target.id);
+      rebased = true;
+    }
+    const width = Math.max(160, Math.min(280, name.length * 14 + 40));
+    const charsPerLine = Math.max(8, Math.floor((width - 36) / 14));
+    const lineCount = Math.max(1, Math.ceil(name.length / charsPerLine));
+    const height = Math.max(70, lineCount * 22 + 24);
+    const level = mode === 'only' ? undefined
+      : mode === 'upstream' ? Math.max(1, (Number(target.level) || 1) - 1)
+      : (Number(target.level) || 1) + 1;
+    const targetPosition = mode === 'only' ? null : (nodeLayoutPosition(target.id) || { x: 120, y: 120, width: 180, height: 70 });
+    if (targetPosition && rebased) targetPosition.y += LAYOUT.levelGap;
+    const position = mode === 'only' ? undefined : nextRelatedPosition(targetPosition, mode, width, height);
+    const newId = insertNode(entityType, { name, level, width, height, position });
+    if (mode !== 'only') {
+      const edge = {
+        source: mode === 'upstream' ? newId : target.id,
+        target: mode === 'upstream' ? target.id : newId,
+        percentage,
+        relation: mode === 'upstream' && isCoreNode(target) ? 'shareholder_to_core' : 'investment',
+        confidence: 1,
+        percentage_source: 'manual',
+        __id: newStableId('e')
+      };
+      state.data.edges = state.data.edges || [];
+      state.data.edges.push(edge);
+      editorStyles().labels[edge.__id] = { ...(editorStyles().labels[edge.__id] || {}), hidden: false };
+      state.editor.selectedNodes.clear();
+      state.editor.selectedEdge = edge.__id;
+      state.editor.selectedLabel = null;
+      commitEditorChange(before, { result: true, layout: true, message: `已添加${mode === 'upstream' ? '上游股东' : '下游被投资公司'}及 ${percentage} 持股比例。` });
+      committed = true;
+      persistAutoLabel(edge.__id);
+    } else {
+      commitEditorChange(before, { result: true, layout: true, message: '已添加独立公司节点，未创建连线或比例。' });
+      committed = true;
+    }
+    closeRelatedDialog();
+    if (els.chartWrap) els.chartWrap.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return true;
+  } catch (error) {
+    if (!committed) restoreLayout(before);
+    showError(els.relatedError, `创建失败：${error.message}`);
+    return false;
+  }
+}
+
+function duplicateSelection() {
+  if (!state.data || state.editor.selectedNodes.size === 0) return toast('请先选择要复制的节点。');
+  const before = snapshotLayout();
+  const ids = new Set();
+  const selected = [...state.editor.selectedNodes].map(nodeById).filter(Boolean);
+  const maxLevel = Math.max(1, ...(state.data.nodes || []).map((item) => Number(item.level) || 1));
+  for (const node of selected) {
+    const id = newStableId('n');
+    const copy = { ...cloneJson(node), id, name: `${node.name}（副本）`, bbox: null, level: maxLevel + 1 };
+    state.data.nodes.push(copy);
+    const position = nodeLayoutPosition(node.id) || { x: 120, y: 120, width: 180, height: 70 };
+    state.editor.nodes[id] = {
+      x: position.x + 30, y: position.y + 30,
+      width: position.width, height: position.height,
+      manualPosition: true, locked: false
+    };
+    editorStyles().nodes[id] = cloneJson(editorStyles().nodes[node.id] || {});
+    ids.add(id);
+  }
+  state.editor.selectedNodes = ids;
+  state.editor.selectedEdge = null;
+  state.editor.selectedLabel = null;
+  commitEditorChange(before, { result: true, layout: true, message: '已复制节点（未复制股权关系），可撤销。' });
+}
+
+function startLinkMode() {
+  if (!state.data) return;
+  state.editor.linkMode = { source: null };
+  state.editor.selectedNodes.clear();
+  state.editor.selectedEdge = null;
+  state.editor.selectedLabel = null;
+  if (els.addEdgeButton) els.addEdgeButton.classList.add('active');
+  renderChart();
+  renderPropertyPanel();
+  setLayoutStatus('连线模式：请点击源节点，再点击目标节点；Esc 取消。', 'saving');
+  if (els.chartWrap) els.chartWrap.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function cancelLinkMode() {
+  if (!state.editor.linkMode) return;
+  state.editor.linkMode = null;
+  if (els.addEdgeButton) els.addEdgeButton.classList.remove('active');
+  renderChart();
+  setLayoutStatus('已取消连线操作。', '');
+}
+
+function handleLinkNode(id) {
+  const mode = state.editor.linkMode;
+  if (!mode) return false;
+  if (!mode.source) {
+    mode.source = id;
+    selectNode(id, false);
+    setLayoutStatus('已选择源节点，请点击目标节点；Esc 取消。', 'saving');
+    return true;
+  }
+  if (mode.source === id) {
+    toast('源节点和目标节点不能相同。');
+    return true;
+  }
+  const before = snapshotLayout();
+  const edge = {
+    source: mode.source,
+    target: id,
+    percentage: '',
+    relation: 'investment',
+    confidence: 1,
+    percentage_source: 'manual',
+    __id: newStableId('e')
+  };
+  state.data.edges = state.data.edges || [];
+  state.data.edges.push(edge);
+  state.editor.linkMode = null;
+  if (els.addEdgeButton) els.addEdgeButton.classList.remove('active');
+  state.editor.selectedNodes.clear();
+  state.editor.selectedEdge = edge.__id;
+  commitEditorChange(before, { result: true, layout: true, message: '股权连线已添加，可设置比例和样式。' });
+  return true;
+}
+
+function applyThemeToAll(themeKey) {
+  const theme = THEMES[themeKey];
+  if (!theme) return;
+  const styles = editorStyles();
+  const overrides = Object.keys(styles.nodes).length + Object.keys(styles.edges).length + Object.keys(styles.labels).length;
+  if (overrides > 0 && !window.confirm('将覆盖已有的人工颜色设置，是否继续？')) return;
+  const before = snapshotLayout();
+  for (const node of state.data?.nodes || []) {
+    styles.nodes[node.id] = { ...(styles.nodes[node.id] || {}), ...(theme.nodes || {}) };
+  }
+  for (const edge of state.data?.edges || []) {
+    styles.edges[edge.__id] = { ...(styles.edges[edge.__id] || {}), ...(theme.edges || {}) };
+    styles.labels[edge.__id] = { ...(styles.labels[edge.__id] || {}), ...(theme.labels || {}) };
+  }
+  styles.canvas = { ...(styles.canvas || {}), ...(theme.canvas || {}) };
+  styles.theme = themeKey;
+  state.editor.defaultTheme = themeKey;
+  commitEditorChange(before, { result: false, layout: true, message: `已应用主题「${theme.name}」。` });
 }
 
 function renderNodeTable() {
@@ -1300,7 +2471,7 @@ function renderNodeTable() {
   });
   const table = el('table');
   const head = el('tr');
-  for (const label of ['层级', '实体名称', '类型', '状态', '锁定', '置信度', ''] ) head.append(el('th', { text: label }));
+  for (const label of ['层级', '实体名称', '类型', '状态', '锁定', '置信度', '操作'] ) head.append(el('th', { text: label }));
   table.append(el('thead', {}, [head]));
   const body = el('tbody');
   if (!rows.length) {
@@ -1309,19 +2480,19 @@ function renderNodeTable() {
   rows.forEach((node) => {
     const tr = el('tr');
     const levelInput = el('input', { type: 'number', min: '1', value: String(node.level || 1) });
-    levelInput.addEventListener('change', () => { node.level = Math.max(1, Number(levelInput.value) || 1); markDirty(); });
+    levelInput.addEventListener('change', () => { const before = snapshotLayout(); node.level = Math.max(1, Number(levelInput.value) || 1); markDirty(); pushHistory(before); scheduleRender(); });
     const nameInput = el('input', { type: 'text', value: node.name || '' });
-    nameInput.addEventListener('change', () => { node.name = nameInput.value.trim(); markDirty(); });
+    nameInput.addEventListener('change', () => { const before = snapshotLayout(); node.name = nameInput.value.trim(); markDirty(); pushHistory(before); scheduleRender(); });
     const typeSelect = el('select');
-    for (const [value, label] of [['company', '公司'], ['person', '个人'], ['fund', '基金/机构'], ['other', '其他']]) {
+    for (const [value, label] of [['company', '公司'], ['person', '个人'], ['fund', '基金'], ['institution', '机构'], ['other', '其他']]) {
       typeSelect.append(el('option', { value, text: label, ...(node.entity_type === value ? { selected: 'selected' } : {}) }));
     }
-    typeSelect.addEventListener('change', () => { node.entity_type = typeSelect.value; markDirty(); });
+    typeSelect.addEventListener('change', () => { const before = snapshotLayout(); node.entity_type = typeSelect.value; markDirty(); pushHistory(before); scheduleRender(); });
     const statusSelect = el('select');
     for (const [value, label] of [['active', '有效'], ['excluded_cancelled', '已注销/排除'], ['unknown', '未知']]) {
       statusSelect.append(el('option', { value, text: label, ...(node.status === value ? { selected: 'selected' } : {}) }));
     }
-    statusSelect.addEventListener('change', () => { node.status = statusSelect.value; markDirty(); });
+    statusSelect.addEventListener('change', () => { const before = snapshotLayout(); node.status = statusSelect.value; markDirty(); pushHistory(before); scheduleRender(); });
     const confidence = Number(node.confidence) || 0;
     const lockInput = el('input', { type: 'checkbox', title: '锁定位置' });
     lockInput.checked = Boolean(state.editor.nodes[node.id]?.locked || nodeLayoutPosition(node.id)?.locked);
@@ -1346,7 +2517,13 @@ function renderNodeTable() {
       el('td', {}, [statusSelect]),
       el('td', {}, [lockInput]),
       el('td', {}, [badge(confidence.toFixed(2), confidence < 0.86 ? 'amber' : 'green')]),
-      el('td', { class: 'cell-muted', text: Array.isArray(node.bbox) ? node.bbox.map(Math.round).join(',') : '' })
+      el('td', { class: 'cell-muted' }, [
+        el('button', {
+          type: 'button', class: 'mini-button', text: '编辑',
+          onclick: () => selectNode(node.id, false)
+        }),
+        el('span', { text: Array.isArray(node.bbox) ? ` ${node.bbox.map(Math.round).join(',')}` : '' })
+      ])
     );
     body.append(tr);
   });
@@ -1376,34 +2553,34 @@ function renderEdgeTable() {
   if (!edges.length) body.append(el('tr', {}, [el('td', { colspan: '7', class: 'empty-state', text: '没有匹配的关系。' })]));
   for (const edge of edges) {
     const tr = el('tr');
-    const sourceSelect = nodeSelect(nodes, edge.source, (value) => { edge.source = value; markDirty(); });
-    const targetSelect = nodeSelect(nodes, edge.target, (value) => { edge.target = value; markDirty(); });
+    const sourceSelect = nodeSelect(nodes, edge.source, (value) => { const before = snapshotLayout(); edge.source = value; markDirty(); pushHistory(before); scheduleRender(); });
+    const targetSelect = nodeSelect(nodes, edge.target, (value) => { const before = snapshotLayout(); edge.target = value; markDirty(); pushHistory(before); scheduleRender(); });
     const percentage = el('input', { type: 'text', value: edge.percentage || '', placeholder: '如 54%' });
     percentage.addEventListener('change', () => {
+      const before = snapshotLayout();
       edge.percentage = percentage.value.trim();
       edge.percentage_source = edge.percentage ? 'manual' : 'missing';
       markDirty();
+      pushHistory(before);
+      scheduleRender();
     });
     const relation = el('select');
     for (const [value, label] of [['shareholder_to_core', '股东 → 核心'], ['investment', '投资'], ['subsidiary', '子公司']]) {
       relation.append(el('option', { value, text: label, ...(edge.relation === value ? { selected: 'selected' } : {}) }));
     }
-    relation.addEventListener('change', () => { edge.relation = relation.value; markDirty(); });
+    relation.addEventListener('change', () => { const before = snapshotLayout(); edge.relation = relation.value; markDirty(); pushHistory(before); scheduleRender(); });
     const confidence = el('input', { type: 'number', min: '0', max: '1', step: '0.01', value: String(edge.confidence ?? 0) });
-    confidence.addEventListener('change', () => { edge.confidence = Math.max(0, Math.min(1, Number(confidence.value) || 0)); markDirty(); });
+    confidence.addEventListener('change', () => { const before = snapshotLayout(); edge.confidence = Math.max(0, Math.min(1, Number(confidence.value) || 0)); markDirty(); pushHistory(before); scheduleRender(); });
     const source = el('select');
     for (const value of ['secondary_crop_ocr', 'global_ocr', 'manual', 'missing']) {
       source.append(el('option', { value, text: value, ...(edge.percentage_source === value ? { selected: 'selected' } : {}) }));
     }
-    source.addEventListener('change', () => { edge.percentage_source = source.value; markDirty(); });
-    const remove = el('button', { type: 'button', class: 'mini-button', text: '删除' });
-    remove.addEventListener('click', () => {
-      state.data.edges = state.data.edges.filter((item) => item !== edge);
-      markDirty();
-      renderEdgeTable();
-    });
+    source.addEventListener('change', () => { const before = snapshotLayout(); edge.percentage_source = source.value; markDirty(); pushHistory(before); scheduleRender(); });
+    const edit = el('button', { type: 'button', class: 'mini-button', text: '编辑', onclick: () => selectEdge(edge.__id) });
+    const remove = el('button', { type: 'button', class: 'mini-button danger', text: '删除' });
+    remove.addEventListener('click', () => deleteEdge(edge));
     tr.append(el('td', {}, [sourceSelect]), el('td', {}, [targetSelect]), el('td', {}, [percentage]),
-      el('td', {}, [relation]), el('td', {}, [confidence]), el('td', {}, [source]), el('td', {}, [remove]));
+      el('td', {}, [relation]), el('td', {}, [confidence]), el('td', {}, [source]), el('td', {}, [edit, remove]));
     body.append(tr);
   }
   table.append(body);
@@ -1421,15 +2598,9 @@ function nodeSelect(nodes, selected, onChange) {
 }
 
 function addEdge() {
-  const nodes = state.data.nodes || [];
+  const nodes = state.data?.nodes || [];
   if (nodes.length < 2) return toast('至少需要两个节点。');
-  state.data.edges = state.data.edges || [];
-  state.data.edges.push({
-    source: nodes[0].id, target: nodes[1].id, percentage: '',
-    relation: 'investment', confidence: 0.5, percentage_source: 'manual'
-  });
-  markDirty();
-  renderEdgeTable();
+  startLinkMode();
 }
 
 function renderOcrText() {
@@ -1497,7 +2668,9 @@ function syncJsonEditor() {
 
 function markDirty() {
   state.dirty = true;
-  els.chartMeta.textContent = '有未应用的修改';
+  els.chartMeta.textContent = '有未保存的结构修改';
+  setLayoutStatus('有未保存的结构修改，正在自动保存…', 'saving');
+  scheduleResultSave();
 }
 
 function applyEdits({ redraw = true } = {}) {
@@ -1513,6 +2686,7 @@ function applyEdits({ redraw = true } = {}) {
   renderCorrections();
   renderExcluded();
   syncJsonEditor();
+  renderPropertyPanel();
 }
 
 function applyJson() {
@@ -1534,20 +2708,32 @@ function applyJson() {
 
 async function saveEdits({ silent = false } = {}) {
   if (!state.job || !state.data) return false;
-  try {
-    await api(`/${state.job.id}/result`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(state.data)
-    });
-    state.dirty = false;
-    if (!silent) toast('修改已保存。');
-    return true;
-  } catch (error) {
-    showError(els.jsonError, error.message);
-    toast(`保存失败：${error.message}`);
-    return false;
-  }
+  return queueSave('result', async () => {
+    try {
+      await api(`/${state.job.id}/result`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(state.data)
+      });
+      state.dirty = false;
+      if (!silent) toast('修改已保存。');
+      else setLayoutStatus('结构修改已自动保存。', 'saved');
+      return true;
+    } catch (error) {
+      setLayoutStatus(`结构保存失败：${error.message}`, 'error');
+      showError(els.jsonError, error.message);
+      if (!silent) toast(`保存失败：${error.message}`);
+      return false;
+    }
+  });
+}
+
+async function saveAllManual() {
+  if (!state.job || !state.data) return false;
+  const saved = await flushSaves();
+  if (saved) toast('业务数据、布局和样式已保存。');
+  else toast('保存失败，请检查网络后重试。');
+  return saved;
 }
 
 function downloadBlob(blob, filename) {
@@ -1625,66 +2811,6 @@ function exportSvgFile() {
   return 'SVG 已下载。';
 }
 
-function exportPngFile() {
-  return new Promise((resolve, reject) => {
-    if (!state.editor.renderInfo) return reject(new Error('未找到股权图布局，请稍后重试。'));
-    const built = buildSvgString(true);
-    const svgWidth = built.width;
-    const svgHeight = built.height;
-    if (!svgWidth || !svgHeight) return reject(new Error('SVG 尺寸无效，无法导出 PNG。'));
-    const svgText = built.svg;
-    const svgBlob = new Blob([svgText], { type: 'image/svg+xml;charset=utf-8' });
-    const svgUrl = URL.createObjectURL(svgBlob);
-    const image = new Image();
-
-    const cleanup = () => URL.revokeObjectURL(svgUrl);
-    image.onload = async () => {
-      try {
-        let scale = 2;
-        const maxPixels = LAYOUT.maxCanvasPixels;
-        scale = Math.min(
-          scale,
-          LAYOUT.maxCanvasDimension / svgWidth,
-          LAYOUT.maxCanvasDimension / svgHeight,
-          Math.sqrt(maxPixels / Math.max(1, svgWidth * svgHeight))
-        );
-        if (!Number.isFinite(scale) || scale <= 0) scale = 1;
-
-        const canvas = document.createElement('canvas');
-        canvas.width = Math.max(1, Math.round(svgWidth * scale));
-        canvas.height = Math.max(1, Math.round(svgHeight * scale));
-        const context = canvas.getContext('2d');
-        if (!context) throw new Error('无法创建 Canvas Context。');
-        context.fillStyle = '#ffffff';
-        context.fillRect(0, 0, canvas.width, canvas.height);
-        context.drawImage(image, 0, 0, canvas.width, canvas.height);
-
-        const pngBlob = await new Promise((resolveBlob, rejectBlob) => {
-          try {
-            canvas.toBlob((blob) => {
-              if (blob) resolveBlob(blob);
-              else rejectBlob(new Error('Canvas toBlob 返回空，图片可能过大。'));
-            }, 'image/png', 1.0);
-          } catch (error) {
-            rejectBlob(error);
-          }
-        });
-        downloadBlob(pngBlob, '股权结构图.png');
-        cleanup();
-        resolve('PNG 已下载。');
-      } catch (error) {
-        cleanup();
-        reject(error instanceof Error ? error : new Error('PNG 导出失败。'));
-      }
-    };
-    image.onerror = () => {
-      cleanup();
-      reject(new Error('SVG 转换 Image 失败，请改用 SVG 导出。'));
-    };
-    image.src = svgUrl;
-  });
-}
-
 async function exportPngFromServer() {
   if (!state.data) throw new Error('请先完成识别。');
   const built = buildSvgString(true);
@@ -1716,10 +2842,8 @@ function downloadDebugSvg() {
 
 async function exportServerFile(format) {
   if (!state.data) throw new Error('请先完成识别。');
-  const saved = await saveEdits({ silent: true });
-  if (!saved) throw new Error('保存当前修改失败，未导出。');
-  const layoutSaved = await saveLayout({ silent: true });
-  if (!layoutSaved) throw new Error('保存当前布局失败，未导出。');
+  const saved = await flushSaves();
+  if (!saved) throw new Error('保存当前修改/布局失败，未导出。');
   const response = await fetch(`${API}/${state.job.id}/export?format=${format}`, { credentials: 'same-origin' });
   if (response.status === 401) {
     location.replace('/login');
@@ -1867,8 +2991,17 @@ function resetWorkspace() {
   state.editor.nodes = {};
   state.editor.labels = {};
   state.editor.buses = {};
+  state.editor.styles = { nodes: {}, edges: {}, labels: {}, canvas: {}, theme: 'audit' };
   state.editor.selectedNodes.clear();
+  state.editor.selectedEdge = null;
   state.editor.selectedLabel = null;
+  state.editor.linkMode = null;
+  state.editor.defaultTheme = 'audit';
+  state.editor.saveChains = { result: Promise.resolve(), layout: Promise.resolve() };
+  clearTimeout(state.editor.saveTimer);
+  clearTimeout(state.editor.resultSaveTimer);
+  state.editor.saveTimer = null;
+  state.editor.resultSaveTimer = null;
   state.editor.history = [];
   state.editor.future = [];
   state.editor.zoom = 1;
@@ -1905,7 +3038,7 @@ function wireEvents() {
   els.dropZone.addEventListener('drop', (event) => setFile(event.dataTransfer?.files?.[0]));
   els.startButton.addEventListener('click', startRecognition);
   els.redrawButton.addEventListener('click', () => { applyEdits(); toast('已重绘。'); });
-  els.saveButton.addEventListener('click', () => saveEdits());
+  els.saveButton.addEventListener('click', () => saveAllManual());
   els.svgButton.addEventListener('click', () => runDownload('svg'));
   els.pngButton.addEventListener('click', () => runDownload('png'));
   els.xlsxButton.addEventListener('click', () => runDownload('xlsx'));
@@ -1921,6 +3054,22 @@ function wireEvents() {
   els.downloadXlsxButton.addEventListener('click', () => runDownload('xlsx'));
   els.downloadPdfButton.addEventListener('click', () => runDownload('pdf'));
   els.downloadDebugSvgButton.addEventListener('click', downloadDebugSvg);
+  els.closeRelatedButton.addEventListener('click', closeRelatedDialog);
+  els.cancelRelatedButton.addEventListener('click', closeRelatedDialog);
+  els.relatedBackdrop.addEventListener('click', closeRelatedDialog);
+  els.relatedTarget.addEventListener('change', updateRelatedForm);
+  els.relatedForm.querySelectorAll('input[name="relatedDirection"]').forEach((input) => input.addEventListener('change', updateRelatedForm));
+  els.relatedForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    if (state.editor.relatedBusy) return;
+    state.editor.relatedBusy = true;
+    els.createRelatedButton.disabled = true;
+    try { createRelatedCompany(); }
+    finally {
+      state.editor.relatedBusy = false;
+      els.createRelatedButton.disabled = false;
+    }
+  });
   els.zoomIn.addEventListener('click', () => setZoom(state.editor.zoom + 0.1));
   els.zoomOut.addEventListener('click', () => setZoom(state.editor.zoom - 0.1));
   els.zoomReset.addEventListener('click', () => setZoom(1));
@@ -1928,6 +3077,19 @@ function wireEvents() {
   els.alignTopButton.addEventListener('click', () => alignSelected('top'));
   els.alignCenterButton.addEventListener('click', () => alignSelected('center'));
   els.distributeButton.addEventListener('click', distributeSelected);
+  els.addRelatedButton.addEventListener('click', openRelatedDialog);
+  els.addCompanyButton.addEventListener('click', () => addNode('company'));
+  els.addPersonButton.addEventListener('click', () => addNode('person'));
+  els.addFundButton.addEventListener('click', () => addNode('fund'));
+  els.addInstitutionButton.addEventListener('click', () => addNode('institution'));
+  els.addOtherButton.addEventListener('click', () => addNode('other'));
+  els.addEdgeButton.addEventListener('click', () => {
+    if (state.editor.linkMode) cancelLinkMode();
+    else startLinkMode();
+  });
+  els.addLabelButton.addEventListener('click', () => addPercentageToEdge(currentEdge()));
+  els.duplicateButton.addEventListener('click', duplicateSelection);
+  els.deleteButton.addEventListener('click', deleteSelection);
   els.undoButton.addEventListener('click', undoLayout);
   els.redoButton.addEventListener('click', redoLayout);
   els.saveLayoutButton.addEventListener('click', () => saveLayout());
@@ -1959,6 +3121,38 @@ function wireEvents() {
   });
   els.refreshHistoryButton.addEventListener('click', loadHistory);
   els.newJobButton.addEventListener('click', resetWorkspace);
+  window.addEventListener('keydown', (event) => {
+    const tag = String(document.activeElement?.tagName || '').toLowerCase();
+    const editing = ['input', 'textarea', 'select'].includes(tag) || document.activeElement?.isContentEditable;
+    if (event.key === 'Escape') {
+      if (els.relatedDialog && !els.relatedDialog.hidden) { event.preventDefault(); closeRelatedDialog(); return; }
+      if (state.editor.linkMode) { event.preventDefault(); cancelLinkMode(); return; }
+      if (!editing) {
+        state.editor.selectedNodes.clear();
+        state.editor.selectedEdge = null;
+        state.editor.selectedLabel = null;
+        renderChart();
+        renderPropertyPanel();
+      }
+      return;
+    }
+    if (editing) return;
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') {
+      event.preventDefault();
+      if (event.shiftKey) redoLayout();
+      else undoLayout();
+      return;
+    }
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'y') {
+      event.preventDefault();
+      redoLayout();
+      return;
+    }
+    if (event.key === 'Delete' || event.key === 'Backspace') {
+      event.preventDefault();
+      deleteSelection();
+    }
+  });
 }
 
 async function init() {

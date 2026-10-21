@@ -6,6 +6,7 @@ import unittest
 from openpyxl import load_workbook
 
 from services.equity_structure.exporters import build_excel, build_pdf, build_svg
+from services.equity_structure.layout import build_routes, layout_structure
 from services.equity_structure.schemas import (
     BBox, Diagnostics, DictionaryCorrection, Edge, ExcludedItem, Node, Quality, StructureResult,
 )
@@ -67,6 +68,43 @@ class ExportersTest(unittest.TestCase):
         svg = build_svg(sample_result(), layout)
         self.assertIn('x="120.0"', svg)
         self.assertIn("data-role=\"shareholder-bus\"", svg)
+
+
+    def test_pdf_uses_style_overrides(self):
+        layout = {
+            "styles": {
+                "nodes": {"n1": {"fill": "#eef4ff", "stroke": "#84adff", "fontSize": 18, "strokeWidth": 2, "radius": 16}},
+                "edges": {"e_stable": {"stroke": "#ff0000", "strokeWidth": 3, "dash": "5 3"}},
+                "labels": {"e_stable": {"color": "#ff0000", "background": "#ffffcc", "fontSize": 14}},
+                "canvas": {"background": "#f8fafc"},
+            }
+        }
+        result = sample_result()
+        result.edges[0].client_id = "e_stable"
+        data = build_pdf(result, layout)
+        self.assertTrue(data.startswith(b"%PDF"))
+        self.assertGreater(len(data), 1000)
+        svg = build_svg(result, layout)
+        self.assertIn("#ff0000", svg)
+        self.assertIn("#ffffcc", svg)
+
+
+    def test_hidden_label_and_client_id_are_honored(self):
+        result = sample_result()
+        result.edges[0].client_id = "e_stable"
+        layout = layout_structure(result, {"styles": {"labels": {"e_stable": {"hidden": True}}}})
+        routes = build_routes(result, layout, {"styles": {"labels": {"e_stable": {"hidden": True}}}})
+        self.assertFalse(any(label.text == "54%" for label in routes.labels))
+        self.assertTrue(any(line.edge_id == "e_stable" for line in routes.lines))
+
+
+    def test_layout_reserves_title_header_and_footer(self):
+        result = sample_result()
+        layout = layout_structure(result)
+        self.assertTrue(all(position.y >= 120 for position in layout.nodes.values()))
+        svg = build_svg(result)
+        self.assertIn('y="54"', svg)
+        self.assertGreater(layout.height, max(position.y + position.height for position in layout.nodes.values()))
 
     def test_pdf_is_generated(self):
         data = build_pdf(sample_result())

@@ -16,8 +16,10 @@ NODE_MIN_HEIGHT = 70
 CORE_MIN_HEIGHT = 90
 H_GAP = 18
 LEVEL_GAP = 160
-MARGIN = 80
-TITLE_HEIGHT = 86
+MARGIN = 90
+TITLE_BASELINE = 54
+CONTENT_TOP = 120
+FOOTER_PADDING = 80
 
 
 @dataclass
@@ -111,8 +113,8 @@ def layout_structure(result: StructureResult, overrides: dict | None = None) -> 
         row_widths[level] = total
 
     max_width = max(row_widths.values()) if row_widths else NODE_WIDTH
-    width = max(1000.0, max_width + MARGIN * 2)
-    height = TITLE_HEIGHT + (levels[-1] - 1) * LEVEL_GAP + 260 if levels else 420
+    width = max(1100.0, max_width + MARGIN * 2)
+    height = CONTENT_TOP + (levels[-1] - 1) * LEVEL_GAP + 260 if levels else 500
 
     for level in levels:
         entries = []
@@ -127,7 +129,7 @@ def layout_structure(result: StructureResult, overrides: dict | None = None) -> 
         total = sum(entry[1] for entry in entries) + H_GAP * max(0, len(entries) - 1)
         x = (width - total) / 2
         for node, node_width, node_height, lines in entries:
-            y = TITLE_HEIGHT + (level - 1) * LEVEL_GAP
+            y = CONTENT_TOP + (level - 1) * LEVEL_GAP
             positioned[node.id] = PositionedNode(node, x, y, node_width, node_height, lines)
             x += node_width + H_GAP
 
@@ -150,8 +152,9 @@ def layout_structure(result: StructureResult, overrides: dict | None = None) -> 
 
     max_right = max((position.x + position.width for position in positioned.values()), default=0)
     max_bottom = max((position.y + position.height for position in positioned.values()), default=0)
-    width = max(width, max_right + MARGIN)
-    height = max(height, max_bottom + 50 + 30)
+    title_width = sum(30 if ord(char) > 127 else 16.8 for char in result.title) + MARGIN * 2
+    width = max(width, max_right + MARGIN, title_width)
+    height = max(height, max_bottom + FOOTER_PADDING)
     return Layout(width=width, height=height, nodes=positioned, levels=levels)
 
 
@@ -182,6 +185,7 @@ class RouteLine:
     x2: float
     y2: float
     role: str = "edge"
+    edge_id: str = ""
 
 
 @dataclass
@@ -191,6 +195,7 @@ class RouteLabel:
     y: float
     width: float
     height: float = 17
+    edge_id: str = ""
 
 
 @dataclass
@@ -209,20 +214,22 @@ def _boxes_overlap(a, b, gap: float = 0.0) -> bool:
 
 def _place_label(raw: dict, placed: List[RouteLabel], nodes: List[tuple], layout: Layout, direction: str) -> RouteLabel:
     attempts = [(0, 0), (10, 0), (-10, 0), (0, -10), (0, 10), (-10, -10), (10, 10), (0, -18), (0, 18), (-18, 0), (18, 0)]
+    height = float(raw.get("height", 17))
     min_x, max_x = 80, layout.width - 80 - raw["width"]
-    min_y, max_y = 50, layout.height - 50 - 17
+    min_y, max_y = CONTENT_TOP, layout.height - FOOTER_PADDING - height
     for dx, dy in attempts:
         candidate = RouteLabel(
             text=raw["text"],
             x=max(min_x, min(max_x, raw["x"] + dx)),
             y=max(min_y, min(max_y, raw["y"] + dy)),
             width=raw["width"],
+            height=height,
         )
-        if any(_boxes_overlap((candidate.x, candidate.y, candidate.width, 17), (b.x, b.y, b.width, b.height), 6) for b in placed):
+        if any(_boxes_overlap((candidate.x, candidate.y, candidate.width, candidate.height), (b.x, b.y, b.width, b.height), 6) for b in placed):
             continue
-        if any(_boxes_overlap((candidate.x, candidate.y, candidate.width, 17), (n[0], n[1], n[2], n[3]), 4) for n in nodes):
+        if any(_boxes_overlap((candidate.x, candidate.y, candidate.width, candidate.height), (n[0], n[1], n[2], n[3]), 4) for n in nodes):
             continue
-        if direction == "up" and candidate.y + 17 > raw["bus_y"] - 4:
+        if direction == "up" and candidate.y + candidate.height > raw["bus_y"] - 4:
             continue
         if direction == "down" and candidate.y < raw["bus_y"] + 4:
             continue
@@ -233,6 +240,7 @@ def _place_label(raw: dict, placed: List[RouteLabel], nodes: List[tuple], layout
         x=max(min_x, min(max_x, raw["x"])),
         y=max(min_y, min(max_y, raw["y"])),
         width=raw["width"],
+        height=height,
     )
     placed.append(candidate)
     return candidate
@@ -241,10 +249,12 @@ def _place_label(raw: dict, placed: List[RouteLabel], nodes: List[tuple], layout
 def build_routes(result: StructureResult, layout: Layout, overrides: dict | None = None) -> Routes:
     positions = layout.nodes
     edges = [edge for edge in result.edges if edge.source in positions and edge.target in positions]
-    edge_ids = {id(edge): f"e{index + 1}" for index, edge in enumerate(result.edges)}
+    edge_ids = {id(edge): (edge.client_id or f"e{index + 1}") for index, edge in enumerate(result.edges)}
     core_node = next((node for node in result.nodes if node.name == result.core_company), None)
     core = positions.get(core_node.id) if core_node else None
     routes = Routes()
+    styles = (overrides or {}).get("styles") if isinstance((overrides or {}).get("styles"), dict) else {}
+    label_styles = styles.get("labels") if isinstance(styles.get("labels"), dict) else {}
     used = set()
     raw_labels: List[tuple] = []
     node_boxes = [(p.x, p.y, p.width, p.height) for p in positions.values()]
@@ -252,12 +262,21 @@ def build_routes(result: StructureResult, layout: Layout, overrides: dict | None
     def add_label(text: str, x: float, y: float, bus_y: float, direction: str, edge_id: str = "") -> None:
         if not text:
             return
-        width = max(34, len(text) * 7 + 10)
+        style = label_styles.get(edge_id) or {}
+        if style.get("hidden"):
+            return
+        font_size = float(style.get("fontSize", 11) or 11)
+        pad_x = float(style.get("paddingX", 5) or 0)
+        pad_y = float(style.get("paddingY", 3) or 0)
+        text_width = sum(font_size if ord(char) > 127 else font_size * 0.62 for char in text)
+        width = max(34, text_width + pad_x * 2)
+        height = max(17, font_size + pad_y * 2)
         raw_labels.append(({
             "text": text,
             "x": x,
-            "y": y - 13,
+            "y": y - height + pad_y + 1,
             "width": width,
+            "height": height,
             "bus_y": bus_y,
             "edge_id": edge_id,
         }, direction))
@@ -286,9 +305,13 @@ def build_routes(result: StructureResult, layout: Layout, overrides: dict | None
                         pass
             xs = [position.x + position.width / 2 for position in shareholder_positions]
             core_x = core.x + core.width / 2
+            edge_by_source = {}
+            for edge in shareholder_edges:
+                edge_by_source.setdefault(edge.source, edge)
             for position in shareholder_positions:
                 x = position.x + position.width / 2
-                routes.lines.append(RouteLine(x, position.y + position.height, x, bus_y, "shareholder"))
+                source_edge = edge_by_source.get(position.node.id)
+                routes.lines.append(RouteLine(x, position.y + position.height, x, bus_y, "shareholder", edge_ids.get(id(source_edge), "") if source_edge else ""))
             routes.lines.append(RouteLine(min(xs), bus_y, max(xs), bus_y, "shareholder-bus"))
             routes.lines.append(RouteLine(core_x, bus_y, core_x, core.y, "shareholder-core"))
             routes.arrows.append((core_x, core.y))
@@ -328,9 +351,13 @@ def build_routes(result: StructureResult, layout: Layout, overrides: dict | None
             core_x = core.x + core.width / 2
             routes.lines.append(RouteLine(core_x, core_bottom, core_x, child_bus_y, "direct-core"))
             routes.lines.append(RouteLine(min(xs + [core_x]), child_bus_y, max(xs + [core_x]), child_bus_y, "direct-bus"))
+            edge_by_target = {}
+            for edge in direct_edges:
+                edge_by_target.setdefault(edge.target, edge)
             for position in direct_positions:
                 x = position.x + position.width / 2
-                routes.lines.append(RouteLine(x, child_bus_y, x, position.y, "direct-child"))
+                target_edge = edge_by_target.get(position.node.id)
+                routes.lines.append(RouteLine(x, child_bus_y, x, position.y, "direct-child", edge_ids.get(id(target_edge), "") if target_edge else ""))
                 routes.arrows.append((x, position.y))
             for edge in direct_edges:
                 position = positions[edge.target]
@@ -349,9 +376,10 @@ def build_routes(result: StructureResult, layout: Layout, overrides: dict | None
         x2 = child.x + child.width / 2
         y2 = child.y
         mid = y1 + max(36, (y2 - y1) / 2)
-        routes.lines.append(RouteLine(x1, y1, x1, mid, "edge"))
-        routes.lines.append(RouteLine(x1, mid, x2, mid, "edge"))
-        routes.lines.append(RouteLine(x2, mid, x2, y2, "edge"))
+        edge_id = edge_ids.get(id(edge), "")
+        routes.lines.append(RouteLine(x1, y1, x1, mid, "edge", edge_id))
+        routes.lines.append(RouteLine(x1, mid, x2, mid, "edge", edge_id))
+        routes.lines.append(RouteLine(x2, mid, x2, y2, "edge", edge_id))
         routes.arrows.append((x2, y2))
         segment = abs(y2 - mid)
         y = y2 - 10 if segment <= 22 else mid + (y2 - mid) * 0.55
@@ -366,12 +394,14 @@ def build_routes(result: StructureResult, layout: Layout, overrides: dict | None
                 label = RouteLabel(
                     text=raw["text"],
                     x=max(80.0, min(layout.width - 80 - raw["width"], float(manual["x"]))),
-                    y=max(50.0, min(layout.height - 50 - 17, float(manual["y"]))),
+                    y=max(50.0, min(layout.height - 50 - float(raw.get("height", 17)), float(manual["y"]))),
                     width=raw["width"],
+                    height=float(raw.get("height", 17)),
                 )
             except (TypeError, ValueError):
                 label = _place_label(raw, placed, node_boxes, layout, direction)
         else:
             label = _place_label(raw, placed, node_boxes, layout, direction)
+        label.edge_id = raw.get("edge_id", "")
         routes.labels.append(label)
     return routes

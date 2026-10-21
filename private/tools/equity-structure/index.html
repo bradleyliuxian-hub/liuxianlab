@@ -7,7 +7,7 @@
   <title>股权结构图识别 · Liuxian Lab</title>
   <link rel="stylesheet" href="/design-tokens.css?v=1.0.0" />
   <link rel="stylesheet" href="/app/app-shell.css?v=1.0.0" />
-  <link rel="stylesheet" href="/app/tools/equity-structure/styles.css?v=1.0.8" />
+  <link rel="stylesheet" href="/app/tools/equity-structure/styles.css?v=1.2.2" />
 </head>
 <body>
   <div class="page-shell">
@@ -18,7 +18,7 @@
         <div><strong>股权结构图识别</strong><small>Liuxian Lab / Equity Structure OCR</small></div>
       </div>
       <div class="header-actions">
-        <button class="version-chip" id="versionButton" type="button" title="查看版本更新说明">v1.0.6</button>
+        <button class="version-chip" id="versionButton" type="button" title="查看版本更新说明">v1.2.2</button>
         <span class="private-badge"><i></i>纯本地识别</span>
         <button class="ghost-button" id="newJobButton" type="button">新建识别</button>
       </div>
@@ -126,6 +126,18 @@
 
         <div class="chart-toolbar">
           <div class="chart-title"><strong>股权结构图</strong><small id="chartMeta">—</small></div>
+          <div class="editor-toolbar" id="editorToolbar">
+            <button class="mini-button" id="addCompanyButton" type="button">＋公司</button>
+            <button class="mini-button" id="addPersonButton" type="button">＋个人</button>
+            <button class="mini-button" id="addFundButton" type="button">＋基金</button>
+            <button class="mini-button" id="addInstitutionButton" type="button">＋机构</button>
+            <button class="mini-button" id="addOtherButton" type="button">＋其他</button>
+            <button class="mini-button" id="addRelatedButton" type="button">＋关联公司</button>
+            <button class="mini-button" id="addEdgeButton" type="button">＋连线</button>
+            <button class="mini-button" id="addLabelButton" type="button">＋比例</button>
+            <button class="mini-button" id="duplicateButton" type="button">复制</button>
+            <button class="mini-button danger" id="deleteButton" type="button">删除</button>
+          </div>
           <div class="zoom-actions">
             <button class="mini-button" id="undoButton" type="button" title="撤销 Ctrl+Z">撤销</button>
             <button class="mini-button" id="redoButton" type="button" title="重做 Ctrl+Shift+Z">重做</button>
@@ -141,8 +153,11 @@
             <button class="mini-button" id="resetLayoutButton" type="button">恢复自动排版</button>
           </div>
         </div>
-        <div class="chart-wrap" id="chartWrap"><div class="empty-state">等待识别结果</div></div>
-        <div class="editor-hint" id="layoutStatus">拖动节点或持股比例微调布局；Ctrl+Z 撤销。</div>
+        <div class="editor-canvas-row">
+          <div class="chart-wrap" id="chartWrap"><div class="empty-state">等待识别结果</div></div>
+          <aside class="property-panel" id="propertyPanel" hidden aria-label="属性面板"></aside>
+        </div>
+        <div class="editor-hint" id="layoutStatus">拖动节点/比例；用上方工具添加公司、连线或比例。Ctrl+Z 撤销。</div>
 
         <div class="result-tabs" role="tablist" aria-label="识别结果分类">
           <button class="result-tab active" data-tab="nodes" type="button" role="tab" aria-selected="true">节点</button>
@@ -212,7 +227,7 @@
       </section>
     </main>
 
-    <footer class="tool-footer"><span>Liuxian Lab</span><span>Equity Structure OCR v1.0.8</span></footer>
+    <footer class="tool-footer"><span>Liuxian Lab</span><span>Equity Structure OCR v1.2.2</span></footer>
   </div>
 
   <div class="download-backdrop" id="downloadBackdrop" hidden></div>
@@ -255,6 +270,55 @@
     <div class="download-status" id="downloadStatus" role="status" aria-live="polite">请选择下载格式。</div>
   </section>
 
+  <div class="download-backdrop" id="relatedBackdrop" hidden></div>
+  <section class="download-dialog related-dialog" id="relatedDialog" hidden role="dialog" aria-modal="true" aria-labelledby="relatedTitle">
+    <div class="download-head">
+      <div>
+        <p class="eyebrow">RELATED COMPANY</p>
+        <h2 id="relatedTitle">添加关联公司</h2>
+        <p>一次创建节点、股权关系和持股比例；创建前不会修改任何数据。</p>
+      </div>
+      <button class="icon-button" id="closeRelatedButton" type="button" aria-label="关闭关联公司窗口">×</button>
+    </div>
+    <form class="related-form" id="relatedForm" novalidate>
+      <div class="related-direction" role="radiogroup" aria-label="关系方向">
+        <label><input type="radio" name="relatedDirection" value="upstream" checked /> <span><strong>上游股东</strong><small>新股东 → 现有公司</small></span></label>
+        <label><input type="radio" name="relatedDirection" value="downstream" /> <span><strong>下游被投资公司</strong><small>现有公司 → 新公司</small></span></label>
+        <label><input type="radio" name="relatedDirection" value="only" /> <span><strong>仅添加公司节点</strong><small>不创建连线和比例</small></span></label>
+      </div>
+      <div class="related-grid">
+        <label class="property-field wide" id="relatedTargetField">
+          <span>关联公司 <b>*</b></span>
+          <select id="relatedTarget"></select>
+        </label>
+        <label class="property-field wide">
+          <span>新公司名称 <b>*</b></span>
+          <input id="relatedName" type="text" maxlength="300" autocomplete="off" placeholder="例如：示例投资机构 A" />
+        </label>
+        <label class="property-field">
+          <span>实体类型</span>
+          <select id="relatedType">
+            <option value="company">公司</option>
+            <option value="person">个人</option>
+            <option value="fund">基金</option>
+            <option value="institution">机构</option>
+            <option value="other">其他</option>
+          </select>
+        </label>
+        <label class="property-field" id="relatedPercentageField">
+          <span>持股比例 <b>*</b></span>
+          <input id="relatedPercentage" type="text" inputmode="decimal" autocomplete="off" placeholder="例如：12.3456%" />
+        </label>
+      </div>
+      <div class="related-preview" id="relatedPreview">新股东 → 当前公司</div>
+      <div class="error-box" id="relatedError" role="alert" hidden></div>
+      <div class="related-actions">
+        <button class="ghost-button" id="cancelRelatedButton" type="button">取消</button>
+        <button class="primary-button small" id="createRelatedButton" type="submit">创建关联关系 <span>→</span></button>
+      </div>
+    </form>
+  </section>
+
   <div class="version-backdrop" id="versionBackdrop" hidden></div>
   <section class="version-dialog" id="versionDialog" hidden role="dialog" aria-modal="true" aria-labelledby="versionTitle">
     <div class="download-head">
@@ -266,6 +330,6 @@
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <script src="/app/app-shell.js?v=1.0.0"></script>
-  <script src="/app/tools/equity-structure/script.js?v=1.0.8"></script>
+  <script src="/app/tools/equity-structure/script.js?v=1.2.2"></script>
 </body>
 </html>

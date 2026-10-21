@@ -15,7 +15,7 @@ class SchemaError(ValueError):
     """Raised when a result payload is not a valid equity structure."""
 
 
-ENTITY_TYPES = {"company", "person", "fund", "other"}
+ENTITY_TYPES = {"company", "person", "fund", "institution", "other"}
 NODE_STATUSES = {"active", "excluded_cancelled", "unknown"}
 RELATIONS = {"shareholder_to_core", "investment", "subsidiary"}
 PERCENTAGE_SOURCES = {"secondary_crop_ocr", "global_ocr", "manual", "missing", ""}
@@ -114,6 +114,7 @@ class Edge:
     confidence: float = 0.0
     percentage_source: str = "missing"
     topology_path_depth: Optional[int] = None
+    client_id: str = ""
 
     @classmethod
     def from_dict(cls, payload: Dict[str, Any], index: int) -> "Edge":
@@ -142,6 +143,7 @@ class Edge:
             confidence=_float(payload.get("confidence")),
             percentage_source=source_name,
             topology_path_depth=depth,
+            client_id=_text(payload.get("__id")),
         )
 
     def to_dict(self) -> Dict[str, Any]:

@@ -197,7 +197,7 @@ test('layout can be saved and restored', async () => {
   fs.writeFileSync(path.join(dir, 'result.json'), JSON.stringify(resultPayload));
   const job = state.jobs.get(id);
   state.jobs.set(id, { ...job, status: 'completed', progress: 100, resultDir: `storage/equity-structure/${id}/result` });
-  const layout = { version: 1, nodes: { n1: { x: 120, y: 80, width: 210, height: 72, manualPosition: true } }, labels: { e1: { x: 200, y: 160, manual: true } }, buses: { shareholder: { y: 190, manual: true } }, canvas: { width: 1200, height: 500 } };
+  const layout = { version: 1, nodes: { n1: { x: 120, y: 80, width: 210, height: 72, manualPosition: true } }, labels: { e1: { x: 200, y: 160, manual: true } }, buses: { shareholder: { y: 190, manual: true } }, styles: { nodes: { n1: { fill: '#eef4ff' } }, edges: { e1: { stroke: '#ff0000' } }, labels: { e1: { background: '#ffffcc' } }, canvas: { background: '#f8fafc' }, theme: 'business' }, defaultTheme: 'business', canvas: { width: 1200, height: 500 } };
   const saved = await fetch(`${base}/api/equity-structures/${id}/layout`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', 'x-user': 'tester' },
@@ -208,6 +208,10 @@ test('layout can be saved and restored', async () => {
   assert.equal(restored.status, 200);
   assert.equal(restored.body.layout.nodes.n1.x, 120);
   assert.equal(restored.body.layout.labels.e1.manual, true);
+  assert.equal(restored.body.layout.styles.nodes.n1.fill, '#eef4ff');
+  assert.equal(restored.body.layout.styles.edges.e1.stroke, '#ff0000');
+  assert.equal(restored.body.layout.styles.canvas.background, '#f8fafc');
+  assert.equal(restored.body.layout.defaultTheme, 'business');
 });
 
 test('PNG API converts a self-contained SVG', async () => {
