@@ -15,6 +15,9 @@ Python dependency behavior is documented in
 Local one-command deployment (`npm run deploy:prod`) is documented in
 `docs/agent/deployment/one-click-production-deploy.md`.
 
+Server auto-deployment from latest `origin/main` (`liuxianlab-deploy`) is
+documented in `docs/agent/deployment/server-auto-deploy.md`.
+
 ## Target topology
 
 - Nginx (TLS termination, public 80/443) -> reverse proxy -> Node `127.0.0.1:8080`.

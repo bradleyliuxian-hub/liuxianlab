@@ -8,8 +8,12 @@ npm run deploy:prod
 
 Implementation: `scripts/local/deploy-production.sh`.
 
-This is a thin local orchestrator. It does **not** replace the production deployer;
-it invokes the existing `/usr/local/bin/deploy-liuxianlab.sh` over SSH.
+Server mode (`liuxianlab-deploy`) is documented in
+`server-auto-deploy.md`. Server mode ignores this local SSH config.
+
+In local mode this is a thin local orchestrator. It does **not** replace the
+production deployer; it invokes the existing
+`/usr/local/bin/deploy-liuxianlab.sh` over SSH.
 
 ## Flow
 
@@ -136,6 +140,7 @@ The local log is under:
 ```bash
 bash -n scripts/local/deploy-production.sh
 bash tests/deployment/deploy-production.test.sh
+bash tests/deployment/deploy-server-auto.test.sh
 bash tests/deployment/python-dependency-manager.test.sh \
   deploy-liuxianlab.sh scripts/local/python-dependency-manager.sh scripts/python-environments.tsv
 ```

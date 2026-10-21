@@ -4,7 +4,8 @@ Preflight -> approve -> apply -> verify -> rollback. Steps live in the
 `deployment-safety` skill checklist. The reviewed deployer source is
 `deploy-liuxianlab.sh`; production may run an older installed copy until an
 approved replace. Local one-command orchestration is `npm run deploy:prod`, see
-`one-click-production-deploy.md`.
+`one-click-production-deploy.md`. Server-side auto-deploy from latest
+`origin/main` is `liuxianlab-deploy`, see `server-auto-deploy.md`.
 
 Never push / SSH / restart PM2 / modify Nginx / run migrations without explicit
 approval after the preflight.

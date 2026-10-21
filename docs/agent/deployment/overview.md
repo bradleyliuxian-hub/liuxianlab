@@ -8,4 +8,5 @@ Authority: `docs/agent/deployment.md` (detailed notes), `ecosystem.config.js`,
 real server state. `deploy-liuxianlab.sh` at repo root is the reviewed source;
 production may still run an older copy until an approved install/replace.
 Local orchestration: `scripts/local/deploy-production.sh` (`npm run deploy:prod`);
-see `one-click-production-deploy.md`.
+see `one-click-production-deploy.md`. The same source supports server auto-deploy
+from latest `origin/main` as `liuxianlab-deploy`; see `server-auto-deploy.md`.

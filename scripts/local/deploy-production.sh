@@ -3,16 +3,48 @@
 # One-command production deployment.
 #
 # Usage:
-#   npm run deploy:prod
+#   npm run deploy:prod                  # local orchestrator (SSH)
+#   liuxianlab-deploy                    # server auto-deploy from origin/main
+#   bash scripts/local/deploy-production.sh --server
 #
-# Optional environment overrides (primarily for testing):
+# Optional local overrides:
 #   DEPLOY_CONF, DEPLOY_TAG, DEPLOY_SSH_BIN, DEPLOY_PRE_PUSH_CHECK
+# Optional server overrides:
+#   DEPLOY_APP_DIR, DEPLOY_SCRIPT, DEPLOY_TAG
 #
-# This script never commits business code, never force-pushes tags, and only
-# invokes the existing production deployer over SSH.
+# This script never commits business code and never force-pushes tags. Local
+# mode pushes a release tag and invokes the deployer over SSH. Server mode
+# creates a local-only tag from the fetched origin/main and runs the deployer
+# on the server. Nothing is pushed by server mode.
 
 set -Eeuo pipefail
 IFS=$'\n\t'
+
+# Server mode is used when this file is installed as `liuxianlab-deploy`:
+#   sudo install -m 755 scripts/local/deploy-production.sh /usr/local/bin/liuxianlab-deploy
+# It can also be invoked explicitly as:
+#   bash scripts/local/deploy-production.sh --server
+SERVER_MODE=0
+if [[ "${0##*/}" == "liuxianlab-deploy" || "${1:-}" == "--server" || "${LIUXIANLAB_DEPLOY_MODE:-}" == "server" ]]; then
+  SERVER_MODE=1
+fi
+if [[ "${1:-}" == "--server" ]]; then
+  shift
+fi
+
+# The server command must not depend on the caller's cwd. Local mode keeps its
+# existing behavior and operates on the current checkout.
+if [[ "$SERVER_MODE" -eq 1 ]]; then
+  SERVER_APP_DIR="${DEPLOY_APP_DIR:-/var/www/liuxianlab}"
+  if [[ ! -d "$SERVER_APP_DIR/.git" ]]; then
+    echo "ERROR: production Git repository not found: $SERVER_APP_DIR" >&2
+    exit 2
+  fi
+  cd "$SERVER_APP_DIR" || {
+    echo "ERROR: cannot enter production repository: $SERVER_APP_DIR" >&2
+    exit 2
+  }
+fi
 
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || {
   echo "ERROR: not inside a Git repository." >&2
@@ -27,21 +59,163 @@ LOG_FILE="$LOG_DIR/$(date '+%Y%m%d-%H%M%S')-deploy.log"
 
 log() { printf '%s\n' "$*"; }
 REMOTE_DEPLOY_STARTED=0
+SERVER_DEPLOY_STARTED=0
 die() {
   local message="$*"
   echo
   echo "ERROR: $message" >&2
-  echo "Local log: $LOG_FILE" >&2
-  if [[ "$REMOTE_DEPLOY_STARTED" -eq 1 ]]; then
+  echo "Log: $LOG_FILE" >&2
+  if [[ "${SERVER_DEPLOY_STARTED:-0}" -eq 1 ]]; then
+    echo "The production deployer was started. Inspect /var/log/liuxianlab-deploy/ and production health before retrying." >&2
+    echo "This wrapper did not automatically retry." >&2
+  elif [[ "$REMOTE_DEPLOY_STARTED" -eq 1 ]]; then
     echo "Remote deployment was started. Inspect /var/log/liuxianlab-deploy/ on the host before retrying." >&2
     echo "This script did not automatically retry." >&2
   else
-    echo "Production code was not changed by this local script." >&2
+    echo "Production code was not changed by this script." >&2
   fi
   exit 1
 }
 
 trap 'status=$?; if [[ $status -ne 0 ]]; then echo "ERROR: command failed (exit=$status)." >&2; echo "Log: $LOG_FILE" >&2; exit $status; fi' ERR
+
+# ---------------------------------------------------------------------------
+# Server auto-deploy mode: fetch latest origin/main, validate it, create a
+# temporary local annotated tag, then run the existing production deployer.
+# The tag is never pushed to GitHub.
+# ---------------------------------------------------------------------------
+run_server_deployment() {
+  local deploy_script="${DEPLOY_SCRIPT:-/usr/local/bin/deploy-liuxianlab.sh}"
+  local branch head_sha target_sha short_sha
+  local tag_base tag n tag_type tag_commit
+  local dry_log="${TMPDIR:-/tmp}/liuxianlab-server-dry-run.$$.log"
+  local need_python_deps=0 answer
+  local config_count config_key config_value
+  local -a deployer_env
+
+  log "Server auto-deploy started at $(date '+%Y-%m-%d %H:%M:%S %z')"
+  log "Repository: $ROOT"
+  log "Deployer:   $deploy_script"
+
+  [[ -f "$deploy_script" ]] || die "production deployer not found: $deploy_script"
+
+  branch="$(git branch --show-current)"
+  [[ "$branch" == "main" ]] || die "production must be on branch main; current branch: '${branch:-<detached>}'"
+
+  if [[ -n "$(git status --porcelain)" ]]; then
+    echo "Production worktree is not clean:" >&2
+    git status --short >&2
+    die "refusing to deploy over local production changes"
+  fi
+
+  log "Fetching latest origin/main from GitHub..."
+  if ! git -c http.version=HTTP/1.1 fetch origin main; then
+    die "could not fetch origin/main; production was not changed. Check GitHub network/authentication."
+  fi
+
+  target_sha="$(git rev-parse --verify 'origin/main^{commit}')" \
+    || die "origin/main does not resolve to a commit"
+  head_sha="$(git rev-parse --verify 'HEAD^{commit}')" \
+    || die "current production HEAD does not resolve to a commit"
+  [[ "$(git rev-parse 'origin/main')" == "$target_sha" ]] \
+    || die "origin/main is not a commit reference"
+  git cat-file -e "$target_sha^{commit}" \
+    || die "target origin/main commit is unavailable: $target_sha"
+  git merge-base --is-ancestor "$head_sha" "$target_sha" \
+    || die "origin/main is not a fast-forward descendant of production HEAD"
+
+  short_sha="$(git rev-parse --short=12 "$target_sha")"
+  log "Validated target origin/main: $target_sha ($short_sha)"
+  log "Current production HEAD:    $head_sha"
+
+  tag_base="${DEPLOY_TAG:-liuxianlab-deploy-$(date '+%Y%m%d-%H%M%S')-${short_sha}}"
+  tag="$tag_base"
+  if [[ -n "${DEPLOY_TAG:-}" ]]; then
+    if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+      die "local deployment tag already exists: $tag"
+    fi
+  else
+    n=1
+    while git rev-parse -q --verify "refs/tags/$tag" >/dev/null; do
+      tag="${tag_base}-$(printf '%02d' "$n")"
+      n=$((n + 1))
+    done
+  fi
+  [[ "$tag" =~ ^[A-Za-z0-9._-]+$ ]] || die "generated tag contains unsupported characters: $tag"
+
+  git tag -a "$tag" -m "Production release $tag ($short_sha)" "$target_sha" \
+    || die "could not create local annotated deployment tag: $tag"
+  tag_type="$(git cat-file -t "refs/tags/$tag")" \
+    || die "could not inspect local deployment tag: $tag"
+  [[ "$tag_type" == "tag" ]] || die "local deployment tag is not annotated: $tag"
+  tag_commit="$(git rev-parse "$tag^{}")" \
+    || die "could not resolve local deployment tag commit: $tag"
+  [[ "$tag_commit" == "$target_sha" ]] || die "local deployment tag does not point to target origin/main"
+  log "Generated local annotated deployment tag: $tag -> $short_sha (not pushed)"
+
+  # The existing deployer runs `git fetch origin --tags --prune` before checking
+  # the tag. A global fetch.pruneTags=true would delete this local-only tag, so
+  # force it off for the deployer and all child Git commands.
+  config_count="${GIT_CONFIG_COUNT:-0}"
+  config_key="GIT_CONFIG_KEY_${config_count}"
+  config_value="GIT_CONFIG_VALUE_${config_count}"
+  deployer_env=(
+    "GIT_CONFIG_COUNT=$((config_count + 1))"
+    "${config_key}=fetch.pruneTags"
+    "${config_value}=false"
+  )
+
+  rm -f "$dry_log"
+  log "Running production dry-run: $deploy_script $tag --dry-run"
+  if ! env "${deployer_env[@]}" bash "$deploy_script" "$tag" --dry-run 2>&1 \
+    | tee "$dry_log" | tee -a "$LOG_FILE"; then
+    die "production dry-run failed; formal deployment was not started"
+  fi
+
+  local latest_main
+  latest_main="$(git rev-parse --verify 'origin/main^{commit}')" \
+    || die "could not re-read origin/main after dry-run"
+  if [[ "$latest_main" != "$target_sha" ]]; then
+    die "origin/main advanced during dry-run ($latest_main, target $target_sha); formal deployment was not started. Re-run the server deployment."
+  fi
+
+  if grep -Eq 'Python dependency preflight: one or more|DRY-RUN: would install|NEEDS_INSTALL' "$dry_log"; then
+    need_python_deps=1
+    echo
+    echo "Python dependency changes are required:"
+    grep -E 'Python dependency|NEEDS_INSTALL|would install|manifest|environment' "$dry_log" | tail -20 || true
+    echo
+    read -r -p "Install/update Python dependencies and continue? [y/N] " answer
+    case "$answer" in
+      y|Y|yes|YES) ;;
+      *) die "deployment cancelled by user; production code was not changed" ;;
+    esac
+  else
+    log "Python dependency preflight passed; no extra dependency prompt."
+  fi
+
+  SERVER_DEPLOY_STARTED=1
+  log "Running formal production deployment: $deploy_script $tag"
+  if [[ "$need_python_deps" -eq 1 ]]; then
+    if ! env "${deployer_env[@]}" bash "$deploy_script" "$tag" --yes-python-deps 2>&1 \
+      | tee -a "$LOG_FILE"; then
+      die "production deployment failed; the deployer's rollback/log output must be reviewed"
+    fi
+  else
+    if ! env "${deployer_env[@]}" bash "$deploy_script" "$tag" 2>&1 \
+      | tee -a "$LOG_FILE"; then
+      die "production deployment failed; the deployer's rollback/log output must be reviewed"
+    fi
+  fi
+
+  log "Production deployment completed: $tag"
+  log "Production deployer log: /var/log/liuxianlab-deploy/ (on this server)"
+}
+
+if [[ "$SERVER_MODE" -eq 1 ]]; then
+  run_server_deployment
+  exit 0
+fi
 
 log "Liuxian Lab deployment started at $(date '+%Y-%m-%d %H:%M:%S %z')"
 log "Repository: $ROOT"
