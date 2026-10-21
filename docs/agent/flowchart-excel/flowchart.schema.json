@@ -1,0 +1,927 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:liuxianlab:flowchart:1.0.0",
+  "title": "Liuxian Lab Flowchart Excel Data Contract",
+  "description": "Canonical graph contract shared by the React editor, Python AI workers, Node/Express API and .NET Open XML exporter. Cross-array references must be validated by the application.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "document",
+    "lanes",
+    "nodes",
+    "edges",
+    "style",
+    "unresolved_items",
+    "export_profile",
+    "template_profile_id",
+    "template_profile_version",
+    "template_profile_ref"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "document": {
+      "$ref": "#/$defs/document"
+    },
+    "lanes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/lane"
+      }
+    },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/node"
+      }
+    },
+    "edges": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/edge"
+      }
+    },
+    "style": {
+      "$ref": "#/$defs/style"
+    },
+    "unresolved_items": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/unresolvedItem"
+      }
+    },
+    "reconciliation": {
+      "$ref": "#/$defs/reconciliation"
+    },
+    "revisions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/revision"
+      }
+    },
+    "export_profile": {
+      "$ref": "#/$defs/exportProfile"
+    },
+    "extensions": {
+      "$ref": "#/$defs/extensions"
+    },
+    "template_profile_id": {
+      "const": "trade_purchase_cn"
+    },
+    "template_profile_version": {
+      "const": "1.0.0"
+    },
+    "template_profile_ref": {
+      "const": "docs/agent/flowchart-excel/trade-purchase-template-profile.md"
+    },
+    "style_overrides": {
+      "$ref": "#/$defs/styleOverrides"
+    }
+  },
+  "$comment": "JSON Schema cannot verify lane_id, source_node_id or target_node_id references. The application must run the cross-reference checks in flowchart-data-contract.md section 13.",
+  "$defs": {
+    "extensions": {
+      "type": "object",
+      "description": "Unknown/legacy fields preserved by adapters. Never use this to hide required fields.",
+      "additionalProperties": true
+    },
+    "nullableString": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "bboxNormalized": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "x",
+        "y",
+        "width",
+        "height",
+        "coordinate_space"
+      ],
+      "properties": {
+        "x": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "y": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "width": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1
+        },
+        "height": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1
+        },
+        "coordinate_space": {
+          "const": "normalized"
+        }
+      },
+      "$comment": "Application must also check x + width <= 1 and y + height <= 1."
+    },
+    "bboxPx": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "x",
+        "y",
+        "width",
+        "height",
+        "coordinate_space"
+      ],
+      "properties": {
+        "x": {
+          "type": "number",
+          "minimum": 0
+        },
+        "y": {
+          "type": "number",
+          "minimum": 0
+        },
+        "width": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "height": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "coordinate_space": {
+          "const": "source_pixels"
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source"
+      ],
+      "properties": {
+        "source": {
+          "enum": [
+            "image_extraction",
+            "reconciliation",
+            "manual_edit",
+            "legacy_adapter"
+          ]
+        },
+        "source_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "notes": {
+          "type": "string"
+        },
+        "legacy": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    },
+    "document": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "title",
+        "source_type",
+        "source_image_name",
+        "source_image_sha256",
+        "source_image_size_px",
+        "created_at",
+        "extraction_status",
+        "disclaimer"
+      ],
+      "properties": {
+        "job_id": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "source_type": {
+          "enum": [
+            "image",
+            "pdf",
+            "structured_json"
+          ]
+        },
+        "source_image_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source_image_sha256": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "source_image_size_px": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "width",
+            "height"
+          ],
+          "properties": {
+            "width": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "height": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "created_at": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?Z$"
+        },
+        "extraction_status": {
+          "enum": [
+            "draft_requires_human_validation",
+            "reconciled",
+            "approved"
+          ]
+        },
+        "disclaimer": {
+          "type": "string"
+        },
+        "extensions": {
+          "$ref": "#/$defs/extensions"
+        }
+      }
+    },
+    "lane": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "label",
+        "order",
+        "orientation"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "order": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "orientation": {
+          "enum": [
+            "horizontal",
+            "vertical"
+          ]
+        },
+        "bbox": {
+          "$ref": "#/$defs/bboxNormalized"
+        },
+        "source_bbox_px": {
+          "$ref": "#/$defs/bboxPx"
+        },
+        "extensions": {
+          "$ref": "#/$defs/extensions"
+        }
+      }
+    },
+    "control": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "code",
+        "display",
+        "attribution_status"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "CA",
+            "PRP",
+            "TOE"
+          ]
+        },
+        "code": {
+          "type": "string",
+          "pattern": "^(CA|PRP|TOE)[-_]?[0-9]{1,4}[A-Za-z]?$"
+        },
+        "display": {
+          "enum": [
+            "badge",
+            "inline_text",
+            "separate_shape"
+          ]
+        },
+        "attribution_status": {
+          "enum": [
+            "confirmed",
+            "inferred",
+            "unresolved",
+            "needs_review"
+          ]
+        },
+        "extensions": {
+          "$ref": "#/$defs/extensions"
+        }
+      }
+    },
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "label",
+        "shape",
+        "lane_id",
+        "bbox",
+        "controls",
+        "confidence",
+        "review_status",
+        "provenance"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "label": {
+          "type": "string",
+          "maxLength": 4000
+        },
+        "shape": {
+          "enum": [
+            "terminator",
+            "process",
+            "decision",
+            "predefined_process",
+            "document",
+            "input_output",
+            "database",
+            "connector",
+            "note",
+            "manual_input",
+            "delay",
+            "display",
+            "off_page_connector",
+            "other"
+          ]
+        },
+        "lane_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 64
+        },
+        "bbox": {
+          "$ref": "#/$defs/bboxNormalized"
+        },
+        "source_bbox_px": {
+          "$ref": "#/$defs/bboxPx"
+        },
+        "controls": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/control"
+          }
+        },
+        "confidence": {
+          "enum": [
+            "high",
+            "medium",
+            "low"
+          ]
+        },
+        "review_status": {
+          "enum": [
+            "pending",
+            "confirmed",
+            "rejected"
+          ]
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        },
+        "extensions": {
+          "$ref": "#/$defs/extensions"
+        }
+      }
+    },
+    "port": {
+      "enum": [
+        "top",
+        "right",
+        "bottom",
+        "left",
+        null
+      ]
+    },
+    "edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "source_node_id",
+        "target_node_id",
+        "source_port",
+        "target_port",
+        "kind",
+        "label",
+        "route_hint",
+        "confidence",
+        "review_status",
+        "provenance"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "source_node_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "target_node_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "source_port": {
+          "$ref": "#/$defs/port"
+        },
+        "target_port": {
+          "$ref": "#/$defs/port"
+        },
+        "kind": {
+          "enum": [
+            "sequence",
+            "branch",
+            "loopback",
+            "document_output",
+            "exception",
+            "other"
+          ]
+        },
+        "label": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 200
+        },
+        "route_hint": {
+          "enum": [
+            "straight_horizontal",
+            "straight_vertical",
+            "orthogonal_vertical_first",
+            "orthogonal_horizontal_first",
+            "loopback",
+            "manual_review"
+          ]
+        },
+        "confidence": {
+          "enum": [
+            "high",
+            "medium",
+            "low"
+          ]
+        },
+        "review_status": {
+          "enum": [
+            "pending",
+            "confirmed",
+            "rejected"
+          ]
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        },
+        "extensions": {
+          "$ref": "#/$defs/extensions"
+        }
+      }
+    },
+    "style": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "theme",
+        "excel_export_rules"
+      ],
+      "properties": {
+        "theme": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "excel_export_rules": {
+          "$ref": "#/$defs/exportRules"
+        },
+        "extensions": {
+          "$ref": "#/$defs/extensions"
+        }
+      }
+    },
+    "exportRules": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "native_shapes_only",
+        "native_bound_connectors_only",
+        "one_logical_edge_one_connector",
+        "anchor_mode",
+        "edit_as",
+        "swimlane_background",
+        "legend",
+        "require_excel_drag_save_reopen_test",
+        "require_windows_acceptance"
+      ],
+      "properties": {
+        "native_shapes_only": {
+          "const": true
+        },
+        "native_bound_connectors_only": {
+          "const": true
+        },
+        "one_logical_edge_one_connector": {
+          "const": true
+        },
+        "anchor_mode": {
+          "const": "twoCellAnchor"
+        },
+        "edit_as": {
+          "enum": [
+            "pending",
+            "oneCell",
+            "twoCell"
+          ]
+        },
+        "swimlane_background": {
+          "enum": [
+            "merged_cells_fill_borders",
+            "template_defined"
+          ]
+        },
+        "legend": {
+          "enum": [
+            "worksheet_cells",
+            "template_defined"
+          ]
+        },
+        "require_excel_drag_save_reopen_test": {
+          "const": true
+        },
+        "require_windows_acceptance": {
+          "type": "boolean"
+        }
+      }
+    },
+    "unresolvedItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "type",
+        "severity",
+        "description",
+        "action",
+        "status"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "type": {
+          "enum": [
+            "dangling_edge",
+            "missing_port",
+            "low_confidence",
+            "possible_number_gaps",
+            "ambiguous_branch",
+            "coordinate_out_of_bounds",
+            "unknown_shape",
+            "noncanonical_control_code",
+            "other"
+          ]
+        },
+        "severity": {
+          "enum": [
+            "high",
+            "medium",
+            "low"
+          ]
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "action": {
+          "type": "string",
+          "minLength": 1
+        },
+        "related_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "resolved",
+            "rejected"
+          ]
+        },
+        "extensions": {
+          "$ref": "#/$defs/extensions"
+        }
+      }
+    },
+    "change": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "change_id",
+        "entity_type",
+        "entity_id",
+        "field",
+        "before",
+        "after",
+        "reason",
+        "evidence",
+        "confidence",
+        "decision",
+        "provenance"
+      ],
+      "properties": {
+        "change_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "entity_type": {
+          "enum": [
+            "document",
+            "lane",
+            "node",
+            "edge",
+            "control",
+            "style"
+          ]
+        },
+        "entity_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "field": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "before": true,
+        "after": true,
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidence": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "confidence": {
+          "enum": [
+            "high",
+            "medium",
+            "low"
+          ]
+        },
+        "decision": {
+          "enum": [
+            "pending",
+            "accepted",
+            "rejected"
+          ]
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        },
+        "extensions": {
+          "$ref": "#/$defs/extensions"
+        }
+      }
+    },
+    "reconciliation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "changes"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "not_started",
+            "in_review",
+            "applied",
+            "rejected"
+          ]
+        },
+        "generated_at": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?Z$"
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "changes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/change"
+          }
+        },
+        "extensions": {
+          "$ref": "#/$defs/extensions"
+        }
+      }
+    },
+    "revision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "revision_id",
+        "revision_number",
+        "actor",
+        "created_at",
+        "reason",
+        "changes"
+      ],
+      "properties": {
+        "revision_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "revision_number": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "actor": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "created_at": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?Z$"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "changes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "extensions": {
+          "$ref": "#/$defs/extensions"
+        }
+      }
+    },
+    "exportProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target",
+        "anchor_mode",
+        "edit_as",
+        "native_shapes_only",
+        "native_bound_connectors_only",
+        "one_logical_edge_one_connector",
+        "swimlane_background",
+        "legend",
+        "require_excel_drag_save_reopen_test",
+        "require_windows_acceptance"
+      ],
+      "properties": {
+        "target": {
+          "const": "editable_excel_native_drawingml"
+        },
+        "anchor_mode": {
+          "const": "twoCellAnchor"
+        },
+        "edit_as": {
+          "enum": [
+            "pending",
+            "oneCell",
+            "twoCell"
+          ]
+        },
+        "native_shapes_only": {
+          "const": true
+        },
+        "native_bound_connectors_only": {
+          "const": true
+        },
+        "one_logical_edge_one_connector": {
+          "const": true
+        },
+        "swimlane_background": {
+          "enum": [
+            "merged_cells_fill_borders",
+            "template_defined"
+          ]
+        },
+        "legend": {
+          "enum": [
+            "worksheet_cells",
+            "template_defined"
+          ]
+        },
+        "require_excel_drag_save_reopen_test": {
+          "const": true
+        },
+        "require_windows_acceptance": {
+          "type": "boolean"
+        },
+        "shape_mapping": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "extensions": {
+          "$ref": "#/$defs/extensions"
+        }
+      }
+    },
+    "styleOverrides": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "reason"
+      ],
+      "properties": {
+        "source": {
+          "const": "user_explicit"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "tokens": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "$comment": "Only explicit user-approved overrides may appear here. export_profile/excel_export_rules cannot be overridden."
+    }
+  }
+}

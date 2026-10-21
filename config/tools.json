@@ -178,5 +178,25 @@
       "拓扑",
       "equity"
     ]
+  },
+  {
+    "slug": "flowchart-excel",
+    "name": "流程图转 Excel",
+    "description": "功能暂未开放，当前版本正在封存评估中。此前的导入、人工复核与实验 XLSX 导出仅为实验产物，不代表正式交付能力。",
+    "category": "数据",
+    "status": "coming-soon",
+    "version": "v0.2.2",
+    "icon": "F2X",
+    "keywords": [
+      "流程图",
+      "flowchart",
+      "excel",
+      "外部 AI",
+      "辅助文件",
+      "审计",
+      "内部控制",
+      "流程",
+      "结构化"
+    ]
   }
 ]

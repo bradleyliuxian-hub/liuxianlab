@@ -19,6 +19,7 @@ const { createExcelReviewControlLogRouter } = require('./server/excel-review/con
 const { createJournalEntryRouter } = require('./server/journal-entry/routes');
 const { createPurchaseReconciliationRouter } = require('./server/purchase-reconciliation/routes');
 const { createEquityRouter } = require('./server/equity-structure/routes');
+const { createFlowchartRouter } = require('./server/flowchart-excel/routes');
 require('dotenv').config();
 
 const app = express();
@@ -116,11 +117,16 @@ app.use(
       req.method === 'POST'
       && req.path === '/api/equity-structures/export/png';
 
+    const isFlowchartReviewGraphSave =
+      req.method === 'PUT'
+      && /^\/api\/flowchart-excel\/[0-9a-f-]{36}\/review\/graph\/?$/i.test(req.path);
+
 
     if (
       isContractDraftSave
       || isEquityResultSave
       || isEquityPngExport
+      || isFlowchartReviewGraphSave
     ) {
 
       return next();
@@ -386,6 +392,14 @@ app.use('/api/purchase-reconciliations', requireAuth, sameOriginForStateChange, 
  * 原图与结果保存在 storage/equity-structure/<uuid>/，按 owner 隔离。
  */
 app.use('/api/equity-structures', requireAuth, sameOriginForStateChange, createEquityRouter({ root: ROOT }));
+
+/* Flowchart-to-Excel: authenticated upload/job/artifact skeleton (fake worker only). */
+const flowchartTool = readTools().find((tool) => tool.slug === 'flowchart-excel');
+const flowchartComingSoon = flowchartTool?.status === 'coming-soon';
+app.use('/api/flowchart-excel', requireAuth, sameOriginForStateChange, createFlowchartRouter({
+  root: ROOT,
+  comingSoon: flowchartComingSoon
+}));
 
 /*
  * Excel Review Control Log (V1.4): aggregates several excel-review jobs into

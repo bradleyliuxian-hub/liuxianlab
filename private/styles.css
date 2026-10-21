@@ -423,6 +423,14 @@ body.dark .tool-glyph { background:#102a4a; color:#9dc5ff; }
   padding:5px 7px; border:1px solid rgba(18,97,214,.08); border-radius:999px; background:var(--surface-blue);
   color:var(--primary); font-size:8px; font-weight:700;
 }
+.tool-status-badge {
+  padding:5px 7px; border:1px solid color-mix(in srgb, var(--warning) 26%, var(--line)); border-radius:999px;
+  background: color-mix(in srgb, var(--warning) 12%, var(--surface)); color:var(--warning);
+  font-size:8px; font-weight:800; letter-spacing:.02em; white-space:nowrap;
+}
+.tool-card.is-soon::before { background: color-mix(in srgb, var(--warning) 10%, transparent); }
+.tool-card.is-soon .tool-arrow { color:var(--warning); background: color-mix(in srgb, var(--warning) 10%, var(--surface)); }
+.tool-card.is-soon:hover .tool-arrow { color:#fff; background:var(--warning); }
 .favorite-button {
   width:32px; height:32px; display:grid; place-items:center; border:1px solid var(--line); border-radius:10px;
   background:var(--surface); color:var(--muted-2); cursor:pointer; font-size:17px; line-height:1;

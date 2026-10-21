@@ -56,6 +56,18 @@ Frontend tools are Vanilla HTML/CSS/JS. Do not introduce React/Vue/Tailwind with
 | Shared | `private/shared/excel-viewer/*`, `private/shared/excel-highlight/*`, `private/vendor/fflate/` |
 | Tests | `tests/excel-decimal-check/*` |
 
+## 流程图转 Excel （flowchart-excel / `/tools/flowchart-excel`）— ARCHIVED / Coming Soon
+
+| Item | Location |
+|---|---|
+| Node | `server/flowchart-excel/`（routes、service、external-import、review、artifacts、safe-zip） |
+| JS services | `services/flowchart_excel/`（validator、legacy_adapter、reference_validator、manifest_validator） |
+| Frontend | `private/tools/flowchart-excel/`（上传页 + `review.html` 人工复核工作台） |
+| Schema | `docs/agent/flowchart-excel/flowchart.schema.json`、`manifest.schema.json` |
+| Docs | `docs/agent/flowchart-excel/`（start at `slice4-review-workbench-architecture.md`） |
+| Archive | `docs/agent/flowchart-excel/archive/PROJECT-ARCHIVED.md`（PAUSED / Coming Soon） |
+| Tests | `tests/flowchart-excel/*`、`services/flowchart_excel/tests/*` |
+
 ## Excel 标准化 & 销售/收入分析
 
 | Item | Location |

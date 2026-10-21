@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Liuxian Lab 流程图转 Excel：功能暂未开放，当前版本正在封存评估中。" />
+  <title>流程图转 Excel · Liuxian Lab</title>
+  <link rel="stylesheet" href="/design-tokens.css?v=1.0.0" />
+  <link rel="stylesheet" href="/app/app-shell.css?v=1.0.0" />
+  <link rel="stylesheet" href="/app/tools/flowchart-excel/styles.css?v=0.2.2" />
+</head>
+<body>
+  <div class="page-shell">
+    <header class="tool-header">
+      <a class="back-link" href="/" aria-label="返回工作台">←</a>
+      <div class="tool-brand">
+        <span class="tool-mark">F2X</span>
+        <div><strong>流程图转 Excel</strong><small>Liuxian Lab / Archived</small></div>
+      </div>
+      <div class="header-actions">
+        <span class="status-chip soon">Coming Soon</span>
+        <span class="version-chip">v0.2.2（最后实验版）</span>
+        <details class="version-notes">
+          <summary>更新说明</summary>
+          <div>
+            <strong>项目已封存 · Coming Soon</strong>
+            <p>当前暂停 flowchart-to-Excel 开发。此前的导入、复核与实验 XLSX 导出仅为研究产物，不代表正式交付能力。</p>
+            <p>v0.2.2：实验导出。正式 exportReady 仍为 false，edit_as 仍为 pending。</p>
+            <p>v0.2.1：一键复核。v0.2.0：问题清单、原图定位、节点/连线/泳道编辑、保存与修订历史。</p>
+            <p>Excel 导出仍未开放；本网站不调用 AI，不生成 XLSX；trade_purchase_cn 与 edit_as=pending 保持不变。</p>
+          </div>
+        </details>
+        <span class="private-badge"><i></i>ARCHIVED · 只读</span>
+        <button class="ghost-button" id="newJobButton" type="button" hidden disabled>新建导入</button>
+      </div>
+    </header>
+
+    <main class="tool-main">
+      <section class="archive-banner" aria-label="功能暂未开放">
+        <span class="archive-tag">COMING SOON</span>
+        <h1>流程图转 Excel</h1>
+        <p class="archive-lead">功能暂未开放，当前版本正在封存评估中。</p>
+        <p class="archive-note">此前的导出结果仅为实验产物，不代表正式交付能力。项目代码、历史任务和审计材料均已保留，但不会启动新的导入、复核写入或 XLSX 导出。</p>
+        <a class="ghost-button" href="/">返回工作台</a>
+      </section>
+
+      <section class="intro-section">
+        <p class="eyebrow">FLOWCHART → EXCEL · ARCHIVED / COMING SOON</p>
+        <h1>项目已暂停开发，当前版本正在封存评估中。</h1>
+        <p>历史导入、人工复核与实验导出能力保留用于研究和回溯；正式 XLSX 交付能力从未通过验收。当前页面不提供新的上传、开始处理或导出入口。</p>
+      </section>
+
+      <div class="notice-strip" role="note">
+        <span><b>不开放新任务</b>：创建/导入/写入/导出接口均返回 Coming Soon。</span>
+        <span><b>不生成 XLSX</b>：历史实验导出不代表正式交付。</span>
+        <span><b>保留历史记录</b>：既有任务只读查询与权限策略不变。</span>
+      </div>
+
+      <section class="workspace-card" id="uploadPanel" hidden aria-hidden="true">
+        <div class="card-heading">
+          <div><span class="step-no">01</span><div><h2>上传原始图片与辅助文件 ZIP</h2><p>网站只接受本地文件，不向第三方 API 发送文件内容。</p></div></div>
+          <span class="profile-chip">external_ai · local validation</span>
+        </div>
+
+        <div class="upload-grid">
+          <div>
+            <label class="drop-zone" id="imageDrop" for="imageInput">
+              <input id="imageInput" type="file" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" hidden />
+              <span class="drop-icon">IMG</span>
+              <strong>原始流程图图片</strong>
+              <small>PNG / JPG / JPEG / WebP · 最大 25 MiB · 仅本地预览</small>
+            </label>
+            <div class="selected-file" id="imageSelected" hidden>
+              <span class="file-icon">IMG</span>
+              <div class="file-copy"><strong id="imageFileName"></strong><small id="imageFileMeta"></small></div>
+              <button class="icon-button" id="clearImageButton" type="button" aria-label="移除图片">×</button>
+            </div>
+            <div class="image-preview" id="imagePreview" hidden><img id="previewImage" alt="原始流程图本地预览" /></div>
+          </div>
+
+          <div>
+            <label class="drop-zone" id="packageDrop" for="packageInput">
+              <input id="packageInput" type="file" accept=".zip,application/zip" hidden />
+              <span class="drop-icon">ZIP</span>
+              <strong>外部 AI 辅助文件包</strong>
+              <small>仅 .zip · 必须包含 manifest、flowchart、CSV、style、report</small>
+            </label>
+            <div class="selected-file" id="packageSelected" hidden>
+              <span class="file-icon">ZIP</span>
+              <div class="file-copy"><strong id="packageFileName"></strong><small id="packageFileMeta"></small></div>
+              <button class="icon-button" id="clearPackageButton" type="button" aria-label="移除 ZIP">×</button>
+            </div>
+            <div class="package-help">
+              <strong>ZIP 必需文件</strong>
+              <code>manifest.json</code>
+              <code>flowchart.json</code>
+              <code>nodes.csv</code>
+              <code>edges.csv</code>
+              <code>style.json</code>
+              <code>conversion_report.md</code>
+              <p>可选：<code>review_overlay.png</code>。ZIP 会经过路径穿越、重复文件、加密、符号链接、嵌套 ZIP、解压炸弹和 hash 校验。</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="upload-actions">
+          <p>上传后由服务端校验并生成规范化的辅助文件。任务需要人工复核；Excel 导出 gate 仍关闭（edit_as=pending）。</p>
+          <button class="primary-button" id="uploadButton" type="button" disabled>Coming Soon</button>
+        </div>
+        <div class="error-box" id="uploadError" role="alert" hidden></div>
+      </section>
+
+      <section class="workspace-card" id="jobPanel" hidden>
+        <div class="card-heading">
+          <div><span class="step-no">02</span><div><h2>导入任务</h2><p id="jobSubtitle">—</p></div></div>
+          <span class="job-status" id="jobStatus">—</span>
+        </div>
+        <div class="job-meta-grid">
+          <div><span>Job ID</span><strong id="jobIdLabel">—</strong></div>
+          <div><span>模式</span><strong id="jobMode">external_import</strong></div>
+          <div><span>待确认项</span><strong id="unresolvedCount">0</strong></div>
+          <div><span>警告</span><strong id="warningCount">0</strong></div>
+          <div><span>Excel 导出</span><strong id="exportReadyLabel">未开放</strong></div>
+        </div>
+        <div class="progress-track large"><span id="jobProgressBar"></span></div>
+        <div class="progress-meta"><strong id="jobProgressValue">0%</strong><span id="jobMessage">—</span></div>
+        <div class="notice-box" id="reviewNotice" hidden></div>
+        <div class="notice-box" id="exportNotice">Excel 导出尚未开放：edit_as 仍为 pending，exportReady=false。</div>
+        <div class="review-action" id="reviewAction" hidden>
+          <a class="primary-button" id="openReviewLink" href="#">打开人工复核工作台 →</a>
+          <span>逐项处理待确认项；完成复核不会解锁 XLSX 导出。</span>
+        </div>
+        <div class="artifacts-heading"><strong>可下载文件</strong><span>仅当前登录用户可访问</span></div>
+        <div class="artifact-list" id="artifactList"></div>
+        <div class="validation-summary" id="validationSummary" hidden></div>
+        <div class="error-box" id="jobError" role="alert" hidden></div>
+      </section>
+
+      <section class="workspace-card" id="historyPanel" hidden aria-hidden="true">
+        <div class="card-heading">
+          <div><span class="step-no">03</span><div><h2>历史导入</h2><p>只显示当前登录用户的任务。</p></div></div>
+          <button class="ghost-button" id="refreshHistoryButton" type="button">刷新</button>
+        </div>
+        <div class="history-list" id="historyList"></div>
+        <div class="empty-state" id="historyEmpty" hidden>还没有导入任务。</div>
+        <div class="empty-state" id="historyLoading">正在读取历史任务…</div>
+        <div class="error-box" id="historyError" role="alert" hidden></div>
+      </section>
+    </main>
+  </div>
+
+  <script src="/app/app-shell.js?v=1.0.0"></script>
+  <script src="/app/tools/flowchart-excel/script.js?v=0.2.2"></script>
+</body>
+</html>

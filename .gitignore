@@ -78,3 +78,6 @@ storage/
 
 # dedicated equity OCR environment
 .equity-venv/
+
+# dedicated flowchart vision environment
+.flowchart-venv/

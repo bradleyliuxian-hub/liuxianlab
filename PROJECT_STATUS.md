@@ -1,75 +1,80 @@
 # Project Status
 
-Updated: 2026-10-20
+Updated: 2026-10-21
 
 > 当前状态快照。事实源是仓库 + Git；不写 secret、不写完整 diff、不写聊天历史。
 
 ## Git State
 
 - 分支：`main`
-- HEAD：`7cd4a30`
-- 工作区：dirty（包含上一轮序时账接入与本轮采购与退货对抵，均未提交、未 push）。
-- 未跟踪：`services/journal_entry.zip` 为既有下载包，未改动。
-- 最近操作：模块由 sales-reconciliation 重命名为 purchase-reconciliation（含目录、API、表、页面与文档）；本地迁移、API/UI 验证与测试；未部署。
+- HEAD：`28efb24f08a8c7e83067e5dc52b8ad00172a5314`
+- 工作区：dirty 19 项（11 个已跟踪文件修改 + 8 个未跟踪目录/文件）。
+- 既有 dirty 改动未清理；本轮未 reset / clean / stash / checkout / restore / commit / push。
 
-## Current Goal
+## Current Focus
 
-把 SAP 采购收货/退货正负数量 FIFO 对抵作为原生模块接入 Liuxian Lab：上传 → 字段识别 → 异步 FIFO → Dashboard / 分页结果 / CSV ZIP / XLSX。
+**Flowchart-to-Excel 已暂停 / 封存，网站标记 Coming Soon。**
 
-## Completed This Round
+- 状态：`PAUSED / ARCHIVED`
+- 工具：`flowchart-excel`
+- 配置状态：`coming-soon`
+- `exportReady=false`；`edit_as=pending`
+- 不再继续修复 Golden Fixture、connector、布局、样式或导出器。
+- 不再进入 connector spike / V5 / V6。
 
-- Python 服务 `services/purchase_reconciliation/`
-  - `schema.py`（canonical fields + 别名）、`column_mapper.py`
-  - `excel_reader.py` OOXML 流式读取，跳过 SAP 百万空行
-  - `engine.py` 业务键 + 双指针 FIFO、Decimal、金额守恒
-  - `exporters.py` CSV ZIP（UTF-8 BOM）与 write-only XLSX
-  - `inspection.py`、`worker.py`、`job_io.py`
-- Node 模块 `server/purchase-reconciliation/`
-  - `routes.js`、`repository.js`、`job-factory.js`
-  - `inspection-runner.js`、`worker-runner.js`（队列、超时、重启恢复、TTL 清理）
-  - `result-store.js`（NDJSON 服务端分页 / 搜索 / 排序 / 未匹配过滤）
-  - `schema.js`、`migrations/001_purchase_reconciliation.sql`
-- 前端 `private/tools/purchase-reconciliation/`
-  - 原生 App Shell + 既有 Card/Table/Tabs/Drawer/Toast 视觉
-  - 上传、sheet/header 重新识别、字段完整度、规则说明、进度
-  - 历史任务中的待确认草稿可“继续确认”，上传成功后直接进入字段确认面板（v1.0.1）
-  - 10 项 KPI、金额结构条形图、移动类型表、FIFO 配对段 / 已对抵 / 剩余 / 未匹配
-  - 服务端分页（默认 50，最大 200）、搜索、排序、追溯 Drawer
-- 接入：`server.js`、`config/tools.json`、`private/script.js` IA（Excel → 专业分析）、README、PROJECT_INDEX、pre-push-check。
-- 文档：`docs/agent/purchase-reconciliation/web-integration.md`。
-- Python 依赖清单已归并到共享 `workers/excel/requirements.txt`（`openpyxl==3.1.5` + `xlrd==2.0.2`）；删除 `services/journal_entry/requirements.txt`，避免部署器把新增 per-service manifest 当作未评审依赖变更。
-- 本地数据库已应用 migration 001（`purchase_reconciliation_jobs`）。
+封存档案：
 
-## Verification
+```text
+docs/agent/flowchart-excel/archive/PROJECT-ARCHIVED.md
+docs/agent/flowchart-excel/archive/ARTIFACT-INDEX.md
+docs/agent/flowchart-excel/archive/coming-soon-rollback.md
+docs/agent/flowchart-excel/archive/coming-soon-validation-report.md
+```
 
-- Python：`.venv/bin/python -m unittest discover -s services/purchase_reconciliation/tests -t .` = **24 tests OK（1 skipped：未设真实文件 env）**。
-- 真实 SAP 回归（`筛选后的_2026梦果子采购SAP抽凭.xlsx`）：
-  - 34,297 原始记录 / 634 配对段 / 948 参与 / 33,501 剩余
-  - 对抵 14,913,418.90 / 最终净额 570,865,672.91 / 守恒差异 0.00 / `conservation_ok=true`
-  - 总计耗时约 2.1s（读取 + 引擎）
-- Node：`npm test` = **275 passed**（新增 8 个路由/分页/下载测试）。
-- 真实 HTTP 全链路：上传 201（1.4s）→ start 202 → completed；summary/matches/matched/remaining/unmatched/segment/detail/download 均 200。
-- Chrome Headless UI 冒烟：上传 → 识别 34,297 行 / 12 字段 → 开始 → Dashboard → 四个 Tab 分页 → Drawer → XLSX ready；**无 console error / exception**。
-- 草稿恢复冒烟：上传后刷新 → 历史“继续确认” → 重新识别 34,297 行 → 开始并完成；**无 console error / exception**。
-- XLSX 程序化打开：5 个 sheet；对抵分段 635 行（含表头）、已对抵明细 949、剩余 33,502。
-- `journal_entry` Python 回归：235 passed（未改该模块行为）。
+## Coming Soon 状态
 
-## Known Issues / Limits
+- 工具卡片显示 `Coming Soon`。
+- 流程图入口页显示“功能暂未开放，当前版本正在封存评估中”；上传/历史/新建入口隐藏。
+- 复核页为只读 Coming Soon；保存/完成复核/批量复核/导出按钮禁用。
+- 后端写接口返回 `503 FEATURE_COMING_SOON`：
+  - `POST /api/flowchart-excel/jobs`
+  - `POST /api/flowchart-excel/jobs/import-helper-package`
+  - `PUT/POST /review/*` 写操作
+  - `POST /export-xlsx`
+  - `POST /cancel`
+- 历史任务只读查询/下载、owner 隔离、artifact allow-list 保留。
+- 8080 **未重启**；线上是否加载新状态未确认，需维护窗口重启。
 
-- 仅支持 OOXML `.xlsx` / `.xlsm`；旧 `.xls` 不解析。
-- V1 UI 固定默认匹配键与 FIFO；后端 `ReconciliationConfig` 已预留扩展。
-- XLSX 使用 openpyxl write-only，无原生 Excel 图表；CSV ZIP 为快速下载。
-- 结果默认保留 72 小时；过期返回 410。
-- Node/Python 进程均未重启（本轮未启动 8080 常驻服务）。
+## Known Broken / Unresolved
 
-## Pending
+- Golden Fixture 原始 XLSX 在 Excel 中触发修复提示；包结构修复版已生成，但 **Mac/Windows Excel 均 NOT RUN**。
+- V4 大图布局、connector runtime、泳道/图例/控制标记、模板样式仍未通过视觉 QA。
+- 打印可读性未定版（10pt × 48% ≈ 4.8pt；A3 高度余量约 0.9pt）。
+- Windows Excel 对目标业务规模候选验收缺失。
+- `edit_as=pending`；正式 `exportReady=false`。
+- V4 / layout / Golden Fixture 代码位于 `~/AI-Workspace/tools/`，不在网站 Git 仓库内。
+- 本机 LibreOffice 未渲染 Microsoft YaHei UI 中文字形，预览不能替代 Excel。
 
-- 是否提交/推送本轮与上一轮改动待确认；提交前跑 `scripts/local/pre-push-check.sh --full`。
-- 生产需先应用 `server/purchase-reconciliation/migrations/001_purchase_reconciliation.sql`，再重启 Node。
-- 生产真实登录、上传、下载与并发/大文件验证未执行。
+## Last Verification
+
+- 2026-10-21 Coming Soon 后：
+  - `node --test tests/flowchart-excel/*.test.js` = **123 pass / 0 fail**
+  - `npm test` = **408 pass / 0 fail**
+  - `services/flowchart_excel` Python = **14 tests OK**
+  - `GET /health` = `{"ok":true}`
+- 2026-10-21 Golden Fixture：
+  - .NET 19 pass；Node schema 5 pass；Python 6 OK；
+  - static validation 73 PASS；package audit 38/38 PASS；Open XML SDK 0 errors。
+- 历史：Slice 5.1 旧 anchor 候选 Mac A/B 58/58 PASS；V2–V4 视觉 QA FAIL；Windows NOT RUN。
+
+## Pending Decision
+
+- 是否永久放弃，或未来重新进入开发。
+- 若恢复：先阅读封存档案，再按 `coming-soon-rollback.md` 恢复状态；不得直接打开正式导出。
 
 ## Next Action
 
-1. 检查 diff，确认是否提交（含序时账与 FIFO 两块）。
-2. 如上线：先应用两个 migration，再重启 Node；用真实登录做一次 FIFO 全链路冒烟。
-3. 保留回滚路径（删除新表与 storage 目录、回退 Node 版本）。
+- 当前不继续开发。
+- 可选人工验证（仅在决定恢复时）：按 `golden-fixture-manual-acceptance.md` 在 Mac/Windows Excel 打开修复版 Golden Fixture，确认无修复提示后再决定是否进入 Phase 2。
+- 生产维护窗口：重启 8080 后确认 `config/tools.json` 的 Coming Soon 和写 API gate 已加载。
+- 未删除代码/数据；未生成 XLSX；未调用 AI；未改数据库。

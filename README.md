@@ -53,6 +53,12 @@ private/tools/<slug>/
 - `purchase-reconciliation` — 采购与退货对抵（Node 路由 + PostgreSQL + Python worker：`server/purchase-reconciliation/`、`services/purchase_reconciliation/`，迁移在 `server/purchase-reconciliation/migrations/`）
 - `equity-structure` — 股权结构图识别（Node 路由 + PostgreSQL + 独立 PaddleOCR 环境：`server/equity-structure/`、`services/equity_structure/`，迁移在 `server/equity-structure/migrations/`）
 - `excel-decimal-check` — Excel 小数检查（纯浏览器本地处理，`private/tools/excel-decimal-check/`）
+- `flowchart-excel` — **ARCHIVED / Coming Soon**：外部 AI 辅助文件导入与人工复核工作台；当前暂停开发，不再开放新任务或正式 XLSX 导出（`server/flowchart-excel/`、`services/flowchart_excel/`、`private/tools/flowchart-excel/`）。封存档案：`docs/agent/flowchart-excel/archive/PROJECT-ARCHIVED.md`
+- `flowchart-excel` Slice 5（历史）— 模板 profile JSON 与原生 Open XML 导出 POC（`docs/agent/flowchart-excel/trade-purchase-template-profile.json`、`/Users/a123/AI-Workspace/tools/flowchart-excel-exporter-poc`）；正式导出 gate 仍关闭
+- `flowchart-excel` Slice 5.1（历史）— 63 节点/58 连线 A/B anchor 验收：Mac A/B PASS；Windows NOT RUN；视觉 QA FAIL；`edit_as=pending`、`exportReady=false`（`docs/agent/flowchart-excel/slice5-1-anchor-validation-report.md`）
+- `flowchart-excel` Slice 5.2（历史）— 视觉修复候选：独立布局计划、标题/节点碰撞改善；仍有 13 条文本溢出与 61 条近似连线穿越；视觉 QA FAIL，正式导出关闭（`docs/agent/flowchart-excel/slice5-2-visual-fix-report.md`）
+- `flowchart-excel` Slice 5.3（历史）— 画布占用/可读性 v2：内容占比约 73%×87%，文本溢出 0；仍有 23 条近似连线穿越、泳道/图例/控制标记未达目标样式；视觉 QA FAIL，正式导出关闭（`docs/agent/flowchart-excel/slice5-3-visual-fix-v2-report.md`）
+- `flowchart-excel` Slice 5.4（历史）— V3 图 rank 布局：节点碰撞 0、文本溢出 0；仍有 39 条近似连线穿越，控制标记/图例/泳道未达目标样式；视觉 QA FAIL，正式导出关闭（`docs/agent/flowchart-excel/slice5-4-visual-layout-report.md`）
 
 ## 断点续连（Checkpoint / Resume）
 

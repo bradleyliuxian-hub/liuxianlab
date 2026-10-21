@@ -36,7 +36,8 @@ const TOOL_IA = {
   'journal-entry-analysis': { fileType: 'excel', group: 'analysis' },
   'purchase-reconciliation': { fileType: 'excel', group: 'analysis' },
   'contract-review': { fileType: 'pdf', group: 'pdf' },
-  'equity-structure': { fileType: 'image', group: 'analysis' }
+  'equity-structure': { fileType: 'image', group: 'analysis' },
+  'flowchart-excel': { fileType: 'excel', group: 'analysis' }
 };
 
 const GROUP_LABEL = { general: '通用处理', check: '检查', analysis: '专业分析', template: '模板分析', pdf: 'PDF', image: '图片识别' };
@@ -425,6 +426,7 @@ function renderTools() {
     const title = fragment.querySelector('h3');
     const description = fragment.querySelector('.tool-description');
     const version = fragment.querySelector('.version-badge');
+    const statusBadge = fragment.querySelector('.tool-status-badge');
     const category = fragment.querySelector('.category-label');
     const favorite = fragment.querySelector('.favorite-button');
     const link = fragment.querySelector('.tool-link');
@@ -432,16 +434,21 @@ function renderTools() {
     const toolName = String(tool.name || '未命名工具');
     const toolSlug = String(tool.slug || '');
     const ia = iaOf(tool);
+    const toolStatus = String(tool.status || '').toLowerCase();
+    const comingSoon = ['coming-soon', 'comingsoon', 'coming_soon'].includes(toolStatus);
     glyph.textContent = tool.icon || toolName.slice(0, 2);
     title.textContent = toolName;
     description.textContent = tool.description || '';
     version.textContent = tool.version || '';
     version.hidden = !version.textContent;
+    statusBadge.hidden = !comingSoon;
+    statusBadge.textContent = comingSoon ? 'Coming Soon' : '';
+    card.classList.toggle('is-soon', comingSoon);
     category.textContent = GROUP_LABEL[ia.group] || tool.category || '';
     category.classList.add(`accent-${GROUP_ACCENT[ia.group] || 'blue'}`);
     card.dataset.group = ia.group || '';
     link.href = toolSlug ? `/tools/${encodeURIComponent(toolSlug)}` : '#';
-    link.setAttribute('aria-label', `打开 ${toolName}`);
+    link.setAttribute('aria-label', comingSoon ? `查看 ${toolName}（Coming Soon）` : `打开 ${toolName}`);
 
     const isFavorite = state.favorites.has(toolSlug);
     favorite.classList.toggle('active', isFavorite);

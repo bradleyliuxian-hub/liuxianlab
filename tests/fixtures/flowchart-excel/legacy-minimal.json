@@ -1,0 +1,140 @@
+{
+  "schema_version": "1.0.0",
+  "document": {
+    "title": "合成流程图（无客户数据）",
+    "source_type": "image",
+    "source_image_name": "synthetic-flowchart.png",
+    "source_image_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "source_image_size_px": { "width": 1000, "height": 800 },
+    "generated_at_utc": "2026-10-20T16:00:00Z",
+    "extraction_status": "draft_requires_human_validation",
+    "disclaimer": "合成数据，仅用于测试。"
+  },
+  "coordinate_system": {
+    "unit": "pixel",
+    "source_image_width": 1000,
+    "source_image_height": 800
+  },
+  "lanes": [
+    {
+      "id": "lane_sales",
+      "label": "销售部",
+      "order": 1,
+      "orientation": "horizontal",
+      "bbox_px": { "x": 0, "y": 50, "w": 1000, "h": 200 },
+      "notes": "synthetic lane"
+    },
+    {
+      "id": "lane_finance",
+      "label": "财务部",
+      "order": 2,
+      "orientation": "horizontal",
+      "bbox_px": { "x": 0, "y": 250, "w": 1000, "h": 200 }
+    }
+  ],
+  "nodes": [
+    {
+      "id": "n_start",
+      "label": "开始",
+      "shape": "terminator",
+      "lane": "销售部",
+      "bbox_px": { "x": 100, "y": 100, "w": 120, "h": 60 },
+      "controls": [],
+      "confidence": "high",
+      "text_status": "transcribed",
+      "notes": "synthetic start"
+    },
+    {
+      "id": "n_process",
+      "label": "审核客户准入",
+      "shape": "process",
+      "lane": "lane_finance",
+      "bbox_px": { "x": 400, "y": 300, "w": 180, "h": 80 },
+      "controls": [
+        { "kind": "CA", "code": "CA1", "style_token": "ca_badge" }
+      ],
+      "confidence": "high",
+      "text_status": "transcribed",
+      "legacy_note": "keep-node"
+    },
+    {
+      "id": "n_decision",
+      "label": "是否通过",
+      "shape": "decision",
+      "lane": "财务部",
+      "bbox_px": { "x": 400, "y": 100, "w": 140, "h": 100 },
+      "controls": [
+        { "kind": "PRP", "code": "PRP1" }
+      ],
+      "confidence": "medium",
+      "text_status": "transcribed"
+    },
+    {
+      "id": "n_end",
+      "label": "结束",
+      "shape": "terminator",
+      "lane": "lane_finance",
+      "bbox_px": { "x": 750, "y": 300, "w": 120, "h": 60 },
+      "controls": [
+        { "kind": "TOE", "code": "TOE1" }
+      ],
+      "confidence": "high",
+      "text_status": "transcribed"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e_start_decision",
+      "source": "n_start",
+      "target": "n_decision",
+      "kind": "sequence",
+      "label": null,
+      "route_hint": "orthogonal_vertical_first",
+      "confidence": "high",
+      "source_of_relationship": "visual_inference",
+      "notes": "synthetic edge"
+    },
+    {
+      "id": "e_decision_process",
+      "source": "n_decision",
+      "target": "n_process",
+      "kind": "branch",
+      "label": "是",
+      "route_hint": "orthogonal_vertical_first",
+      "confidence": "medium",
+      "source_of_relationship": "visual_inference",
+      "legacy_edge": "keep-edge"
+    },
+    {
+      "id": "e_decision_end",
+      "source": "n_decision",
+      "target": "n_end",
+      "kind": "branch",
+      "label": "否",
+      "route_hint": "straight_horizontal",
+      "confidence": "medium",
+      "source_of_relationship": "visual_inference"
+    }
+  ],
+  "unresolved_items": [
+    {
+      "id": "u_legacy_1",
+      "type": "low_confidence",
+      "severity": "low",
+      "description": "合成低置信度提示。",
+      "action": "人工复核。"
+    }
+  ],
+  "style": {
+    "status": "model_extracted_defaults_applied_review_required",
+    "theme": {
+      "font_family": "Microsoft YaHei UI",
+      "process": { "fill": "#D9E7F5", "line": "#4F81BD" }
+    },
+    "excel_export_rules": {
+      "native_shapes_only": false,
+      "anchor_mode": "absoluteAnchor"
+    }
+  },
+  "legacy_root": "keep-root"
+}

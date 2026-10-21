@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:liuxianlab:flowchart-helper-manifest:1.0.0",
+  "title": "Liuxian Lab External Flowchart Helper Manifest",
+  "description": "manifest.json inside an external AI helper package. Hashes are verified against real ZIP members by the application.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "package_version",
+    "generation_mode",
+    "ai_extraction_performed_by_website",
+    "source_image",
+    "files"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "package_version": {
+      "const": "1.0.0"
+    },
+    "generation_mode": {
+      "const": "external_ai"
+    },
+    "ai_extraction_performed_by_website": {
+      "const": false
+    },
+    "source_image": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "filename",
+        "sha256"
+      ],
+      "properties": {
+        "filename": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255,
+          "pattern": "^[^/\\\\]+$",
+          "not": {
+            "enum": [
+              ".",
+              ".."
+            ]
+          }
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sha256": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-fA-F]{64}$"
+        },
+        "width_px": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "height_px": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "files": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "flowchart.json",
+        "nodes.csv",
+        "edges.csv",
+        "style.json",
+        "conversion_report.md"
+      ],
+      "properties": {
+        "flowchart.json": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{64}$"
+        },
+        "nodes.csv": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{64}$"
+        },
+        "edges.csv": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{64}$"
+        },
+        "style.json": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{64}$"
+        },
+        "conversion_report.md": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{64}$"
+        },
+        "review_overlay.png": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{64}$"
+        }
+      }
+    },
+    "model": {
+      "oneOf": [
+        {
+          "type": "string",
+          "maxLength": 200
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "provider": {
+              "type": "string",
+              "maxLength": 200
+            }
+          }
+        }
+      ]
+    },
+    "prompt_version": {
+      "type": "string",
+      "maxLength": 80
+    }
+  },
+  "$comment": "Application must recompute every file hash and compare source_image.sha256 with the uploaded image. Schema presence alone is not proof."
+}

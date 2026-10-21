@@ -1,0 +1,479 @@
+{
+  "$schema": "urn:liuxianlab:flowchart-template-profile:1.0.0",
+  "profile_id": "trade_purchase_cn",
+  "profile_version": "1.0.0",
+  "source_template": {
+    "file_name": "Trade purchase.CN.xlsx",
+    "size_bytes": 53830,
+    "sha256": "c2d8426ae6f45846ca1036100761604ad9f58c83fc55fdf7b4345118db3b2a80"
+  },
+  "status": {
+    "profile_confidence": "verified_from_ooxml",
+    "production_anchor_confirmed": false,
+    "export_ready": false,
+    "notes": "Anchor semantics are pending real Excel acceptance for the target template's default twoCell behavior. Formal customer XLSX export must remain closed."
+  },
+  "workbook": {
+    "sheet_count": 1,
+    "sheet_name": "Trade purchase WT",
+    "used_range": "A1:AH9",
+    "print_area": "A1:AG9",
+    "default_column_width": 9.9140625,
+    "default_row_height_points": 14.5,
+    "visible_view": "pageBreakPreview",
+    "zoom_percent": 70,
+    "merge_cells": [
+      "A8:A9"
+    ],
+    "hidden_rows": [
+      4,
+      5
+    ],
+    "rows": [
+      {
+        "row": 1,
+        "height_points": null
+      },
+      {
+        "row": 2,
+        "height_points": null
+      },
+      {
+        "row": 3,
+        "height_points": 24.75
+      },
+      {
+        "row": 4,
+        "height_points": 318.65,
+        "hidden": true,
+        "outline_level": 1
+      },
+      {
+        "row": 5,
+        "height_points": 113.4,
+        "hidden": true,
+        "outline_level": 1
+      },
+      {
+        "row": 6,
+        "height_points": 409.6,
+        "collapsed": true
+      },
+      {
+        "row": 7,
+        "height_points": 266
+      },
+      {
+        "row": 8,
+        "height_points": 373.25
+      },
+      {
+        "row": 9,
+        "height_points": 409.6
+      }
+    ],
+    "columns": [
+      {
+        "min": 1,
+        "max": 1,
+        "width_chars": 9.9140625
+      },
+      {
+        "min": 2,
+        "max": 16384,
+        "width_chars": 9.9140625
+      }
+    ]
+  },
+  "page_setup": {
+    "orientation": "landscape",
+    "paper_size": 8,
+    "paper_size_label": "A3",
+    "scale_percent": 48,
+    "fit_to_page": true,
+    "page_margins_inches": {
+      "left": 0.7,
+      "right": 0.7,
+      "top": 0.75,
+      "bottom": 0.75,
+      "header": 0.3,
+      "footer": 0.3
+    },
+    "printing": {
+      "print_area": "A1:AG9",
+      "print_area_strategy": "fixed_template_range_for_small_graphs; recalculate for larger graphs and record actual range",
+      "template_range_note": "A1:AG9 is the verified template print area; it is not guaranteed for arbitrary graph size."
+    }
+  },
+  "theme": {
+    "colors": {
+      "dk1": {
+        "value": "windowText",
+        "last_clr": "000000"
+      },
+      "lt1": {
+        "value": "window",
+        "last_clr": "FFFFFF"
+      },
+      "dk2": {
+        "value": "44546A"
+      },
+      "lt2": {
+        "value": "E7E6E6"
+      },
+      "accent1": {
+        "value": "4472C4"
+      },
+      "accent2": {
+        "value": "ED7D31"
+      },
+      "accent3": {
+        "value": "A5A5A5"
+      },
+      "accent4": {
+        "value": "FFC000"
+      },
+      "accent5": {
+        "value": "5B9BD5"
+      },
+      "accent6": {
+        "value": "70AD47"
+      },
+      "hlink": {
+        "value": "0563C1"
+      },
+      "folHlink": {
+        "value": "954F72"
+      }
+    },
+    "major_font_latin": "Calibri Light",
+    "minor_font_latin": "Calibri"
+  },
+  "font": {
+    "drawing_family": "Microsoft YaHei UI",
+    "drawing_family_is_direct": true,
+    "cell_family": "Microsoft YaHei UI",
+    "body_size_hundredths": 1100,
+    "secondary_size_hundredths": 1000,
+    "body_weight": "regular",
+    "alignment": "center",
+    "vertical_anchor": "center",
+    "text_color": {
+      "kind": "theme",
+      "value": "tx1"
+    },
+    "run_languages": [
+      "zh-CN",
+      "en-US"
+    ]
+  },
+  "shape_style": {
+    "preset_counts": {
+      "flowChartProcess": 22,
+      "flowChartTerminator": 17,
+      "rect": 15,
+      "flowChartPredefinedProcess": 12,
+      "flowChartDecision": 8,
+      "flowChartDocument": 5,
+      "flowChartPreparation": 3,
+      "flowChartConnector": 3,
+      "flowChartInputOutput": 3,
+      "flowChartMagneticDrum": 2,
+      "homePlate": 1
+    },
+    "theme_style_ref": {
+      "ln_ref": {
+        "index": 2,
+        "color": {
+          "kind": "scheme",
+          "value": "accent1",
+          "shade": "50000"
+        }
+      },
+      "fill_ref": {
+        "index": 1,
+        "color": {
+          "kind": "scheme",
+          "value": "accent1"
+        }
+      },
+      "effect_ref": {
+        "index": 0,
+        "color": {
+          "kind": "scheme",
+          "value": "accent1"
+        }
+      },
+      "font_ref": {
+        "index": "minor",
+        "color": {
+          "kind": "scheme",
+          "value": "lt1"
+        }
+      }
+    },
+    "direct_fills": {
+      "accent1": 53,
+      "lt1": 15,
+      "FFFF00": 4,
+      "FF0000": 3,
+      "92D050": 3,
+      "tx2": 3,
+      "accent2": 1,
+      "none": 9
+    },
+    "semantic_fill_overrides": {
+      "document": {
+        "kind": "srgb",
+        "value": "FFFF00",
+        "verified": true
+      },
+      "preparation_wcgw_prp": {
+        "kind": "srgb",
+        "value": "FF0000",
+        "verified": true
+      },
+      "control_marker": {
+        "kind": "srgb",
+        "value": "92D050",
+        "verified": "observed_only; semantic mapping unverified"
+      },
+      "process_terminator_predefined_input_output_magnetic_drum": {
+        "kind": "scheme",
+        "value": "accent1",
+        "lum_mod": "20000",
+        "lum_off": "80000",
+        "verified": true
+      },
+      "decision_fill": {
+        "verified": false,
+        "note": "No explicit solidFill on every decision; resolve from theme/style and visual inspection."
+      }
+    },
+    "line": {
+      "default_width_emu": 9525,
+      "default_color": {
+        "kind": "scheme",
+        "value": "lt1"
+      },
+      "width_emu_counts": {
+        "9525": 15
+      }
+    },
+    "shadow": {
+      "outer_shadow_count": 74,
+      "blur_radius_emu": 50800,
+      "distance_emu": 38100,
+      "direction": "2700000",
+      "alignment": "tl",
+      "color": {
+        "kind": "preset",
+        "value": "black",
+        "alpha": "40000"
+      },
+      "verified": true
+    },
+    "text_body": {
+      "common_vertical_anchor": "ctr",
+      "common_overflow": "clip",
+      "wrap_square_count": 15,
+      "text_insets_emu": {
+        "left": 0,
+        "right": 0,
+        "top": 0,
+        "bottom": 0,
+        "note": "partial shapes only; many flow shapes rely on defaults"
+      },
+      "verified": true
+    },
+    "connection_sites": {
+      "observed_index_range": [
+        0,
+        5
+      ],
+      "flowChartInputOutput": {
+        "observed_indices": [
+          4,
+          5
+        ],
+        "verified": true
+      },
+      "flowChartMagneticDrum": {
+        "observed_indices": [
+          4
+        ],
+        "verified": true
+      },
+      "note": "Do not hardcode one index for all presets."
+    }
+  },
+  "connector_style": {
+    "preset_counts": {
+      "straightConnector1": 51,
+      "bentConnector3": 17,
+      "bentConnector2": 5,
+      "line": 1
+    },
+    "line_width_emu": 28575,
+    "line_color": {
+      "kind": "scheme",
+      "value": "accent1"
+    },
+    "direct_red_count": 3,
+    "tail_end": "triangle",
+    "tail_end_count": 73,
+    "binding_counts": {
+      "total": 74,
+      "st_cxn": 57,
+      "end_cxn": 51,
+      "both": 50,
+      "start_only": 7,
+      "end_only": 1,
+      "none": 16
+    },
+    "template_binding_defect": "Incomplete binding references are template defects and MUST NOT be copied into output.",
+    "required_output": "Each logical edge: exactly one xdr:cxnSp with exactly one valid a:stCxn and one valid a:endCxn pointing to real shape IDs."
+  },
+  "lane_style": {
+    "implementation": "row_band_plus_column_a_label_cells",
+    "merged_labels": {
+      "A8:A9": "应付账款"
+    },
+    "labels": [
+      {
+        "cell": "A6",
+        "text": "采购部",
+        "row_height_points": 409.6
+      },
+      {
+        "cell": "A7",
+        "text": " 仓库",
+        "row_height_points": 266
+      },
+      {
+        "cell": "A8:A9",
+        "text": "应付账款",
+        "row_height_points": [
+          373.25,
+          409.6
+        ]
+      }
+    ],
+    "label_cell_style": {
+      "font": {
+        "family": "Microsoft YaHei UI",
+        "size_hundredths": 1100,
+        "bold": true,
+        "color": {
+          "kind": "theme",
+          "value": "0"
+        }
+      },
+      "fill": {
+        "kind": "theme",
+        "value": "3",
+        "tint": "-0.249977111117893"
+      },
+      "borders": {
+        "thin": [
+          "left",
+          "right",
+          "top",
+          "bottom"
+        ],
+        "note": "per-cell edges differ; see cellXfs 11-14"
+      }
+    },
+    "unverified": [
+      "full visual reproduction of the row bands",
+      "whether every future graph should use the same three row bands"
+    ],
+    "do_not_force": "Do not convert lane labels into full-width merged backgrounds without evidence."
+  },
+  "legend_style": {
+    "present": true,
+    "implementation": "drawing_shapes_and_worksheet_text",
+    "sample_text_forbidden": [
+      "Guidance - Remove before use",
+      "Start/End",
+      "Manual Activity",
+      "Automated Activity",
+      "Document",
+      "Decision",
+      "WCGW",
+      "Control",
+      "IPE",
+      "Process activity Knowledge ID",
+      "Connector between shapes"
+    ],
+    "layout": {
+      "verified": false,
+      "note": "Do not copy the template legend text or layout blindly; generate only profile-compatible legend content."
+    }
+  },
+  "control_marker_style": {
+    "observed_shapes": {
+      "flowChartPreparation": 3,
+      "flowChartConnector": 3
+    },
+    "observed_colors": {
+      "red": "FF0000",
+      "green": "92D050"
+    },
+    "semantic_mapping": {
+      "verified": false,
+      "note": "CA/PRP/TOE semantic mapping is not established by OOXML alone; use the review data and human-confirmed controls."
+    }
+  },
+  "anchor": {
+    "type": "twoCellAnchor",
+    "explicit_edit_as": null,
+    "default_semantics": "twoCell",
+    "marker_based_geometry": true,
+    "xfrm_zero_height_count": 15,
+    "variants": {
+      "A": {
+        "anchor": "twoCellAnchor",
+        "edit_as": null,
+        "status": "mac_excel_move_save_reopen_layout_pass; windows_pending; visual_qa_fail"
+      },
+      "B": {
+        "anchor": "twoCellAnchor",
+        "edit_as": "oneCell",
+        "status": "mac_excel_move_save_reopen_layout_pass; windows_pending; visual_qa_fail"
+      }
+    },
+    "production_edit_as": "pending",
+    "decision_blocker": "Need Windows target-style acceptance and visual QA fix; do not confirm editAs."
+  },
+  "export": {
+    "native_shapes_only": true,
+    "native_bound_connectors_only": true,
+    "one_logical_edge_one_connector": true,
+    "anchor_mode": "twoCellAnchor",
+    "edit_as": "pending",
+    "export_ready": false,
+    "do_not_copy": [
+      "template example business text",
+      "Guidance - Remove before use",
+      "external links",
+      "customXml",
+      "hidden teaching rows",
+      "unbound template connectors"
+    ],
+    "fallback_tokens_allowed": [
+      "unverified decision fill",
+      "legend layout",
+      "control semantic mapping"
+    ]
+  },
+  "unverified": [
+    "final production editAs choice",
+    "Decision shape fill on every instance",
+    "legend layout and content",
+    "control marker semantic mapping beyond human-confirmed review data",
+    "full row-band reproduction for arbitrary graph sizes",
+    "Windows Excel acceptance details"
+  ],
+  "generated_at": "2026-10-20T19:00:00Z"
+}

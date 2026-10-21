@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Liuxian Lab 流程图人工复核工作台。" />
+  <meta name="theme-color" content="#071B3A" />
+  <title>流程图人工复核 · Liuxian Lab</title>
+  <link rel="stylesheet" href="/design-tokens.css?v=1.0.0" />
+  <link rel="stylesheet" href="/app/app-shell.css?v=1.0.0" />
+  <link rel="stylesheet" href="/app/tools/flowchart-excel/review.css?v=0.2.2" />
+</head>
+<body>
+  <div class="review-shell">
+    <header class="review-header">
+      <a class="back-link" href="/tools/flowchart-excel" aria-label="返回流程图转 Excel">←</a>
+      <div class="review-brand">
+        <span class="review-mark">F2X</span>
+        <div>
+          <strong>流程图人工复核</strong>
+          <small>Liuxian Lab / Review Workbench</small>
+        </div>
+      </div>
+      <div class="review-header-actions">
+        <span class="version-chip">Coming Soon</span>
+        <details class="version-notes">
+          <summary>更新说明</summary>
+          <div>
+            <strong>v0.2.2</strong>
+            <p>新增“导出实验 XLSX”：从 reviewed graph 生成原生 shape/connector 候选文件；正式 exportReady 仍关闭。</p>
+            <p>v0.2.1：一键复核（保留原结果）。v0.2.0：人工复核工作台。</p>
+            <p>本版不调用 AI、不生成 XLSX；trade_purchase_cn 与 edit_as=pending 保持不变。</p>
+          </div>
+        </details>
+        <a class="ghost-button" href="/tools/flowchart-excel">返回任务详情</a>
+        <button class="ghost-button" id="reloadButton" type="button">重新读取</button>
+        <button class="ghost-button" id="bulkReviewButton" type="button" disabled title="功能暂未开放">一键复核（Coming Soon）</button>
+        <button class="ghost-button" id="exportButton" type="button" disabled title="功能暂未开放">导出实验 XLSX（Coming Soon）</button>
+        <button class="primary-button" id="saveButton" type="button" disabled title="功能暂未开放">保存修改（Coming Soon）</button>
+        <button class="primary-button approve-button" id="approveButton" type="button" disabled title="功能暂未开放">完成复核（Coming Soon）</button>
+      </div>
+    </header>
+
+    <main class="review-main">
+      <div class="review-coming-soon" role="note">
+        <strong>Coming Soon · 只读历史</strong>
+        <span>流程图转 Excel 已暂停开发，当前版本正在封存评估中。保存修改、完成复核、批量复核与导出 XLSX 均未开放；阅读历史复核数据仍可用。</span>
+      </div>
+      <div class="review-error" id="reviewError" role="alert" hidden></div>
+      <div class="review-loading" id="reviewLoading">正在读取复核数据…</div>
+
+      <section id="reviewApp" hidden>
+        <section class="review-summary" aria-label="任务摘要">
+          <div class="summary-title">
+            <p class="eyebrow">FLOWCHART REVIEW · HUMAN IN THE LOOP</p>
+            <h1>人工复核工作台</h1>
+            <p id="sourceName">—</p>
+          </div>
+          <div class="summary-grid">
+            <div><span>Job ID</span><strong id="jobId">—</strong></div>
+            <div><span>状态</span><strong id="reviewStatus">—</strong></div>
+            <div><span>泳道 / 节点 / 连线</span><strong id="graphCounts">—</strong></div>
+            <div><span>待确认</span><strong id="issueProgress">—</strong></div>
+            <div><span>警告</span><strong id="warningCount">—</strong></div>
+            <div><span>模板 Profile</span><strong id="profileLabel">—</strong></div>
+            <div><span>Excel 导出</span><strong id="exportLabel">未开放</strong></div>
+            <div><span>当前修订</span><strong id="revisionLabel">—</strong></div>
+          </div>
+          <div class="summary-foot">
+            <span id="reviewHint">选择左侧问题或图中的对象开始复核。</span>
+            <span id="approveHint"></span>
+          </div>
+          <div class="review-file-links" id="reviewFileLinks" hidden></div>
+        </section>
+
+        <div class="review-layout">
+          <aside class="review-pane issue-pane" aria-label="问题与对象列表">
+            <div class="pane-title">
+              <div>
+                <h2>复核清单</h2>
+                <p>从实际问题数据读取，不硬编码问题 ID。</p>
+              </div>
+              <span class="count-badge" id="listCount">0</span>
+            </div>
+            <div class="tab-row" role="tablist" aria-label="复核列表">
+              <button class="tab active" type="button" data-tab="issues" role="tab" aria-selected="true">问题</button>
+              <button class="tab" type="button" data-tab="objects" role="tab" aria-selected="false">对象</button>
+              <button class="tab" type="button" data-tab="warnings" role="tab" aria-selected="false">警告</button>
+              <button class="tab" type="button" data-tab="history" role="tab" aria-selected="false">历史</button>
+            </div>
+
+            <div id="issuesTab" class="tab-panel">
+              <div class="filter-row">
+                <label>状态
+                  <select id="statusFilter">
+                    <option value="pending">待处理</option>
+                    <option value="all">全部</option>
+                    <option value="resolved">已解决</option>
+                    <option value="waived">已豁免</option>
+                  </select>
+                </label>
+                <label>严重度
+                  <select id="severityFilter">
+                    <option value="all">全部</option>
+                    <option value="high">高</option>
+                    <option value="medium">中</option>
+                    <option value="low">低</option>
+                  </select>
+                </label>
+                <label>分组
+                  <select id="groupFilter">
+                    <option value="all">全部</option>
+                    <option value="structure">结构 / 泳道</option>
+                    <option value="control">控制码 / 控制点</option>
+                    <option value="branch">判断分支</option>
+                    <option value="connector">连线 / 端口</option>
+                    <option value="coordinate">坐标</option>
+                    <option value="text">文字与置信度</option>
+                    <option value="metadata">模板 / 元数据</option>
+                    <option value="other">其他</option>
+                  </select>
+                </label>
+              </div>
+              <div id="issueList" class="issue-list"></div>
+              <div class="empty-state" id="issueEmpty" hidden>当前筛选下没有问题。</div>
+            </div>
+
+            <div id="objectsTab" class="tab-panel" hidden>
+              <div class="object-actions">
+                <button class="ghost-button small" id="addEdgeButton" type="button">新增连线</button>
+              </div>
+              <div id="objectList" class="object-list"></div>
+            </div>
+
+            <div id="warningsTab" class="tab-panel" hidden>
+              <div class="warning-note">警告来自导入报告；其中 Windows Excel 验收属于受控导出 gate，不能通过本工作台的普通操作伪造通过。</div>
+              <div id="warningList" class="warning-list"></div>
+            </div>
+
+            <div id="historyTab" class="tab-panel" hidden>
+              <div class="warning-note">修订记录只属于当前任务所有者；每次保存和问题处理都会追加一条记录。</div>
+              <div id="historyList" class="history-list"></div>
+              <div class="empty-state" id="historyEmpty" hidden>尚无修订记录。</div>
+            </div>
+          </aside>
+
+          <section class="review-pane canvas-pane" aria-label="原图与图形定位">
+            <div class="pane-title">
+              <div>
+                <h2>原图定位</h2>
+                <p id="canvasMeta">—</p>
+              </div>
+              <div class="canvas-actions">
+                <label class="inline-check"><input id="overlayToggle" type="checkbox" /> 显示 overlay</label>
+                <button class="icon-button" id="zoomOutButton" type="button" aria-label="缩小">−</button>
+                <span class="zoom-label" id="zoomLabel">100%</span>
+                <button class="icon-button" id="zoomInButton" type="button" aria-label="放大">+</button>
+              </div>
+            </div>
+            <div class="image-viewport" id="imageViewport">
+              <div class="canvas-stage" id="canvasStage">
+                <img id="sourceImage" alt="原始流程图" draggable="false" />
+                <img id="overlayImage" class="overlay-image" alt="复核 overlay" draggable="false" hidden />
+                <svg id="overlaySvg" class="overlay-svg" role="img" aria-label="流程图对象定位层"></svg>
+              </div>
+            </div>
+            <p class="canvas-hint">滚动查看大图；图中虚线为泳道，矩形为节点，细线为连线。overlay 仅用于人工定位，不是最终 Excel 内容。</p>
+          </section>
+
+          <aside class="review-pane property-pane" aria-label="属性面板">
+            <div class="pane-title">
+              <div>
+                <h2>属性与处理</h2>
+                <p id="propertySubtitle">选择一个对象或问题。</p>
+              </div>
+              <span class="dirty-badge" id="dirtyBadge" hidden>未保存</span>
+            </div>
+            <div id="propertyBody" class="property-body">
+              <div class="empty-state">从左侧问题、对象列表或原图选择一个对象。</div>
+            </div>
+          </aside>
+        </div>
+      </section>
+    </main>
+  </div>
+  <div class="review-toast" id="toast" role="status" aria-live="polite" hidden></div>
+  <script src="/app/tools/flowchart-excel/review.js?v=0.2.2"></script>
+</body>
+</html>
