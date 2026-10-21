@@ -2,6 +2,16 @@
 
 Read on demand. Deployment is a separate phase; see AGENTS §10 and the `deployment-safety` skill.
 
+## Reviewed deployment source
+
+`deploy-liuxianlab.sh` at the repository root is the reviewed source for the
+production deployer. It is not automatically installed to
+`/usr/local/bin/deploy-liuxianlab.sh`; installing/overwriting production is a
+separate approval-gated operation.
+
+Python dependency behavior is documented in
+`docs/agent/deployment/python-dependency-management.md`.
+
 ## Target topology
 
 - Nginx (TLS termination, public 80/443) -> reverse proxy -> Node `127.0.0.1:8080`.
@@ -25,7 +35,7 @@ Set in `.env` (never commit, never print values):
 
 ## Preconditions for production
 
-- Python workers available: MinerU environment (`.mineru/`) + `workers/excel/requirements.txt` installed (shared `.venv`: `openpyxl==3.1.5`, `xlrd==2.0.2`; `xlrd` is required for journal-entry `.xls` uploads).
+- Python workers available: MinerU environment (`.mineru/`) + `workers/excel/requirements.txt` installed (shared `.venv`: `openpyxl==3.1.5`, `xlrd==2.0.2`; `xlrd` is required for journal-entry `.xls` uploads). The generic manager checks these mappings and can repair missing packages only after explicit approval; see `docs/agent/deployment/python-dependency-management.md`.
 - Equity OCR environment: run `scripts/local/setup-equity-ocr.sh` to create `.equity-venv` (PaddleOCR/PaddlePaddle/OpenCV/CairoSVG). The first OCR run downloads the Chinese model; confirm network or pre-seed the model cache. Set `EQUITY_STRUCTURE_PYTHON_BIN` if using another interpreter.
 - Flowchart-to-Excel is PAUSED / Coming Soon. It has no production Python dependency manifest; do not add `services/flowchart_excel/requirements.txt` back to the deploy path without an explicit dependency review.
 - Equity PNG export also needs system Cairo/Pango and a CJK font. On Ubuntu/Debian install `libcairo2 libpango-1.0-0 libpangocairo-1.0-0 fonts-noto-cjk`; on macOS the wrapper `scripts/local/equity-python` adds Homebrew Cairo paths.
@@ -41,9 +51,11 @@ Set in `.env` (never commit, never print values):
   仅等待人工审核的项不算活跃计算，无需阻塞。
 - **同一时间仅一次部署** —— 只能有一个部署并发作用于 production。
 - **依赖一致性** —— `package.json` 依赖段的变更需要 `package-lock.json` 相应
-  变更，否则 NO-GO。任何 Python 依赖清单变更（如 `requirements.txt`、
-  `pyproject.toml`、`poetry.lock`、`services/*/requirements.txt`）在部署前都需要
-  显式的依赖/环境评审。
+  变更，否则 NO-GO。Python `requirements*.txt` 由
+  `scripts/local/python-dependency-manager.sh` 按
+  `scripts/python-environments.tsv` 映射检查；缺失/超范围包仅在显式批准后安装。
+  `pyproject.toml`、Poetry、uv、Pipenv 等其他格式仍 fail-closed，必须补显式
+  handler，不得默认走 `pip install -r`。
 - **迁移安全** —— 历史 migration 不可变（绝不修改、重命名或删除已应用的
   migration；应新增一个）。自动化只可应用新增的 migration 文件。破坏性模式
   （`DROP TABLE`、`DROP COLUMN`、`TRUNCATE`、`DELETE FROM`）需要人工停手并评审

@@ -1,0 +1,12 @@
+# manifest-pattern<TAB>venv-path<TAB>mode<TAB>smoke-imports<TAB>installer-script
+# Exact/specific mappings come before generic defaults.
+services/flowchart_excel/requirements*.txt	.flowchart-venv	requirements	services.flowchart_excel.vision_worker	-
+services/equity_structure/requirements*.txt	.equity-venv	requirements	cv2,numpy,paddleocr,rapidfuzz,openpyxl,reportlab	-
+services/contract_review/requirements*.txt	.mineru	requirements	-	-
+services/excel_review/requirements*.txt	.venv	requirements	-	-
+services/journal_entry/requirements*.txt	.venv	requirements	-	-
+services/purchase_reconciliation/requirements*.txt	.venv	requirements	-	-
+workers/*/requirements*.txt	.venv	requirements	-	-
+requirements*.txt	.venv	requirements	-	-
+requirements/*.txt	.venv	requirements	-	-
+@always	.equity-venv	script	cv2,numpy,paddleocr,rapidfuzz,openpyxl,reportlab	scripts/local/setup-equity-ocr.sh
