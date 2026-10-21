@@ -252,6 +252,16 @@ Windows 目标业务规模 = NOT RUN
 
 ---
 
+## 7.1 生产依赖说明（2026-10-21 修正）
+
+`services/flowchart_excel/requirements.txt` 已移除。Flowchart-to-Excel 当前为
+PAUSED / Coming Soon，写接口已被 gate，历史任务只读；生产不需要为该归档模块安装
+Pillow 或创建 `.flowchart-venv`。
+
+如果未来恢复真实图片校验/视觉 worker，需要重新评审并安装 Pillow 到专用环境
+（不要直接把 per-service manifest 重新加入生产部署路径）；详见
+`slice3-real-image-worker-architecture.md` 和 `slice3-validation-report.md`。
+
 ## 8. 明确声明
 
 - 当前没有正式客户 XLSX 生成能力被验收为可交付。

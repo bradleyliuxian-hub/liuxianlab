@@ -27,6 +27,7 @@ Set in `.env` (never commit, never print values):
 
 - Python workers available: MinerU environment (`.mineru/`) + `workers/excel/requirements.txt` installed (shared `.venv`: `openpyxl==3.1.5`, `xlrd==2.0.2`; `xlrd` is required for journal-entry `.xls` uploads).
 - Equity OCR environment: run `scripts/local/setup-equity-ocr.sh` to create `.equity-venv` (PaddleOCR/PaddlePaddle/OpenCV/CairoSVG). The first OCR run downloads the Chinese model; confirm network or pre-seed the model cache. Set `EQUITY_STRUCTURE_PYTHON_BIN` if using another interpreter.
+- Flowchart-to-Excel is PAUSED / Coming Soon. It has no production Python dependency manifest; do not add `services/flowchart_excel/requirements.txt` back to the deploy path without an explicit dependency review.
 - Equity PNG export also needs system Cairo/Pango and a CJK font. On Ubuntu/Debian install `libcairo2 libpango-1.0-0 libpangocairo-1.0-0 fonts-noto-cjk`; on macOS the wrapper `scripts/local/equity-python` adds Homebrew Cairo paths.
 - PostgreSQL reachable and migrations applied (`server/contracts/migrations/`, `server/journal-entry/migrations/`, `server/purchase-reconciliation/migrations/`, `server/equity-structure/migrations/`).
 - `data/users.json` present with real users (admin-created).
