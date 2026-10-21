@@ -12,6 +12,9 @@ separate approval-gated operation.
 Python dependency behavior is documented in
 `docs/agent/deployment/python-dependency-management.md`.
 
+Local one-command deployment (`npm run deploy:prod`) is documented in
+`docs/agent/deployment/one-click-production-deploy.md`.
+
 ## Target topology
 
 - Nginx (TLS termination, public 80/443) -> reverse proxy -> Node `127.0.0.1:8080`.

@@ -11,7 +11,8 @@
     "user:create": "node create-user.js",
     "user:list": "node list-users.js",
     "test": "node --test tests/contracts/*.test.js tests/excel-decimal-check/*.test.js tests/excel-hardcode-check/*.test.js tests/excel-review/*.test.js tests/journal-entry/*.test.js tests/purchase-reconciliation/*.test.js tests/equity-structure/*.test.js tests/flowchart-excel/*.test.js",
-    "bench:hardcode": "node scripts/local/hardcode-benchmark.js"
+    "bench:hardcode": "node scripts/local/hardcode-benchmark.js",
+    "deploy:prod": "bash scripts/local/deploy-production.sh"
   },
   "engines": {
     "node": ">=20"

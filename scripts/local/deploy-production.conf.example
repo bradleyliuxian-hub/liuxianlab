@@ -1,0 +1,14 @@
+# Liuxian Lab production deployment configuration.
+# Install at:
+#   ~/.config/liuxianlab/deploy.conf
+#   chmod 600 ~/.config/liuxianlab/deploy.conf
+#
+# DEPLOY_SSH_HOST must be an existing SSH host alias (or user@host).
+# Do not put passwords, private keys, or tokens in this file.
+
+DEPLOY_SSH_HOST=liuxianlab-prod
+# DEPLOY_SSH_PORT=22
+
+DEPLOY_APP_DIR=/var/www/liuxianlab
+DEPLOY_SCRIPT=/usr/local/bin/deploy-liuxianlab.sh
+DEPLOY_HEALTH_URL=http://127.0.0.1:8080/health
