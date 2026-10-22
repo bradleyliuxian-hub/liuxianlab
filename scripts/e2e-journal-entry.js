@@ -526,7 +526,7 @@ async function startServer() {
 }
 
 function attachDiagnostics(page) {
-  const diagnostics = { consoleErrors: [], pageErrors: [], failedRequests: [], serverErrors: [], statuses: [], fullResultRequests: [] };
+  const diagnostics = { consoleErrors: [], pageErrors: [], failedRequests: [], serverErrors: [], statuses: [], fullResultRequests: [], http404: [] };
 
   page.on('console', (message) => {
     if (message.type() === 'error') diagnostics.consoleErrors.push(message.text());
@@ -551,6 +551,9 @@ function attachDiagnostics(page) {
   });
   page.on('response', (response) => {
     const url = response.url();
+    if (response.status() === 404 && /\.(html|js|css)$/i.test(new URL(url).pathname)) {
+      diagnostics.http404.push(url);
+    }
     if (url.includes('/api/') && response.status() >= 500) {
       diagnostics.serverErrors.push(`${response.status()} ${url}`);
     }
@@ -1098,7 +1101,12 @@ async function main() {
     log('  reload + history + reopen duplicate/signed results: PASS');
 
     log('BATCH WORKSPACE');
-    await page.goto(`${serverInfo.base}/app/tools/journal-entry-analysis/batch.html`, { waitUntil: 'networkidle0' });
+    await page.goto(toolUrl, { waitUntil: 'networkidle0' });
+    await waitVisible(page, '#uploadPanel');
+    const batchLink = page.waitForNavigation({ waitUntil: 'networkidle0' });
+    await page.click('#batchWorkspaceLink');
+    await batchLink;
+    assert.equal(await page.evaluate(() => location.pathname), '/app/tools/journal-entry-analysis/batch.html');
     await waitVisible(page, '#batchUploadPanel');
     await uploadBatch(page, [
       'journal_basic.xlsx',
@@ -1293,7 +1301,15 @@ async function main() {
       return url.searchParams.get('scopeId');
     });
     assert.ok(batchId, 'batch id not found');
-
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: 'networkidle0' }),
+      page.click('#batchSplitLink')
+    ]);
+    assert.equal(await page.evaluate(() => location.pathname), '/app/tools/journal-entry-analysis/split.html');
+    assert.equal(await page.evaluate(() => new URLSearchParams(location.search).get('scopeType')), 'batch');
+    await waitVisible(page, '#scopeCard');
+    await page.waitForFunction(() => document.querySelector('#scopeBadge')?.textContent === 'BATCH');
+    log('  batch split navigation: PASS');
 
     log('SPLIT WORKSPACE');
     await page.goto(toolUrl, { waitUntil: 'networkidle0' });
@@ -1440,6 +1456,11 @@ async function main() {
     assert.match(incompatibleError, /客户/);
     assert.equal(await page.$eval('#previewButton', (node) => node.disabled), true);
     log('  incompatible preset blocked: PASS');
+
+    await page.goto(`${serverInfo.base}/app/tools/journal-entry-analysis/split.html?scopeType=invalid&scopeId=${debitJobId}`, { waitUntil: 'networkidle0' });
+    await waitVisible(page, '#scopeError');
+    assert.match(await page.$eval('#scopeError', (node) => node.textContent), /数据范围无效/);
+    log('  invalid split scope is a product error, not static 404: PASS');
 
     await page.goto(`${serverInfo.base}/app/tools/journal-entry-analysis/batch.html?batch=${batchId}`, { waitUntil: 'networkidle0' });
     await waitVisible(page, '#batchWorkspacePanel');
@@ -1612,6 +1633,7 @@ async function main() {
     assert.deepEqual(diagnostics.serverErrors, [], `server errors: ${diagnostics.serverErrors.join(' | ')}`);
     assert.deepEqual(diagnostics.consoleErrors, [], `console errors: ${diagnostics.consoleErrors.join(' | ')}`);
     assert.deepEqual(diagnostics.fullResultRequests, [], `full result.json was requested: ${diagnostics.fullResultRequests.join(' | ')}`);
+    assert.deepEqual(diagnostics.http404, [], `document/asset 404: ${diagnostics.http404.join(' | ')}`);
     log('Console/network: PASS');
     log('\nJournal Entry browser E2E: PASS');
     return diagnostics;

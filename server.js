@@ -73,7 +73,7 @@ app.use(helmet({
       connectSrc: ["'self'"],
       objectSrc: ["'none'"],
       baseUri: ["'self'"],
-      frameAncestors: ["'none'"],
+      frameAncestors: ["'self'"],
       formAction: ["'self'"]
     }
   },
@@ -241,6 +241,8 @@ app.get('/login', (req, res) => {
   res.set('Cache-Control', 'no-store');
   return res.sendFile(path.join(PUBLIC_DIR, 'login.html'));
 });
+
+app.get('/favicon.ico', (_req, res) => res.status(204).end());
 
 app.get('/login.html', (_req, res) => res.redirect('/login'));
 app.get('/login.css', (_req, res) => {
@@ -435,7 +437,12 @@ app.get('/tools/:slug', requireAuth, (req, res) => {
 
   const implementedPage = path.join(PRIVATE_DIR, 'tools', slug, 'index.html');
   res.set('Cache-Control', 'no-store');
-  if (fs.existsSync(implementedPage)) return res.sendFile(implementedPage);
+  if (fs.existsSync(implementedPage)) {
+    const query = req.originalUrl.includes('?')
+      ? req.originalUrl.slice(req.originalUrl.indexOf('?'))
+      : '';
+    return res.redirect(302, `/app/tools/${encodeURIComponent(slug)}/index.html${query}`);
+  }
   return res.sendFile(path.join(PRIVATE_DIR, 'tool.html'));
 });
 

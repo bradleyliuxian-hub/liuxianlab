@@ -398,7 +398,10 @@
     if (dom.splitLink) {
       dom.splitLink.hidden = !batch.completedCount;
       if (batch.completedCount) {
-        dom.splitLink.href = `split.html?scopeType=batch&scopeId=${encodeURIComponent(batch.id)}`;
+        const splitUrl = new URL('split.html', window.location.href);
+        splitUrl.searchParams.set('scopeType', 'batch');
+        splitUrl.searchParams.set('scopeId', batch.id);
+        dom.splitLink.href = `${splitUrl.pathname}${splitUrl.search}`;
       }
     }
     if (dom.deleteBatchButton) {

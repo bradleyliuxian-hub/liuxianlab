@@ -754,7 +754,10 @@
       dom.exportButton.hidden = false;
       dom.exportButton.href = `${API}/${encodeURIComponent(jobId)}/export`;
       dom.splitLink.hidden = false;
-      dom.splitLink.href = `split.html?scopeType=job&scopeId=${encodeURIComponent(jobId)}`;
+      const splitUrl = new URL('split.html', window.location.href);
+      splitUrl.searchParams.set('scopeType', 'job');
+      splitUrl.searchParams.set('scopeId', jobId);
+      dom.splitLink.href = `${splitUrl.pathname}${splitUrl.search}`;
       renderResult();
       await loadPage();
       dom.resultPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
