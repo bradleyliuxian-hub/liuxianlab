@@ -38,6 +38,10 @@
     closePresetSave: $('#closePresetSave'), presetManageModal: $('#presetManageModal'),
     presetList: $('#presetList'), closePresetManage: $('#closePresetManage'),
     rowMode: $('#rowMode'), groupHint: $('#groupHint'),
+    columnHint: $('#columnHint'), columnCount: $('#columnCount'), columnGroups: $('#columnGroups'),
+    columnOrder: $('#columnOrder'), recommendedColumns: $('#recommendedColumns'),
+    removeEmptyColumns: $('#removeEmptyColumns'), selectAllColumns: $('#selectAllColumns'),
+    clearAllColumns: $('#clearAllColumns'), resetColumns: $('#resetColumns'),
     previewButton: $('#previewButton'), generateButton: $('#generateSplitButton'),
     splitError: $('#splitError'), previewCard: $('#previewCard'), previewSubtitle: $('#previewSubtitle'),
     previewLimit: $('#previewLimit'), splitMetrics: $('#splitMetrics'),
@@ -68,6 +72,12 @@
     generating: false,
     groupAvailability: {},
     unavailableGroups: [],
+    columnDefs: [],
+    columnGroups: [],
+    defaultColumnOrder: [],
+    columns: [],
+    columnStats: null,
+    columnsDirty: false,
     presets: [],
     builtinPresets: [],
     presetId: null,
@@ -127,6 +137,8 @@
 
   function invalidatePreview() {
     state.preview = null;
+    state.columnStats = null;
+    renderColumns();
     dom.previewCard.hidden = true;
     dom.generateButton.disabled = true;
     dom.generateButton.textContent = '生成拆分文件';
@@ -239,6 +251,135 @@
     return filters;
   }
 
+  function columnLabel(id) {
+    return state.columnDefs.find((item) => item.id === id)?.label || id;
+  }
+
+  function columnStatText(id) {
+    const stat = state.columnStats?.[id];
+    if (!stat) return { text: '预览后检测', tone: '' };
+    if (!stat.total_count || !stat.non_empty_count) return { text: '全空', tone: 'empty' };
+    const ratio = stat.non_empty_count / stat.total_count;
+    if (ratio >= 1) return { text: '100% 有值', tone: 'partial' };
+    return { text: `${Math.round(ratio * 100)}% 有值`, tone: 'partial' };
+  }
+
+  function emptySelectedCount() {
+    if (!state.columnStats) return 0;
+    return state.columns.filter((id) => state.columnStats[id]?.entirely_empty).length;
+  }
+
+  function setColumns(columns, { dirty = true } = {}) {
+    state.columns = [...new Set(columns)].filter((id) => state.columnDefs.some((item) => item.id === id));
+    state.columnsDirty = dirty;
+    renderColumns();
+  }
+
+  function recommendedColumnIds() {
+    if (!state.columnDefs.length) return [];
+    const selected = [];
+    for (const id of state.defaultColumnOrder) {
+      const definition = state.columnDefs.find((item) => item.id === id);
+      if (!definition) continue;
+      if (definition.default) selected.push(id);
+      else if (definition.defaultIfData && state.columnStats && !state.columnStats[id]?.entirely_empty) {
+        selected.push(id);
+      }
+    }
+    return selected;
+  }
+
+  function renderColumns() {
+    if (!state.columnDefs.length) return;
+    const selected = new Set(state.columns);
+    dom.columnCount.textContent = `${state.columns.length} / ${state.columnDefs.length} 列`;
+    const emptyCount = emptySelectedCount();
+    dom.removeEmptyColumns.textContent = emptyCount
+      ? `取消勾选全部空白列（${emptyCount}）`
+      : '取消勾选全部空白列';
+    dom.removeEmptyColumns.disabled = !state.columnStats;
+    dom.columnHint.textContent = state.columnStats
+      ? `已选 ${state.columns.length} 列。空白统计基于当前筛选后的 ${state.columnStats[state.columnDefs[0].id]?.total_count ?? 0} 条分录。`
+      : '预览后将基于筛选后的数据检测空白列；推荐列会自动包含有数据的业务字段。';
+
+    clear(dom.columnGroups);
+    for (const group of state.columnGroups) {
+      const box = el('div', 'column-group');
+      box.append(el('h3', '', group.label));
+      state.columnDefs.filter((item) => item.group === group.id).forEach((definition) => {
+        const row = el('div', 'column-row');
+        const label = el('label');
+        const checkbox = el('input');
+        checkbox.type = 'checkbox';
+        checkbox.checked = selected.has(definition.id);
+        checkbox.addEventListener('change', () => {
+          const next = new Set(state.columns);
+          if (checkbox.checked) next.add(definition.id);
+          else next.delete(definition.id);
+          setColumns([...next]);
+        });
+        label.append(checkbox, el('span', '', definition.label));
+        const status = columnStatText(definition.id);
+        const stat = el('span', `column-stat ${status.tone}`.trim(), status.text);
+        row.append(label, stat);
+        box.append(row);
+      });
+      dom.columnGroups.append(box);
+    }
+
+    clear(dom.columnOrder);
+    if (!state.columns.length) {
+      dom.columnOrder.append(el('span', 'empty-note', '至少选择 1 个导出字段。'));
+    }
+    state.columns.forEach((id, index) => {
+      const chip = el('span', 'column-chip');
+      chip.append(el('span', '', columnLabel(id)));
+      const up = el('button', '', '▲');
+      up.type = 'button';
+      up.disabled = index === 0;
+      up.setAttribute('aria-label', `上移 ${columnLabel(id)}`);
+      up.addEventListener('click', () => {
+        if (index === 0) return;
+        const next = state.columns.slice();
+        [next[index - 1], next[index]] = [next[index], next[index - 1]];
+        setColumns(next);
+      });
+      const down = el('button', '', '▼');
+      down.type = 'button';
+      down.disabled = index === state.columns.length - 1;
+      down.setAttribute('aria-label', `下移 ${columnLabel(id)}`);
+      down.addEventListener('click', () => {
+        if (index === state.columns.length - 1) return;
+        const next = state.columns.slice();
+        [next[index + 1], next[index]] = [next[index], next[index + 1]];
+        setColumns(next);
+      });
+      const remove = el('button', 'remove', '×');
+      remove.type = 'button';
+      remove.setAttribute('aria-label', `移除 ${columnLabel(id)}`);
+      remove.addEventListener('click', () => setColumns(state.columns.filter((item) => item !== id)));
+      chip.append(up, down, remove);
+      dom.columnOrder.append(chip);
+    });
+    if (state.preview) {
+      dom.generateButton.disabled = !state.columns.length || state.preview.limit_exceeded || !state.preview.matched_lines || state.generating;
+    }
+    dom.previewButton.disabled = !state.columns.length || state.unavailableGroups.length > 0;
+  }
+
+  function initColumns() {
+    const meta = state.meta || {};
+    state.columnDefs = Array.isArray(meta.columns) ? meta.columns : [];
+    state.columnGroups = Array.isArray(meta.columnGroups) ? meta.columnGroups : [];
+    state.defaultColumnOrder = Array.isArray(meta.defaultColumnOrder)
+      ? meta.defaultColumnOrder
+      : state.columnDefs.map((item) => item.id);
+    state.columns = state.columnDefs.filter((item) => item.default).map((item) => item.id);
+    state.columnStats = null;
+    state.columnsDirty = false;
+    renderColumns();
+  }
+
   function collectSpec() {
     const groupOptions = {};
     if (state.levels.includes('account') && dom.accountPrefixLength.value) {
@@ -255,7 +396,8 @@
       groupBy: state.levels.slice(),
       groupOptions,
       rowMode: 'matched_only',
-      outputMode: dom.outputMode.value
+      outputMode: dom.outputMode.value,
+      columns: state.columnsDirty ? state.columns.slice() : undefined
     };
   }
 
@@ -518,6 +660,15 @@
     dom.rowMode.value = 'matched_only';
     state.presetId = preset.id;
     state.presetName = preset.name;
+    state.columnStats = null;
+    if (Array.isArray(spec.columns) && spec.columns.length) {
+      state.columns = spec.columns.slice();
+      state.columnsDirty = true;
+    } else {
+      state.columns = state.columnDefs.filter((item) => item.default).map((item) => item.id);
+      state.columnsDirty = false;
+    }
+    renderColumns();
     renderGroupLevels();
     await Promise.all(state.levels.map((dimension) => ensureDimensionAvailability(dimension)));
     updateGroupOptions();
@@ -561,7 +712,8 @@
         groupBy: spec.groupBy,
         groupOptions: spec.groupOptions,
         rowMode: spec.rowMode,
-        outputMode: spec.outputMode
+        outputMode: spec.outputMode,
+        columns: state.columns.slice()
       }
     };
     dom.confirmPresetSave.disabled = true;
@@ -799,6 +951,11 @@
         body: JSON.stringify(spec)
       });
       state.preview = payload;
+      state.columnStats = payload.column_stats || payload.columnStats || null;
+      if (!state.columnsDirty && Array.isArray(payload.selected_columns)) {
+        state.columns = payload.selected_columns.slice();
+      }
+      renderColumns();
       renderPreview();
       dom.previewCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
     } catch (error) {
@@ -899,6 +1056,14 @@
     });
     dom.accountPrefixLength.addEventListener('input', invalidatePreview);
     dom.outputMode.addEventListener('change', invalidatePreview);
+    dom.recommendedColumns.addEventListener('click', () => setColumns(recommendedColumnIds()));
+    dom.removeEmptyColumns.addEventListener('click', () => {
+      if (!state.columnStats) return showToast('请先预览分组，再检测空白列。');
+      setColumns(state.columns.filter((id) => !state.columnStats[id]?.entirely_empty));
+    });
+    dom.selectAllColumns.addEventListener('click', () => setColumns(state.defaultColumnOrder));
+    dom.clearAllColumns.addEventListener('click', () => setColumns([]));
+    dom.resetColumns.addEventListener('click', () => setColumns(recommendedColumnIds()));
     dom.previewButton.addEventListener('click', preview);
     dom.generateButton.addEventListener('click', generate);
     dom.download.addEventListener('click', () => showToast('正在下载拆分文件…'));
@@ -929,6 +1094,7 @@
     } catch (_) {
       state.meta = null;
     }
+    initColumns();
     const loaded = await loadScope();
     if (!loaded) return;
     renderGroupLevels();

@@ -148,6 +148,14 @@ function installStubs() {
           limits: request.limits,
           limit_exceeded: limited,
           warnings: [],
+          selected_columns: request.columns || ['date', 'voucher_id', 'debit', 'credit'],
+          column_order: request.columns || ['date', 'voucher_id', 'debit', 'credit'],
+          column_stats: {
+            date: { non_empty_count: 10, total_count: 10, entirely_empty: false },
+            voucher_id: { non_empty_count: 10, total_count: 10, entirely_empty: false },
+            debit: { non_empty_count: 10, total_count: 10, entirely_empty: false },
+            credit: { non_empty_count: 10, total_count: 10, entirely_empty: true }
+          },
           included_job_ids: request.jobs.map((job) => job.job_id),
           groups: empty ? [] : [{
             group_key: 'customer:C001', display_name: '客户A',
@@ -259,6 +267,8 @@ test('split meta exposes dimensions and limits', async () => {
   assert.ok(response.body.groupBy.includes('month'));
   assert.equal(response.body.limits.maxGroupsMultiSheet, 200);
   assert.equal(response.body.limits.maxGroupsZip, 500);
+  assert.ok(response.body.columns.some((item) => item.id === 'date'));
+  assert.ok(response.body.columnGroups.some((item) => item.id === 'core'));
 });
 
 test('job preview and dimensions are scoped and structured', async () => {
@@ -273,6 +283,29 @@ test('job preview and dimensions are scoped and structured', async () => {
   assert.equal(dimensions.status, 200);
   assert.equal(dimensions.body.options[0].value, 'C001');
   assert.equal(dimensions.body.blank_count, 1);
+});
+
+test('selected export columns are validated and persisted in the output snapshot', async () => {
+  const columns = ['date', 'voucher_id', 'customer_name'];
+  const preview = await post('/api/journal-entry-splits/preview', spec({ columns }));
+  assert.equal(preview.status, 200, JSON.stringify(preview.body));
+  assert.deepEqual(preview.body.selected_columns, columns);
+  assert.ok(preview.body.column_stats);
+  const generated = await post('/api/journal-entry-splits', {
+    ...spec({ columns }),
+    expectedIncludedJobIds: preview.body.included_job_ids
+  });
+  assert.equal(generated.status, 202, JSON.stringify(generated.body));
+  const output = await waitForSplitOutput('job', JOB_ID, generated.body.output.id);
+  assert.deepEqual(output.snapshot.selected_columns, columns);
+  assert.deepEqual(output.snapshot.column_order, columns);
+
+  const empty = await post('/api/journal-entry-splits/preview', spec({ columns: [] }));
+  assert.equal(empty.status, 422);
+  const unknown = await post('/api/journal-entry-splits/preview', spec({ columns: ['nope'] }));
+  assert.equal(unknown.status, 422);
+  const duplicate = await post('/api/journal-entry-splits/preview', spec({ columns: ['date', 'date'] }));
+  assert.equal(duplicate.status, 422);
 });
 
 test('generate creates snapshot, latest and owner-scoped download', async () => {

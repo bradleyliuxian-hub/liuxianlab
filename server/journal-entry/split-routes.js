@@ -10,6 +10,9 @@ const batchRepository = require('./batch-repository');
 const splitRepository = require('./split-repository');
 const { createSplitRunner } = require('./split-runner');
 const { safeRemove } = require('./storage-safety');
+const {
+  COLUMN_GROUPS, COLUMN_DEFINITIONS, DEFAULT_COLUMN_ORDER, cleanColumns
+} = require('./export-columns');
 
 const MAX_GROUPS_MULTI_SHEET = 200;
 const MAX_GROUPS_ZIP = 500;
@@ -167,12 +170,22 @@ function normalizePresetSpec(body) {
   if (!ROW_MODES.has(rowMode)) {
     throw new ValidationError('FULL VOUCHER MODE NOT IMPLEMENTED');
   }
+  let columns = null;
+  try {
+    columns = cleanColumns(
+      spec.columns !== undefined ? spec.columns
+        : (spec.columnOrder !== undefined ? spec.columnOrder : spec.column_order)
+    );
+  } catch (error) {
+    throw new ValidationError(error.message);
+  }
   return {
     filters: cleanFilters(spec.filters),
     groupBy: normalizeDimensions(spec.groupBy !== undefined ? spec.groupBy : spec.group_by),
     groupOptions: cleanGroupOptions(spec.groupOptions || spec.group_options),
     rowMode,
-    outputMode
+    outputMode,
+    columns
   };
 }
 
@@ -193,6 +206,15 @@ function normalizeSpec(body) {
   if (!ROW_MODES.has(rowMode)) {
     throw new ValidationError('FULL VOUCHER MODE NOT IMPLEMENTED');
   }
+  let columns = null;
+  try {
+    columns = cleanColumns(
+      body.columns !== undefined ? body.columns
+        : (body.columnOrder !== undefined ? body.columnOrder : body.column_order)
+    );
+  } catch (error) {
+    throw new ValidationError(error.message);
+  }
   return {
     scopeType,
     scopeId,
@@ -201,7 +223,8 @@ function normalizeSpec(body) {
     rowMode,
     filters: cleanFilters(body.filters),
     groupOptions: cleanGroupOptions(body.groupOptions || body.group_options),
-    limits: cleanLimits(body.limits, outputMode)
+    limits: cleanLimits(body.limits, outputMode),
+    columns
   };
 }
 
@@ -312,7 +335,8 @@ function createSplitRouter({ root, requireAuth, runner, repository: splitRepo = 
       group_options: spec.groupOptions,
       row_mode: spec.rowMode,
       output_mode: spec.outputMode,
-      limits: spec.limits
+      limits: spec.limits,
+      columns: spec.columns
     };
   }
 
@@ -330,6 +354,9 @@ function createSplitRouter({ root, requireAuth, runner, repository: splitRepo = 
       outputModes: Array.from(OUTPUT_MODES),
       rowModes: ['matched_only'],
       fullVoucherMode: false,
+      columnGroups: COLUMN_GROUPS,
+      columns: COLUMN_DEFINITIONS,
+      defaultColumnOrder: DEFAULT_COLUMN_ORDER,
       retentionHours: Math.max(1, Number(process.env.JOURNAL_ENTRY_OUTPUT_RETENTION_HOURS || process.env.JOURNAL_ENTRY_RETENTION_HOURS || 72)),
       limits: {
         maxGroupsMultiSheet: MAX_GROUPS_MULTI_SHEET,
@@ -393,7 +420,10 @@ function createSplitRouter({ root, requireAuth, runner, repository: splitRepo = 
         dimensions: result.payload.dimensions || spec.groupBy,
         groupOptions: spec.groupOptions,
         outputMode: spec.outputMode,
-        rowMode: spec.rowMode
+        rowMode: spec.rowMode,
+        columns: result.payload.selected_columns,
+        columnStats: result.payload.column_stats,
+        column_order: result.payload.column_order
       });
     } catch (error) {
       if (error instanceof ValidationError) return res.status(422).json({ error: error.message });
@@ -447,6 +477,8 @@ function createSplitRouter({ root, requireAuth, runner, repository: splitRepo = 
           group_options: spec.groupOptions,
           output_mode: spec.outputMode,
           row_mode: spec.rowMode,
+          selected_columns: preview.payload.selected_columns,
+          column_order: preview.payload.column_order,
           matched_lines: preview.payload.matched_lines,
           matched_vouchers: preview.payload.matched_vouchers,
           group_count: preview.payload.group_count,

@@ -19,6 +19,7 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { execFileSync } = require('node:child_process');
 
 const ROOT = path.resolve(__dirname, '..');
 const PUBLIC_DIR = path.join(ROOT, 'public');
@@ -895,6 +896,37 @@ async function downloadOutput(page, cdp, selector, extension) {
   throw new Error(`browser download did not produce ${extension}`);
 }
 
+function xlsxHeaders(file) {
+  const code = [
+    'import io,json,sys,zipfile',
+    'from openpyxl import load_workbook',
+    'path=sys.argv[1]; result={}',
+    'def headers(stream,name):',
+    '    wb=load_workbook(stream, read_only=True, data_only=False)',
+    '    try:',
+    '        result[name]={s:[c.value for c in next(wb[s].iter_rows(max_row=1))] for s in wb.sheetnames}',
+    '    finally: wb.close()',
+    'if path.lower().endswith(".zip"):',
+    '    with zipfile.ZipFile(path) as z:',
+    '        for n in z.namelist():',
+    '            if n.lower().endswith(".xlsx"): headers(io.BytesIO(z.read(n)), n)',
+    'else: headers(path, path)',
+    'print(json.dumps(result, ensure_ascii=False))'
+  ].join('\n');
+  const python = process.env.JOURNAL_ENTRY_PYTHON_BIN || path.join(ROOT, '.venv', 'bin', 'python');
+  return JSON.parse(execFileSync(python, ['-c', code, file], { encoding: 'utf8' }));
+}
+
+function dataHeaders(headers, expected) {
+  const hits = [];
+  for (const sheets of Object.values(headers)) {
+    for (const sheetHeaders of Object.values(sheets)) {
+      if (JSON.stringify(sheetHeaders) === JSON.stringify(expected)) hits.push(sheetHeaders);
+    }
+  }
+  return hits;
+}
+
 async function exportReport(page, cdp) {
   try {
     await cdp.send('Page.setDownloadBehavior', { behavior: 'allow', downloadPath: DOWNLOAD_DIR });
@@ -1340,13 +1372,46 @@ async function main() {
     await page.click('#previewButton');
     await waitVisible(page, '#previewCard');
     assert.equal(await page.$eval('[data-metric="groupCount"] strong', (node) => node.textContent), '7');
-    await shot(page, 'split-multi-preview');
+    await waitVisible(page, '#columnCard');
+    await page.waitForFunction(() => document.querySelectorAll('#columnGroups input[type="checkbox"]').length > 0);
+    const defaultDetail = await page.$eval('#columnGroups input[type="checkbox"]', () => true);
+    assert.equal(defaultDetail, true);
+    await page.click('#removeEmptyColumns');
+    await page.waitForFunction(() => {
+      const row = [...document.querySelectorAll('#columnGroups .column-row')]
+        .find((item) => item.textContent.includes('明细科目'));
+      return row && !row.querySelector('input[type="checkbox"]').checked;
+    });
+    await page.evaluate(() => {
+      const row = [...document.querySelectorAll('#columnGroups .column-row')]
+        .find((item) => item.textContent.includes('内部行标识'));
+      if (!row) throw new Error('internal line key column missing');
+      row.querySelector('input[type="checkbox"]').click();
+    });
+    await page.waitForFunction(() => {
+      const row = [...document.querySelectorAll('#columnGroups .column-row')]
+        .find((item) => item.textContent.includes('内部行标识'));
+      return row && row.querySelector('input[type="checkbox"]').checked;
+    });
+    await page.evaluate(() => {
+      const chips = [...document.querySelectorAll('#columnOrder .column-chip')];
+      const last = chips[chips.length - 1];
+      const up = last?.querySelector('button[aria-label^="上移"]');
+      if (up && !up.disabled) up.click();
+    });
+    const selectedHeaders = await page.$$eval('#columnOrder .column-chip > span:first-child', (nodes) => nodes.map((node) => node.textContent.trim()));
+    assert.ok(selectedHeaders.includes('内部行标识（系统追溯）'));
+    assert.ok(!selectedHeaders.includes('明细科目'));
+    await shot(page, 'split-column-settings');
+    log('  column selector + empty-column removal: PASS');
     const accountOutput = await generateSplitOutput(page);
     assert.equal(accountOutput.output.outputMode, 'multi_sheet');
     await waitVisible(page, '#splitDownload');
     const accountSplit = await downloadOutput(page, cdp, '#splitDownload', '.xlsx');
     assert.match(accountSplit.name, /\.xlsx$/);
-    log(`  account multi-sheet: PASS (${accountSplit.size} bytes)`);
+    const accountHeaders = xlsxHeaders(path.join(DOWNLOAD_DIR, accountSplit.name));
+    assert.ok(dataHeaders(accountHeaders, selectedHeaders).length >= 1, 'selected columns not reflected in multi-sheet header');
+    log(`  account multi-sheet: PASS (${accountSplit.size} bytes; selected columns match)`);
 
     await setGroupLevels(page, ['customer', 'month']);
     await page.select('#outputMode', 'zip');
@@ -1364,8 +1429,10 @@ async function main() {
     await waitVisible(page, '#splitDownload');
     const customerZip = await downloadOutput(page, cdp, '#splitDownload', '.zip');
     assert.match(customerZip.name, /\.zip$/);
+    const zipHeaders = xlsxHeaders(path.join(DOWNLOAD_DIR, customerZip.name));
+    assert.ok(dataHeaders(zipHeaders, selectedHeaders).length >= 1, 'selected columns not reflected in ZIP headers');
     await shot(page, 'split-output-ready');
-    log(`  customer + date filter ZIP: PASS (${customerZip.size} bytes)`);
+    log(`  customer + date filter ZIP: PASS (${customerZip.size} bytes; uniform selected headers)`);
 
     const presetName = 'E2E 客户按月';
     await page.click('#savePreset');
@@ -1405,7 +1472,12 @@ async function main() {
     await waitVisible(page, '#previewCard');
     assert.equal(await page.$eval('[data-metric="groupCount"] strong', (node) => node.textContent), '4');
     await shot(page, 'split-preset-applied');
-    log('  reload + apply preset + preview: PASS');
+    await page.waitForFunction(() => {
+      const row = [...document.querySelectorAll('#columnGroups .column-row')]
+        .find((item) => item.textContent.includes('内部行标识'));
+      return row && row.querySelector('input[type="checkbox"]').checked;
+    });
+    log('  reload + apply preset + column selection restored: PASS');
 
     await setInputValue(page, '#dateFrom', '');
     await setInputValue(page, '#dateTo', '');

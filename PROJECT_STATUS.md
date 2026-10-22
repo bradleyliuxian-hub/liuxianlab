@@ -12,7 +12,7 @@ Updated: 2026-10-22
 
 ## Current Focus
 
-**序时账分析 v1.3.1：大型结果分页/懒加载与 Phase 5B.1 浏览器验证已完成；生产部署未执行。**
+**序时账分析 v1.3.2：拆分导出列设置与标准序时账列优化已完成；生产部署未执行。**
 
 - 单文件：upload → inspect → mapping/preview → worker → result → voucher detail → export → history；支持 DEBIT_CREDIT / DIRECTION_AMOUNT / SIGNED_AMOUNT。
 - 批量：`/api/journal-entry-batches`；`journal_entry_batches` + `journal_entry_batch_items`；每个文件是普通 child job，继续使用单文件 API/Worker。
@@ -27,7 +27,7 @@ Updated: 2026-10-22
 - 拆分模板：内置模板 + `/api/journal-entry-split-presets` 个人 CRUD；应用后必须重新 Preview；不兼容字段明确提示；历史 output 保存完整 spec 与 preset 快照。
 - Canonical 可选字段：customer/supplier/counterparty code/name 已贯通 mapping → normalize → result → per-file export → batch merge → split export；不从摘要猜测。
 - 单文件结果页使用轻量 UI projection + 服务器分页/懒加载；浏览器不再下载完整 result.json；批量 child 与历史任务复用同一 Result Viewer。
-- 单文件页支持 `?job=<id>` 与 `embedded=1`；工具卡 v1.3.1；页面已加版本更新说明。
+- 单文件页支持 `?job=<id>` 与 `embedded=1`；工具卡 v1.3.2；页面已加版本更新说明。
 - 契约/身份：internal_line_key 用于详情定位；external line_id 只作展示/追溯；Contra 使用 source/target internal key。
 - 数据迁移：`002` batch、`003` batch outputs、`004` split outputs、`005` split presets、`006` storage lifecycle（additive，无破坏 SQL；已在本地隔离 schema 验证；本机开发库已应用 002–006）。
 
@@ -46,6 +46,13 @@ Flowchart-to-Excel 仍为 PAUSED / Coming Soon。
 
 ## Last Verification
 
+- 2026-10-22 Export Columns：
+  - Split 导出列选择、列顺序、空白列检测、推荐列、预设保存恢复已实现。
+  - 多 Sheet / ZIP 统一 Column Schema；Snapshot 保存 selected_columns/column_order。
+  - 单文件标准序时账与批量合并序时账默认中文业务列优先，技术字段移至末尾。
+  - Python **263 pass**；npm **468 pass**；normal browser E2E **PASS**（包含列选择、空列、下载表头、预设恢复）。
+  - 本地真实浏览器手工 Single/Batch Split **PASS**；本地 console/pageerror/404 为 0。
+  - 生产仍未部署。
 - 2026-10-22 Phase 5B.1：
   - Journal Entry Python **260 pass / 0 fail**
   - Excel Review Python **79 pass / 0 fail**
@@ -80,4 +87,4 @@ Flowchart-to-Excel 仍为 PAUSED / Coming Soon。
 
 - 决定是否 commit / push Phase 1–5B 变更；不自动提交。
 - 在生产窗口应用 002–006 migrations，并确认 PM2 fork/单实例、Nginx 100 MB 上传/600 s 输出超时、磁盘与 RAM 余量。
-- 部署后在真实登录浏览器复核批量工作台、拆分页与 v1.3.1 更新说明。
+- 部署后在真实登录浏览器复核批量工作台、拆分页与 v1.3.2 更新说明。

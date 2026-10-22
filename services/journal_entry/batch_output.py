@@ -403,40 +403,40 @@ def _voucher_lines(
             if not isinstance(line, dict):
                 continue
             rows.append([
-                batch_id,
-                item.get("position", 0) + 1,
-                item.get("job_id") or "—",
-                _text(item.get("original_filename") or "—"),
-                voucher.get("voucher_key") or "—",
-                voucher.get("voucher_id") or line.get("voucher_id") or "—",
                 voucher.get("date") or line.get("date") or "—",
-                voucher.get("period") or line.get("period") or "—",
-                voucher.get("entity") or line.get("entity") or "—",
-                line.get("sheet_name") or "—",
-                line.get("source_row") if line.get("source_row") is not None else "—",
-                _text(line.get("line_id") or "—"),
-                line.get("internal_line_key") or "—",
+                voucher.get("voucher_id") or line.get("voucher_id") or "—",
+                _text(line.get("description") or "—"),
                 line.get("account_code") or "—",
                 line.get("account_name") or "—",
                 _text(line.get("detail_account") or "—"),
-                _text(line.get("description") or "—"),
-                _amount(line.get("debit")),
-                _amount(line.get("credit")),
-                _text(line.get("currency") or "—"),
-                _amount(line.get("original_amount")),
-                _text(line.get("preparer") or "—"),
                 _text(line.get("customer_code") or "—"),
                 _text(line.get("customer_name") or "—"),
                 _text(line.get("supplier_code") or "—"),
                 _text(line.get("supplier_name") or "—"),
                 _text(line.get("counterparty_code") or "—"),
                 _text(line.get("counterparty_name") or "—"),
+                _amount(line.get("debit")),
+                _amount(line.get("credit")),
+                _text(line.get("currency") or "—"),
+                _amount(line.get("original_amount")),
+                _text(line.get("preparer") or "—"),
+                voucher.get("entity") or line.get("entity") or "—",
+                voucher.get("period") or line.get("period") or "—",
+                item.get("position", 0) + 1,
+                _text(item.get("original_filename") or "—"),
+                line.get("sheet_name") or "—",
+                line.get("source_row") if line.get("source_row") is not None else "—",
+                _text(line.get("line_id") or "—"),
+                line.get("internal_line_key") or "—",
+                voucher.get("voucher_key") or "—",
+                item.get("job_id") or "—",
+                batch_id,
             ])
     rows.sort(key=lambda row: (
-        row[1],
-        str(row[9]),
-        int(row[10]) if isinstance(row[10], int) else 0,
-        str(row[12]),
+        row[19],
+        str(row[0]),
+        int(row[22]) if isinstance(row[22], int) else 0,
+        str(row[24]),
     ))
     return rows
 
@@ -453,13 +453,12 @@ def _build_merged_workbook(
 
     sheet = workbook.create_sheet("标准分录")
     headers = [
-        "Batch ID", "Batch Position", "Job ID", "Original Filename", "Voucher Key", "Voucher ID",
-        "Date", "Period", "Entity", "Source Sheet", "Source Row",
-        "External Line ID", "Internal Line Key", "Account Code", "Account Name",
-        "Detail Account", "Description", "Debit", "Credit", "Currency",
-        "Original Currency Amount", "Preparer",
-        "Customer Code", "Customer Name", "Supplier Code", "Supplier Name",
-        "Counterparty Code", "Counterparty Name",
+        "日期", "凭证号", "摘要", "科目编码", "科目名称", "明细科目",
+        "客户编码", "客户名称", "供应商编码", "供应商名称",
+        "往来单位编码", "往来单位名称", "借方金额", "贷方金额",
+        "币种", "原币金额", "制单人", "主体", "会计期间",
+        "批次序号", "原始文件", "源Sheet", "源行号", "外部行ID",
+        "内部行标识", "凭证内部标识", "任务ID", "批次ID",
     ]
     rows: List[List[Any]] = []
     for item in sorted(included, key=lambda value: value.get("position", 0)):
@@ -468,6 +467,11 @@ def _build_merged_workbook(
             continue
         rows.extend(_voucher_lines(item, result, batch_id))
     _write_sheet(sheet, headers, rows)
+    for column in ("M", "N", "P"):
+        for cell in sheet[column][1:]:
+            cell.number_format = "#,##0.00"
+    for cell in sheet["A"][1:]:
+        cell.number_format = "yyyy-mm-dd"
 
     source = workbook.create_sheet("来源文件")
     source_rows = []

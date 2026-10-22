@@ -50,8 +50,9 @@ def _write_sheet(worksheet, headers: Sequence[str], rows: Iterable[Sequence[Any]
     for column, header in enumerate(headers, start=1):
         cell = worksheet.cell(row=1, column=column)
         cell.value = header
-        cell.font = Font(bold=True)
+        cell.font = Font(bold=True, color="FF000000")
         cell.fill = HEADER_FILL
+    worksheet.row_dimensions[1].height = max(18, worksheet.row_dimensions[1].height or 0)
     for row_index, row in enumerate(rows, start=2):
         for column, value in enumerate(row, start=1):
             _literal(worksheet.cell(row=row_index, column=column), value)
@@ -74,47 +75,55 @@ def build_export(path: Path, payload: Any) -> None:
     vouchers = list(payload.get("vouchers") or [])
 
     lines_sheet = workbook.create_sheet("清洗分录")
+    source_filename = (payload.get("input_metadata") or {}).get("source_filename") or ""
     line_rows = []
     for voucher in vouchers:
         for line in voucher.get("lines") or []:
             line_rows.append([
-                voucher.get("voucher_key"),
+                voucher.get("date") or line.get("date"),
                 voucher.get("voucher_id"),
-                voucher.get("date"),
-                voucher.get("period"),
-                voucher.get("entity"),
+                line.get("description"),
                 line.get("account_code"),
                 line.get("account_name"),
                 line.get("detail_account"),
-                _amount(line.get("debit")),
-                _amount(line.get("credit")),
-                line.get("description"),
-                line.get("currency"),
-                _amount(line.get("original_amount")),
-                line.get("sheet_name"),
-                line.get("source_row"),
-                line.get("internal_line_key"),
-                line.get("line_id"),
-                "balanced" if voucher.get("exactly_balanced") else ("within_tolerance" if voucher.get("is_within_tolerance") else "unbalanced"),
-                ", ".join(voucher.get("validation_flags") or []),
                 line.get("customer_code"),
                 line.get("customer_name"),
                 line.get("supplier_code"),
                 line.get("supplier_name"),
                 line.get("counterparty_code"),
                 line.get("counterparty_name"),
+                _amount(line.get("debit")),
+                _amount(line.get("credit")),
+                line.get("currency"),
+                _amount(line.get("original_amount")),
+                line.get("preparer"),
+                voucher.get("entity") or line.get("entity"),
+                voucher.get("period") or line.get("period"),
+                source_filename,
+                line.get("sheet_name"),
+                line.get("source_row"),
+                line.get("line_id"),
+                line.get("internal_line_key"),
+                voucher.get("voucher_key"),
+                "balanced" if voucher.get("exactly_balanced") else ("within_tolerance" if voucher.get("is_within_tolerance") else "unbalanced"),
+                ", ".join(voucher.get("validation_flags") or []),
             ])
     _write_sheet(
         lines_sheet,
         [
-            "凭证Key", "凭证号", "日期", "期间", "主体", "科目编码", "科目名称",
-            "明细科目", "借方", "贷方", "摘要", "币种", "原币",
-            "原始Sheet", "原始行号", "内部行Key", "业务行ID", "平衡状态", "凭证校验",
+            "日期", "凭证号", "摘要", "科目编码", "科目名称", "明细科目",
             "客户编码", "客户名称", "供应商编码", "供应商名称",
-            "往来单位编码", "往来单位名称",
+            "往来单位编码", "往来单位名称", "借方", "贷方", "币种", "原币",
+            "制单人", "主体", "会计期间", "原始文件", "原始Sheet", "原始行号",
+            "外部业务行ID", "内部行Key", "凭证Key", "平衡状态", "凭证校验",
         ],
         line_rows,
     )
+    for column in ("M", "N", "P"):
+        for cell in lines_sheet[column][1:]:
+            cell.number_format = "#,##0.00"
+    for cell in lines_sheet["A"][1:]:
+        cell.number_format = "yyyy-mm-dd"
 
     summary_sheet = workbook.create_sheet("凭证汇总")
     summary_rows = []

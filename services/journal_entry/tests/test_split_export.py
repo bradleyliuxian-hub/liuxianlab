@@ -343,9 +343,11 @@ class SplitOutputTests(unittest.TestCase):
             self.assertEqual(headers[1:4], ["Sheet 名称", "部分", "行数"])
             group_sheet = next(name for name in workbook.sheetnames if name not in ("拆分说明", "分组索引"))
             standard_headers = [cell.value for cell in next(workbook[group_sheet].iter_rows(max_row=1))]
-            self.assertIn("Internal Line Key", standard_headers)
-            self.assertIn("Customer Name", standard_headers)
-            self.assertIn("Supplier Name", standard_headers)
+            self.assertIn("日期", standard_headers)
+            self.assertIn("凭证号", standard_headers)
+            self.assertIn("客户名称", standard_headers)
+            self.assertIn("供应商名称", standard_headers)
+            self.assertNotIn("内部行标识（系统追溯）", standard_headers)
         finally:
             workbook.close()
 
@@ -370,7 +372,9 @@ class SplitOutputTests(unittest.TestCase):
         self.assertEqual(manifest["matched_lines"], 10)
         self.assertEqual(manifest["group_count"], 3)
         self.assertIn("未指定客户", {group["display_name"] for group in manifest["groups"]})
-        self.assertNotIn("debit", json.dumps(manifest).lower())
+        manifest_without_columns = dict(manifest)
+        manifest_without_columns.pop("selected_columns", None)
+        self.assertNotIn("debit", json.dumps(manifest_without_columns).lower())
 
     def test_formula_injection_and_duplicate_group_names(self):
         payload = {
@@ -409,9 +413,11 @@ class SplitOutputTests(unittest.TestCase):
             self.assertEqual(len(set(reports)), 2)
         first = load_workbook(output / reports[0], read_only=True, data_only=False)
         try:
-            row = list(first["序时账"].iter_rows(min_row=2, max_row=2, values_only=True))[0]
-            self.assertTrue(str(row[12]).startswith("'=") or str(row[12]).startswith("'+"))
-            self.assertTrue(str(row[20]).startswith("'@") or str(row[20]).startswith("'="))
+            rows = list(first["序时账"].iter_rows(values_only=True))
+            headers = list(rows[0])
+            row = rows[1]
+            self.assertTrue(str(row[headers.index("科目名称")]).startswith("'=") or str(row[headers.index("科目名称")]).startswith("'+"))
+            self.assertTrue(str(row[headers.index("摘要")]).startswith("'@") or str(row[headers.index("摘要")]).startswith("'="))
         finally:
             first.close()
 
@@ -426,6 +432,86 @@ class SplitOutputTests(unittest.TestCase):
             self.assertTrue(all(len(name) <= 31 for name in names))
         finally:
             workbook.close()
+
+
+    def test_column_statistics_are_filtered_and_zero_is_not_empty(self):
+        payload = {
+            "schema_version": 1, "generated_at": "2026-01-01T00:00:00+00:00",
+            "vouchers": [
+                {"voucher_key": "K1", "voucher_id": "V1", "date": "2025-01-01",
+                 "lines": [{"voucher_id": "V1", "sheet_name": "序时账", "source_row": 2,
+                            "account_code": "1001", "account_name": "现金", "description": "a",
+                            "customer_code": "", "customer_name": "客户A", "currency": "",
+                            "original_amount": "", "debit": "0.00", "credit": "0.00",
+                            "internal_line_key": "3:序时账:2"}]},
+                {"voucher_key": "K2", "voucher_id": "V2", "date": "2025-02-01",
+                 "lines": [{"voucher_id": "V2", "sheet_name": "序时账", "source_row": 3,
+                            "account_code": "1002", "account_name": "银行", "description": "b",
+                            "customer_code": "", "customer_name": "客户B", "currency": "",
+                            "original_amount": "", "debit": "0.00", "credit": "0.00",
+                            "internal_line_key": "3:序时账:3"}]}
+            ],
+        }
+        self.result_path.write_text(json.dumps(payload), encoding="utf-8")
+        request = request_for(self.result_path, filters={"months": ["2025-01"]}, group_by="account")
+        preview = preview_split(request)
+        stats = preview["column_stats"]
+        self.assertTrue(stats["customer_code"]["entirely_empty"])
+        self.assertFalse(stats["customer_name"]["entirely_empty"])
+        self.assertTrue(stats["currency"]["entirely_empty"])
+        self.assertTrue(stats["original_amount"]["entirely_empty"])
+        self.assertFalse(stats["debit"]["entirely_empty"])
+        self.assertFalse(stats["credit"]["entirely_empty"])
+        self.assertNotIn("customer_code", preview["selected_columns"])
+        self.assertIn("customer_name", preview["selected_columns"])
+
+    def test_explicit_columns_use_uniform_headers_in_multi_and_zip(self):
+        columns = ["date", "voucher_id", "description", "account_code", "account_name",
+                   "debit", "credit", "customer_name", "internal_line_key"]
+        expected = ["日期", "凭证号", "摘要", "科目编码", "科目名称",
+                    "借方金额", "贷方金额", "客户名称", "内部行标识（系统追溯）"]
+        output = self.root / "columns-multi"
+        result = build_split_output(output, request_for(
+            self.result_path, group_by="account", output_mode="multi_sheet",
+            columns=columns,
+        ))
+        workbook = load_workbook(output / result["output_file"], read_only=True, data_only=False)
+        try:
+            sheets = [name for name in workbook.sheetnames if name not in ("拆分说明", "分组索引")]
+            self.assertTrue(sheets)
+            for name in sheets:
+                headers = [cell.value for cell in next(workbook[name].iter_rows(max_row=1))]
+                self.assertEqual(headers, expected)
+        finally:
+            workbook.close()
+        self.assertEqual(result["selected_columns"], columns)
+
+        zip_output = self.root / "columns-zip"
+        zip_result = build_split_output(zip_output, request_for(
+            self.result_path, group_by="account", output_mode="zip",
+            columns=columns,
+        ))
+        with zipfile.ZipFile(zip_output / zip_result["output_file"]) as archive:
+            reports = [name for name in archive.namelist() if name.endswith(".xlsx")]
+            self.assertTrue(reports)
+            for name in reports:
+                with tempfile.NamedTemporaryFile(suffix=".xlsx") as temp:
+                    temp.write(archive.read(name))
+                    temp.flush()
+                    book = load_workbook(temp.name, read_only=True, data_only=False)
+                    try:
+                        headers = [cell.value for cell in next(book["序时账"].iter_rows(max_row=1))]
+                        self.assertEqual(headers, expected)
+                    finally:
+                        book.close()
+
+    def test_column_selection_validation(self):
+        with self.assertRaises(SplitExportError):
+            preview_split(request_for(self.result_path, columns=[]))
+        with self.assertRaises(SplitExportError):
+            preview_split(request_for(self.result_path, columns=["unknown"]))
+        with self.assertRaises(SplitExportError):
+            preview_split(request_for(self.result_path, columns=["date", "date"]))
 
     def test_row_limit_splits_sheets_and_zip_parts(self):
         output = self.root / "rows"

@@ -21,10 +21,56 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from openpyxl import Workbook
 from openpyxl.styles import Font
+from openpyxl.utils import get_column_letter
 
 from .export import HEADER_FILL, _write_sheet, safe_excel_text
 
 SPLIT_SCHEMA_VERSION = 1
+
+COLUMN_GROUPS = (
+    ("core", "财务核心字段"),
+    ("aux", "往来与辅助核算"),
+    ("other", "其他业务字段"),
+    ("source", "来源与系统追溯"),
+    ("advanced", "高级系统字段"),
+)
+COLUMN_DEFINITIONS = (
+    {"id": "date", "label": "日期", "group": "core", "default": True, "kind": "date"},
+    {"id": "voucher_id", "label": "凭证号", "group": "core", "default": True, "kind": "text"},
+    {"id": "description", "label": "摘要", "group": "core", "default": True, "kind": "text"},
+    {"id": "account_code", "label": "科目编码", "group": "core", "default": True, "kind": "text"},
+    {"id": "account_name", "label": "科目名称", "group": "core", "default": True, "kind": "text"},
+    {"id": "detail_account", "label": "明细科目", "group": "core", "default": True, "kind": "text"},
+    {"id": "debit", "label": "借方金额", "group": "core", "default": True, "kind": "amount"},
+    {"id": "credit", "label": "贷方金额", "group": "core", "default": True, "kind": "amount"},
+    {"id": "customer_code", "label": "客户编码", "group": "aux", "default_if_data": True, "kind": "text"},
+    {"id": "customer_name", "label": "客户名称", "group": "aux", "default_if_data": True, "kind": "text"},
+    {"id": "supplier_code", "label": "供应商编码", "group": "aux", "default_if_data": True, "kind": "text"},
+    {"id": "supplier_name", "label": "供应商名称", "group": "aux", "default_if_data": True, "kind": "text"},
+    {"id": "counterparty_code", "label": "往来单位编码", "group": "aux", "default_if_data": True, "kind": "text"},
+    {"id": "counterparty_name", "label": "往来单位名称", "group": "aux", "default_if_data": True, "kind": "text"},
+    {"id": "entity", "label": "主体", "group": "other", "default_if_data": True, "kind": "text"},
+    {"id": "period", "label": "会计期间", "group": "other", "default_if_data": True, "kind": "text"},
+    {"id": "currency", "label": "币种", "group": "other", "default_if_data": True, "kind": "text"},
+    {"id": "original_amount", "label": "原币金额", "group": "other", "default_if_data": True, "kind": "amount"},
+    {"id": "preparer", "label": "制单人", "group": "other", "default_if_data": True, "kind": "text"},
+    {"id": "original_filename", "label": "原始文件", "group": "source", "kind": "text"},
+    {"id": "sheet_name", "label": "源 Sheet", "group": "source", "kind": "text"},
+    {"id": "source_row", "label": "源行号", "group": "source", "kind": "number"},
+    {"id": "line_id", "label": "外部行 ID", "group": "advanced", "advanced": True, "kind": "text"},
+    {"id": "internal_line_key", "label": "内部行标识（系统追溯）", "group": "advanced", "advanced": True, "kind": "key"},
+    {"id": "job_id", "label": "任务 ID（系统字段）", "group": "advanced", "advanced": True, "kind": "key"},
+    {"id": "voucher_key", "label": "凭证内部标识（系统字段）", "group": "advanced", "advanced": True, "kind": "key"},
+)
+COLUMN_BY_ID = {item["id"]: item for item in COLUMN_DEFINITIONS}
+DEFAULT_COLUMN_ORDER = (
+    "date", "voucher_id", "description", "account_code", "account_name",
+    "detail_account", "customer_code", "customer_name", "supplier_code",
+    "supplier_name", "counterparty_code", "counterparty_name", "debit",
+    "credit", "currency", "original_amount", "preparer", "entity", "period",
+    "original_filename", "sheet_name", "source_row", "line_id",
+    "internal_line_key", "job_id", "voucher_key",
+)
 DEFAULT_MAX_GROUPS_MULTI_SHEET = 200
 DEFAULT_MAX_GROUPS_ZIP = 500
 DEFAULT_MAX_ROWS_PER_SHEET = 1_048_000
@@ -399,6 +445,8 @@ def preview_split(request: Dict[str, Any]) -> Dict[str, Any]:
     records = load_records(jobs)
     filtered = apply_filters(records, request.get("filters") or {})
     groups = group_records(filtered, dimensions, request.get("group_options") or {})
+    stats = _column_statistics(filtered)
+    selected_columns = _normalize_columns(request.get("columns"), stats)
     limits = _limits(request)
     warnings = []
     for dimension in dimensions:
@@ -435,6 +483,9 @@ def preview_split(request: Dict[str, Any]) -> Dict[str, Any]:
         "limits": limits,
         "limit_exceeded": limit_exceeded,
         "warnings": warnings,
+        "column_stats": stats,
+        "selected_columns": selected_columns,
+        "column_order": selected_columns,
         "included_job_ids": [str(job.get("job_id")) for job in jobs],
         "groups": [
             {
@@ -539,36 +590,122 @@ def _safe_file_name(display: Any, fallback: str = "group") -> str:
     return (name or fallback)[:80]
 
 
-def _standard_headers() -> List[str]:
-    return [
-        "Original Filename", "Job ID", "Source Sheet", "Source Row",
-        "External Line ID", "Internal Line Key", "Entity", "Period", "Date",
-        "Voucher ID", "Voucher Key", "Account Code", "Account Name",
-        "Detail Account", "Customer Code", "Customer Name",
-        "Supplier Code", "Supplier Name", "Counterparty Code",
-        "Counterparty Name", "Description", "Debit", "Credit", "Currency",
-        "Original Currency Amount", "Preparer",
-    ]
-
-
-def _standard_row(record: Record) -> List[Any]:
+def _column_value(record: Record, column_id: str) -> Any:
     line = record.line
-    return [
-        _safe_excel(record.filename), record.job_id, _safe_excel(line.get("sheet_name") or ""),
-        line.get("source_row"), _safe_excel(line.get("line_id") or ""),
-        line.get("internal_line_key") or "", _safe_excel(record.entity or ""),
-        _safe_excel(record.period or ""), _safe_excel(record.date or ""),
-        _safe_excel(record.voucher_id), _safe_excel(record.voucher_key),
-        _safe_excel(line.get("account_code") or ""), _safe_excel(line.get("account_name") or ""),
-        _safe_excel(line.get("detail_account") or ""),
-        _safe_excel(line.get("customer_code") or ""), _safe_excel(line.get("customer_name") or ""),
-        _safe_excel(line.get("supplier_code") or ""), _safe_excel(line.get("supplier_name") or ""),
-        _safe_excel(line.get("counterparty_code") or ""), _safe_excel(line.get("counterparty_name") or ""),
-        _safe_excel(line.get("description") or ""), _decimal(line.get("debit")),
-        _decimal(line.get("credit")), _safe_excel(line.get("currency") or ""),
-        _decimal(line.get("original_amount")) if line.get("original_amount") not in (None, "") else None,
-        _safe_excel(line.get("preparer") or ""),
-    ]
+    if column_id == "date":
+        return record.date
+    if column_id == "voucher_id":
+        return record.voucher_id
+    if column_id == "entity":
+        return record.entity
+    if column_id == "period":
+        return record.period
+    if column_id == "original_filename":
+        return record.filename
+    if column_id == "job_id":
+        return record.job_id
+    if column_id == "voucher_key":
+        return record.voucher_key
+    if column_id == "debit":
+        return _decimal(line.get("debit"))
+    if column_id == "credit":
+        return _decimal(line.get("credit"))
+    if column_id == "original_amount":
+        return _decimal(line.get("original_amount")) if line.get("original_amount") not in (None, "") else None
+    return line.get(column_id)
+
+
+def _is_empty(value: Any) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return not value.strip()
+    return False
+
+
+def _column_statistics(records: Sequence[Record]) -> Dict[str, Dict[str, Any]]:
+    total = len(records)
+    stats: Dict[str, Dict[str, Any]] = {}
+    for definition in COLUMN_DEFINITIONS:
+        column_id = definition["id"]
+        non_empty = sum(0 if _is_empty(_column_value(record, column_id)) else 1 for record in records)
+        stats[column_id] = {
+            "id": column_id,
+            "label": definition["label"],
+            "group": definition["group"],
+            "advanced": bool(definition.get("advanced")),
+            "non_empty_count": non_empty,
+            "total_count": total,
+            "entirely_empty": non_empty == 0,
+        }
+    return stats
+
+
+def _normalize_columns(raw: Any, stats: Dict[str, Dict[str, Any]]) -> List[str]:
+    explicit = raw is not None
+    if not explicit:
+        return [
+            column_id for column_id in DEFAULT_COLUMN_ORDER
+            if (
+                COLUMN_BY_ID[column_id].get("default")
+                or (
+                    COLUMN_BY_ID[column_id].get("default_if_data")
+                    and not stats[column_id]["entirely_empty"]
+                )
+            )
+        ]
+    if not isinstance(raw, (list, tuple)) or not raw:
+        raise SplitExportError("至少选择 1 个导出字段。")
+    selected: List[str] = []
+    for value in raw:
+        column_id = str(value or "").strip()
+        if column_id not in COLUMN_BY_ID:
+            raise SplitExportError("导出字段无效。")
+        if column_id in selected:
+            raise SplitExportError("导出字段不能重复。")
+        selected.append(column_id)
+    if not selected:
+        raise SplitExportError("至少选择 1 个导出字段。")
+    return selected
+
+
+def _style_data_sheet(sheet, columns: Sequence[str]) -> None:
+    for index, column_id in enumerate(columns, start=1):
+        definition = COLUMN_BY_ID[column_id]
+        letter = get_column_letter(index)
+        if definition["kind"] == "amount":
+            for cell in sheet[letter][1:]:
+                cell.number_format = "#,##0.00"
+        if definition["kind"] == "date":
+            for cell in sheet[letter][1:]:
+                cell.number_format = "yyyy-mm-dd"
+        width = {
+            "date": 12, "description": 52, "account_name": 28,
+            "customer_name": 24, "supplier_name": 24,
+            "counterparty_name": 24, "account_code": 18,
+            "customer_code": 18, "supplier_code": 18, "counterparty_code": 18,
+            "original_filename": 28, "sheet_name": 18, "source_row": 10,
+            "job_id": 24, "line_id": 18, "internal_line_key": 28,
+            "voucher_key": 32, "voucher_id": 20, "detail_account": 24,
+            "entity": 18, "period": 14, "currency": 10, "preparer": 14,
+        }.get(column_id, 20)
+        sheet.column_dimensions[letter].width = width
+    sheet.freeze_panes = "A2"
+    sheet.auto_filter.ref = sheet.dimensions
+
+
+def _standard_headers(columns: Sequence[str]) -> List[str]:
+    return [COLUMN_BY_ID[column_id]["label"] for column_id in columns]
+
+
+def _standard_row(record: Record, columns: Sequence[str]) -> List[Any]:
+    values = []
+    for column_id in columns:
+        value = _column_value(record, column_id)
+        if COLUMN_BY_ID[column_id]["kind"] in ("text", "key"):
+            value = _safe_excel(value or "")
+        values.append(value)
+    return values
 
 
 def _description_rows(request: Dict[str, Any], preview: Dict[str, Any], group: Optional[Dict[str, Any]] = None) -> List[List[Any]]:
@@ -584,6 +721,7 @@ def _description_rows(request: Dict[str, Any], preview: Dict[str, Any], group: O
         ["匹配凭证数", preview.get("matched_vouchers")],
         ["分组数量", preview.get("group_count")],
         ["来源文件数", preview.get("source_file_count")],
+        ["导出字段", json.dumps(preview.get("selected_columns"), ensure_ascii=False)],
     ]
     if group:
         rows.extend([
@@ -623,13 +761,15 @@ def _build_multi_sheet(path: Path, request: Dict[str, Any], preview: Dict[str, A
     for group in groups:
         source_rows = group["rows"]
         record_parts = [source_rows[i:i + max_rows] for i in range(0, len(source_rows), max_rows)] or [[]]
-        parts = [[_standard_row(record) for record in part] for part in record_parts]
+        columns = preview["selected_columns"]
+        parts = [[_standard_row(record, columns) for record in part] for part in record_parts]
         for part_index, part in enumerate(parts, start=1):
             part_records = record_parts[part_index - 1]
             name = group["display_name"] if len(parts) == 1 else f"{group['display_name']}_{part_index}"
             sheet_name = _safe_sheet_name(name, used)
             sheet = workbook.create_sheet(sheet_name)
-            _write_sheet(sheet, _standard_headers(), part)
+            _write_sheet(sheet, _standard_headers(columns), part)
+            _style_data_sheet(sheet, columns)
             part_vouchers = len({(record.job_id, record.voucher_key) for record in part_records})
             part_debit = sum((_decimal(record.line.get("debit")) for record in part_records), Decimal("0.00"))
             part_credit = sum((_decimal(record.line.get("credit")) for record in part_records), Decimal("0.00"))
@@ -657,7 +797,9 @@ def _build_group_workbook(path: Path, request: Dict[str, Any], preview: Dict[str
     workbook.remove(default)
     _write_description(workbook, request, preview, group)
     sheet = workbook.create_sheet("序时账")
-    _write_sheet(sheet, _standard_headers(), [_standard_row(record) for record in rows])
+    columns = preview["selected_columns"]
+    _write_sheet(sheet, _standard_headers(columns), [_standard_row(record, columns) for record in rows])
+    _style_data_sheet(sheet, columns)
     workbook.save(path)
     try:
         path.chmod(0o600)
@@ -704,8 +846,10 @@ def build_split_output(output_dir: Path, request: Dict[str, Any]) -> Dict[str, A
             "group_count": len(groups),
             "matched_lines": len(filtered),
             "matched_vouchers": len({(record.job_id, record.voucher_key) for record in filtered}),
+            "selected_columns": preview["selected_columns"],
             "manifest": {
                 "schema_version": SPLIT_SCHEMA_VERSION,
+                "selected_columns": preview["selected_columns"],
                 "scope": request.get("scope"),
                 "generated_at": request.get("generated_at"),
                 "filters": request.get("filters") or {},
@@ -717,6 +861,7 @@ def build_split_output(output_dir: Path, request: Dict[str, Any]) -> Dict[str, A
                 "matched_lines": len(filtered),
                 "matched_vouchers": len({(record.job_id, record.voucher_key) for record in filtered}),
                 "group_count": len(groups),
+                "selected_columns": preview["selected_columns"],
                 "groups": manifest_groups,
             },
         }
@@ -766,6 +911,7 @@ def build_split_output(output_dir: Path, request: Dict[str, Any]) -> Dict[str, A
         "matched_lines": len(filtered),
         "matched_vouchers": len({(record.job_id, record.voucher_key) for record in filtered}),
         "group_count": len(groups),
+        "selected_columns": preview["selected_columns"],
         "groups": manifest_groups,
     }
     with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED, allowZip64=True) as archive:
@@ -782,6 +928,7 @@ def build_split_output(output_dir: Path, request: Dict[str, Any]) -> Dict[str, A
         "group_count": len(groups),
         "matched_lines": len(filtered),
         "matched_vouchers": len({(record.job_id, record.voucher_key) for record in filtered}),
+        "selected_columns": preview["selected_columns"],
         "manifest": manifest,
     }
 

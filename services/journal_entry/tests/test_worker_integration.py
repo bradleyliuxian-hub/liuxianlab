@@ -141,6 +141,10 @@ class WorkerIntegrationTests(unittest.TestCase):
                 ["清洗分录", "凭证汇总", "业务分类", "对方科目", "异常凭证", "数据质量问题"],
             )
             self.assertGreaterEqual(workbook["清洗分录"].max_row, 9)
+            headers = [cell.value for cell in next(workbook["清洗分录"].iter_rows(max_row=1))]
+            self.assertEqual(headers[:3], ["日期", "凭证号", "摘要"])
+            self.assertEqual(headers[-1], "凭证校验")
+            self.assertLess(headers.index("借方"), headers.index("原始文件"))
         finally:
             workbook.close()
 

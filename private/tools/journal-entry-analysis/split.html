@@ -19,7 +19,7 @@
         <div><strong>筛选与拆分导出</strong><small>Liuxian Lab / Ledger Filter &amp; Split</small></div>
       </div>
       <div class="header-actions">
-        <span class="version-chip">v1.3.1</span>
+        <span class="version-chip">v1.3.2</span>
         <span class="private-badge"><i></i>私有处理</span>
       </div>
     </header>
@@ -30,8 +30,11 @@
         <h1>先筛选，再拆分。</h1>
         <p>所有数据来自已完成的标准化结果，不会重新打开原始 Excel 或重新执行分析。先创建筛选结果，再预览分组，最后生成一个多 Sheet Excel 或多个 Excel 的 ZIP。</p>
         <details class="version-notes">
-          <summary>v1.3.1 更新说明</summary>
+          <summary>v1.3.2 更新说明</summary>
           <ul>
+            <li>拆分导出新增“导出列设置”：可选择财务、辅助核算、来源与系统追溯字段，并调整列顺序。</li>
+            <li>预览会基于筛选后的数据检测空白列，支持推荐列、取消空列、全选和恢复默认；多 Sheet 与 ZIP 使用统一列结构。</li>
+            <li>单文件标准序时账与批量合并序时账默认改为中文业务列优先，技术追溯字段移至末尾。</li>
             <li>结果页改为轻量索引 + 服务器分页：浏览器不再下载完整 result.json。</li>
             <li>凭证明细、业务分类、对方科目和异常发现按需加载；大型结果首屏独立于完整结果大小。</li>
             <li>新增 300k 行结果浏览验证；历史小任务会自动生成轻量索引，超大历史任务需重新分析。</li>
@@ -114,9 +117,28 @@
         <div class="error-box" id="splitError" hidden></div>
       </section>
 
+      <section class="workspace-card" id="columnCard">
+        <div class="card-heading">
+          <div><span class="step-no">04</span><div><h2>导出列设置</h2><p id="columnHint">选择最终序时账包含的列；系统追溯字段默认关闭。</p></div></div>
+          <span class="profile-chip" id="columnCount">—</span>
+        </div>
+        <div class="column-actions">
+          <button class="mini-button" id="recommendedColumns" type="button">推荐列</button>
+          <button class="mini-button" id="removeEmptyColumns" type="button">取消勾选全部空白列</button>
+          <button class="mini-button" id="selectAllColumns" type="button">全选</button>
+          <button class="mini-button" id="clearAllColumns" type="button">全部取消</button>
+          <button class="mini-button" id="resetColumns" type="button">恢复默认</button>
+        </div>
+        <div class="column-groups" id="columnGroups"></div>
+        <div class="column-order-block">
+          <h3>已选列顺序</h3>
+          <div class="column-order" id="columnOrder"></div>
+        </div>
+      </section>
+
       <section class="workspace-card" id="previewCard" hidden>
         <div class="card-heading">
-          <div><span class="step-no">04</span><div><h2>预览分组</h2><p id="previewSubtitle">—</p></div></div>
+          <div><span class="step-no">05</span><div><h2>预览分组</h2><p id="previewSubtitle">—</p></div></div>
           <span class="profile-chip" id="previewLimit">—</span>
         </div>
         <div class="summary-metrics compact" id="splitMetrics"></div>
@@ -126,7 +148,7 @@
 
       <section class="workspace-card" id="outputCard" hidden>
         <div class="card-heading">
-          <div><span class="step-no">05</span><div><h2>下载拆分文件</h2><p id="outputMeta">—</p></div></div>
+          <div><span class="step-no">06</span><div><h2>下载拆分文件</h2><p id="outputMeta">—</p></div></div>
           <div class="result-actions">
             <a class="primary-button" id="splitDownload" href="#" hidden>下载拆分文件 <span>↓</span></a>
             <button class="ghost-button" id="deleteSplitOutput" type="button" hidden>删除该输出</button>
@@ -136,7 +158,7 @@
       <p class="retention-note">分析文件、批次输出与拆分结果按系统保留策略自动清理；请及时下载需要留存的报告。</p>
     </main>
 
-    <footer class="tool-footer"><span>Liuxian Lab</span><span>Ledger Filter &amp; Split v1.3.1</span></footer>
+    <footer class="tool-footer"><span>Liuxian Lab</span><span>Ledger Filter &amp; Split v1.3.2</span></footer>
   </div>
   <div class="config-backdrop" id="presetBackdrop" hidden></div>
   <section class="config-modal split-preset-modal" id="presetSaveModal" hidden role="dialog" aria-modal="true" aria-label="保存拆分模板">

@@ -172,15 +172,20 @@ class BatchOutputTests(unittest.TestCase):
             merged = load_workbook(output / "merged-standardized-journal.xlsx", read_only=True, data_only=False)
             try:
                 self.assertEqual(merged.sheetnames, ["标准分录", "来源文件"])
-                rows = list(merged["标准分录"].iter_rows(min_row=2, values_only=True))
+                all_rows = list(merged["标准分录"].iter_rows(values_only=True))
+                headers = list(all_rows[0])
+                rows = all_rows[1:]
                 self.assertEqual(len(rows), 2)
-                self.assertEqual({row[0] for row in rows}, {"batch-1"})
-                self.assertEqual({row[2] for row in rows}, {"job-1", "job-2"})
-                self.assertEqual({row[3] for row in rows}, {"journal.xlsx"})
-                self.assertEqual({row[4] for row in rows}, {"journal.xlsx|K"})
-                self.assertEqual({row[12] for row in rows}, {"3:序时账:2"})
-                self.assertTrue(all(str(row[16]).startswith("'=") for row in rows))
-                self.assertTrue(all(Decimal(str(row[17])) == Decimal("100.00") for row in rows))
+                self.assertEqual(headers[:3], ["日期", "凭证号", "摘要"])
+                self.assertEqual(headers[-1], "批次ID")
+                idx = {name: headers.index(name) for name in headers}
+                self.assertEqual({row[idx["批次ID"]] for row in rows}, {"batch-1"})
+                self.assertEqual({row[idx["任务ID"]] for row in rows}, {"job-1", "job-2"})
+                self.assertEqual({row[idx["原始文件"]] for row in rows}, {"journal.xlsx"})
+                self.assertEqual({row[idx["凭证内部标识"]] for row in rows}, {"journal.xlsx|K"})
+                self.assertEqual({row[idx["内部行标识"]] for row in rows}, {"3:序时账:2"})
+                self.assertTrue(all(str(row[idx["摘要"]]).startswith("'=") for row in rows))
+                self.assertTrue(all(Decimal(str(row[idx["借方金额"]])) == Decimal("100.00") for row in rows))
             finally:
                 merged.close()
 
@@ -273,9 +278,11 @@ class BatchOutputTests(unittest.TestCase):
             build_export(path, payload)
             workbook = load_workbook(path, read_only=True, data_only=False)
             try:
-                row = list(workbook["清洗分录"].iter_rows(min_row=2, max_row=2, values_only=True))[0]
-                self.assertTrue(str(row[6]).startswith("'="))
-                self.assertTrue(str(row[10]).startswith("'@"))
+                rows = list(workbook["清洗分录"].iter_rows(values_only=True))
+                headers = list(rows[0])
+                row = rows[1]
+                self.assertTrue(str(row[headers.index("科目名称")]).startswith("'="))
+                self.assertTrue(str(row[headers.index("摘要")]).startswith("'@"))
             finally:
                 workbook.close()
 

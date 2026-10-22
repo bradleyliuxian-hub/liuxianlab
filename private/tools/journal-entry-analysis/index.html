@@ -18,7 +18,7 @@
         <div><strong>序时账分析</strong><small>Liuxian Lab / Journal Entry Analysis</small></div>
       </div>
       <div class="header-actions">
-        <span class="version-chip" title="当前工具版本">v1.3.1</span>
+        <span class="version-chip" title="当前工具版本">v1.3.2</span>
         <span class="private-badge"><i></i>私有处理</span>
         <a class="ghost-button" id="batchWorkspaceLink" href="batch.html">批量分析</a>
         <button class="ghost-button" id="newJobButton" type="button">新建分析</button>
@@ -31,8 +31,11 @@
         <h1>从序时账到可复核的凭证结论。</h1>
         <p>上传 <code>.xls</code> / <code>.xlsx</code>，确认工作表、表头与字段映射，系统在后台完成清洗、凭证汇总、业务分类、对方科目与异常凭证分析。原始文件不会被修改；结果和导出文件仅归属于当前登录用户。</p>
         <details class="version-notes">
-          <summary>v1.3.1 更新说明</summary>
+          <summary>v1.3.2 更新说明</summary>
           <ul>
+            <li>拆分导出新增“导出列设置”：可选择财务、辅助核算、来源与系统追溯字段，并调整列顺序。</li>
+            <li>预览会基于筛选后的数据检测空白列，支持推荐列、取消空列、全选和恢复默认；多 Sheet 与 ZIP 使用统一列结构。</li>
+            <li>单文件标准序时账与批量合并序时账默认改为中文业务列优先，技术追溯字段移至末尾。</li>
             <li>结果页改为轻量索引 + 服务器分页：浏览器不再下载完整 result.json。</li>
             <li>凭证明细、业务分类、对方科目和异常发现按需加载；大型结果首屏独立于完整结果大小。</li>
             <li>新增 300k 行结果浏览验证；历史小任务会自动生成轻量索引，超大历史任务需重新分析。</li>
@@ -51,7 +54,7 @@
       <section class="workspace-card" id="uploadPanel">
         <div class="card-heading">
           <div><span class="step-no">01</span><div><h2>上传序时账</h2><p>支持 Excel 97-2003 <code>.xls</code> 与 <code>.xlsx</code>；单个文件最大 25 MB。</p></div></div>
-          <span class="profile-chip">Journal Entry v1.3.1</span>
+          <span class="profile-chip">Journal Entry v1.3.2</span>
         </div>
 
         <label class="drop-zone" id="dropZone" for="fileInput">
@@ -190,7 +193,7 @@
       </section>
     </main>
 
-    <footer class="tool-footer"><span>Liuxian Lab</span><span>Journal Entry Analysis v1.3.1</span></footer>
+    <footer class="tool-footer"><span>Liuxian Lab</span><span>Journal Entry Analysis v1.3.2</span></footer>
   </div>
 
   <div class="detail-backdrop" id="detailBackdrop" hidden></div>

@@ -318,3 +318,21 @@ GET  /api/journal-entry-splits/:id/download
 - Scheduled once by the shared Journal Entry runtime; manual command:
   `npm run cleanup:journal-entry -- --dry-run` / without `--dry-run` for real
   cleanup. Deployment checks include batch-output/split-export Python processes.
+
+
+## Split export columns (v1.3.2)
+
+- Split export accepts `columns` as an ordered list of stable column IDs.
+- Definitions: core financial, auxiliary, other business, source, and
+  advanced/system groups. Defaults are human-facing columns; advanced system
+  keys are off by default.
+- Preview returns `column_stats`, `selected_columns`, and `column_order` based
+  on the filtered dataset. Empty strings/null are empty; decimal zero and false
+  are not empty.
+- Snapshot/output metadata records `selected_columns` and `column_order`.
+- Presets persist `columns`; presets without columns fall back to the
+  human-facing defaults.
+- Multi-sheet and ZIP exports use the same ordered column schema; the split
+  description/index sheets keep their fixed structure.
+- Single-file standard journal and batch merged journal use Chinese,
+  human-facing default columns with technical traceability moved to the tail.

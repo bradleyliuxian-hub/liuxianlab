@@ -78,7 +78,8 @@ const spec = {
   groupBy: ['customer', 'month'],
   groupOptions: {},
   rowMode: 'matched_only',
-  outputMode: 'zip'
+  outputMode: 'zip',
+  columns: ['date', 'voucher_id', 'customer_name']
 };
 
 test('create, list, read, update and delete preset', async () => {
@@ -87,6 +88,7 @@ test('create, list, read, update and delete preset', async () => {
   });
   assert.equal(created.status, 201, JSON.stringify(created.body));
   assert.deepEqual(created.body.preset.spec.groupBy, ['customer', 'month']);
+  assert.deepEqual(created.body.preset.spec.columns, ['date', 'voucher_id', 'customer_name']);
   const id = created.body.preset.id;
 
   const list = await request('GET', '/api/journal-entry-split-presets');
@@ -139,4 +141,19 @@ test('invalid spec and duplicate dimensions are rejected', async () => {
     name: 'full', spec: { ...spec, rowMode: 'full_voucher' }
   });
   assert.equal(full.status, 422);
+  const emptyColumns = await request('POST', '/api/journal-entry-split-presets', {
+    name: 'empty-columns', spec: { ...spec, columns: [] }
+  });
+  assert.equal(emptyColumns.status, 422);
+  const unknownColumns = await request('POST', '/api/journal-entry-split-presets', {
+    name: 'unknown-columns', spec: { ...spec, columns: ['nope'] }
+  });
+  assert.equal(unknownColumns.status, 422);
+  const legacySpec = { ...spec };
+  delete legacySpec.columns;
+  const legacy = await request('POST', '/api/journal-entry-split-presets', {
+    name: 'legacy', spec: legacySpec
+  });
+  assert.equal(legacy.status, 201);
+  assert.equal(legacy.body.preset.spec.columns, null);
 });
