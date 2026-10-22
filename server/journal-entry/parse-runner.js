@@ -3,13 +3,14 @@
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
+const repositoryDefault = require('./repository');
 
 const STATUS_POLL_MS = 500;
 const STARTING_MESSAGE = '正在启动序时账分析…';
 
 function createJournalEntryRunner({
   root,
-  repository,
+  repository = repositoryDefault,
   storageRoot,
   maxConcurrent = 1,
   recoverOnStart = true,

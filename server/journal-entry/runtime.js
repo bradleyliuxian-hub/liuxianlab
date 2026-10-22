@@ -15,8 +15,9 @@ const path = require('path');
 const { createPreviewRunner } = require('./preview-runner');
 const { createJournalEntryRunner } = require('./parse-runner');
 const { createCleanupService } = require('./cleanup');
+const repositoryDefault = require('./repository');
 
-function createJournalEntryRuntime({ root, repository, maxConcurrent, cleanup = false }) {
+function createJournalEntryRuntime({ root, repository = repositoryDefault, maxConcurrent, cleanup = false }) {
   const storageRoot = path.join(root, 'storage', 'journal-entry');
   fs.mkdirSync(storageRoot, { recursive: true, mode: 0o700 });
   const previewRunner = createPreviewRunner({ root });
