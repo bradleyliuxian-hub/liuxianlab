@@ -31,6 +31,12 @@ CANONICAL_FIELDS = (
     "account_code",
     "account_name",
     "detail_account",
+    "customer_code",
+    "customer_name",
+    "supplier_code",
+    "supplier_name",
+    "counterparty_code",
+    "counterparty_name",
     "direction",
     "amount",
     "debit",
@@ -121,11 +127,33 @@ FIELD_ALIASES: Dict[str, Tuple[str, ...]] = {
         "明细科目",
         "明细",
         "子科目",
-        "辅助核算",
         "detail account",
         "sub account",
         "subaccount",
         "detail",
+    ),
+    "customer_code": (
+        "客户编码", "客户代码", "客户编号", "客户号",
+        "customer code", "customer no", "customer number", "customer id",
+    ),
+    "customer_name": (
+        "客户名称", "客户", "customer name", "customer",
+    ),
+    "supplier_code": (
+        "供应商编码", "供应商代码", "供应商编号", "供应商号",
+        "supplier code", "supplier no", "supplier number",
+        "vendor code", "vendor no", "vendor id",
+    ),
+    "supplier_name": (
+        "供应商名称", "供应商", "supplier name", "supplier", "vendor name", "vendor",
+    ),
+    "counterparty_code": (
+        "往来单位编码", "客商编码", "核算项目编码", "辅助核算编码",
+        "counterparty code", "counterparty no", "auxiliary code",
+    ),
+    "counterparty_name": (
+        "往来单位", "客商", "辅助核算", "核算项目", "往来单位名称",
+        "counterparty name", "counterparty", "auxiliary", "auxiliary name",
     ),
     "direction": (
         "方向",

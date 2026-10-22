@@ -161,6 +161,7 @@ def build_analysis_result(
             "sheet_name": normalization.sheet_name,
             "header_row": normalization.header_row,
             "amount_layout": normalization.mapping.amount_layout.layout,
+            "positive_side": normalization.mapping.amount_layout.positive_side,
             "source_filename": original_filename,
         },
         "mapping": normalization.mapping.to_dict(),

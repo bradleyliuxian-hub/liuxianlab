@@ -7,7 +7,14 @@ const { spawn } = require('child_process');
 const STATUS_POLL_MS = 500;
 const STARTING_MESSAGE = '正在启动序时账分析…';
 
-function createJournalEntryRunner({ root, repository, storageRoot, maxConcurrent = 1 }) {
+function createJournalEntryRunner({
+  root,
+  repository,
+  storageRoot,
+  maxConcurrent = 1,
+  recoverOnStart = true,
+  cleanupOnStart = true
+}) {
   const queue = [];
   const active = new Set();
   const limit = Math.max(1, Number(maxConcurrent) || 1);
@@ -136,7 +143,7 @@ function createJournalEntryRunner({ root, repository, storageRoot, maxConcurrent
         if (serialized === lastSerialized) return;
         lastSerialized = serialized;
         const patch = {};
-        if (status.status) patch.status = status.status;
+        if (status.status && status.status !== 'completed') patch.status = status.status;
         if (status.progress !== undefined) {
           patch.progress = Math.max(0, Math.min(100, Number(status.progress) || 0));
         }
@@ -168,7 +175,13 @@ function createJournalEntryRunner({ root, repository, storageRoot, maxConcurrent
     const dir = jobDir(jobId);
     const resultPath = path.join(dir, 'result.json');
     const exportPath = path.join(dir, 'journal-entry-analysis-report.xlsx');
-    if (!fs.existsSync(resultPath) || !fs.existsSync(exportPath)) {
+    const uiDir = path.join(dir, 'ui');
+    const uiFiles = ['summary.json', 'vouchers.ndjson', 'findings.json', 'details.bin', 'details.idx.json'];
+    if (
+      !fs.existsSync(resultPath)
+      || !fs.existsSync(exportPath)
+      || !uiFiles.every((name) => fs.existsSync(path.join(uiDir, name)))
+    ) {
       return finalizeFailure(jobId, '分析完成但结果文件缺失。');
     }
     return repository.updateJobState(jobId, {
@@ -230,10 +243,12 @@ function createJournalEntryRunner({ root, repository, storageRoot, maxConcurrent
     }
   }
 
-  recover();
-  cleanupExpired();
-  const cleanupTimer = setInterval(cleanupExpired, 60 * 60 * 1000);
-  cleanupTimer.unref?.();
+  if (recoverOnStart) recover();
+  if (cleanupOnStart) {
+    cleanupExpired();
+    const cleanupTimer = setInterval(cleanupExpired, 60 * 60 * 1000);
+    cleanupTimer.unref?.();
+  }
 
   return {
     enqueue,

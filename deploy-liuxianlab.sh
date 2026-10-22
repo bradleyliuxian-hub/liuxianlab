@@ -224,7 +224,23 @@ if table_exists "excel_review_jobs"; then
   ACTIVE_JOBS=$((ACTIVE_JOBS + COUNT))
 fi
 
-if pgrep -af 'mineru|services\.contract_review\.worker|services\.excel_review\.worker' >/tmp/liuxianlab-worker-processes.txt 2>/dev/null; then
+if table_exists "journal_entry_jobs"; then
+  COUNT="$(
+    psql "$DATABASE_URL" -Atc "
+      SELECT COUNT(*)
+      FROM journal_entry_jobs
+      WHERE status IN ('queued', 'running')
+        AND deleted_at IS NULL;
+    " 2>/dev/null || echo "QUERY_FAILED"
+  )"
+  if [[ "$COUNT" == "QUERY_FAILED" ]]; then
+    die "could not check active Journal Entry jobs"
+  fi
+  echo "Active/queued Journal Entry jobs: $COUNT"
+  ACTIVE_JOBS=$((ACTIVE_JOBS + COUNT))
+fi
+
+if pgrep -af 'mineru|services\.contract_review\.worker|services\.excel_review\.worker|services\.journal_entry\.(worker|preview|batch_output|split_export)' >/tmp/liuxianlab-worker-processes.txt 2>/dev/null; then
   echo
   echo "Background parsing processes detected:"
   cat /tmp/liuxianlab-worker-processes.txt
@@ -651,6 +667,27 @@ if [[ -d services/contract_review/tests ]]; then
   .mineru/bin/python -m unittest discover \
     -s services/contract_review/tests \
     -t .
+fi
+
+if [[ -d services/journal_entry/tests ]]; then
+  [[ -x .venv/bin/python ]] || die ".venv/bin/python required for Journal Entry tests"
+  echo
+  echo "Running Journal Entry regression tests..."
+  .venv/bin/python -m unittest discover \
+    -s services/journal_entry/tests \
+    -t .
+fi
+
+if compgen -G "tests/journal-entry/*.test.js" >/dev/null; then
+  echo
+  echo "Running Journal Entry route tests..."
+  node --test tests/journal-entry/*.test.js
+fi
+
+if [[ -f scripts/smoke-journal-entry.js ]]; then
+  echo
+  echo "Running Journal Entry deployment smoke..."
+  node scripts/smoke-journal-entry.js
 fi
 
 echo "Regression tests passed."

@@ -14,6 +14,7 @@ const state = { jobs: new Map(), enqueued: [] };
 
 function installStubs() {
   const repositoryPath = require.resolve(path.join(ROOT, 'server', 'journal-entry', 'repository.js'));
+  const batchRepositoryPath = require.resolve(path.join(ROOT, 'server', 'journal-entry', 'batch-repository.js'));
   const previewPath = require.resolve(path.join(ROOT, 'server', 'journal-entry', 'preview-runner.js'));
   const runnerPath = require.resolve(path.join(ROOT, 'server', 'journal-entry', 'parse-runner.js'));
 
@@ -66,7 +67,7 @@ function installStubs() {
       },
       async getJobForOwner(id, owner) {
         const job = state.jobs.get(id);
-        return job && job.ownerUsername === owner ? job : null;
+        return job && job.ownerUsername === owner && !job.deletedAt ? job : null;
       },
       async listJobsForOwner(owner) {
         return [...state.jobs.values()].filter((job) => job.ownerUsername === owner);
@@ -81,6 +82,17 @@ function installStubs() {
         state.jobs.set(id, next);
         return next;
       },
+      async softDeleteJobForOwner(id, owner) {
+        const job = state.jobs.get(id);
+        if (!job || job.ownerUsername !== owner) return null;
+        if (['queued', 'running'].includes(job.status)) return null;
+        const next = {
+          ...job, deletedAt: '2026-01-01T00:00:00.000Z',
+          sourcePath: null, resultPath: null, exportPath: null
+        };
+        state.jobs.set(id, next);
+        return next;
+      },
       async deleteJobForOwner(id, owner) {
         const job = state.jobs.get(id);
         if (!job || job.ownerUsername !== owner) return false;
@@ -90,6 +102,13 @@ function installStubs() {
       async deleteJobById(id) { return state.jobs.delete(id); }
     }
   };
+  require.cache[batchRepositoryPath] = {
+    id: batchRepositoryPath, filename: batchRepositoryPath, loaded: true,
+    exports: {
+      async deleteItemsForJob() { return 0; }
+    }
+  };
+
   require.cache[previewPath] = {
     id: previewPath, filename: previewPath, loaded: true,
     exports: {
@@ -175,6 +194,14 @@ const requestBody = {
   mapping: { date: 2, voucher_id: 3, account_code: 4, account_name: 5, description: 6, currency: 7, direction: 8, amount: 11 }
 };
 
+const signedBody = (positiveSide) => ({
+  sheetName: '序时账',
+  headerRow: 1,
+  amountLayout: 'signed_amount',
+  positiveSide,
+  mapping: { date: 2, voucher_id: 3, account_code: 4, account_name: 5, description: 6, signed_amount: 11 }
+});
+
 test('upload .xlsx creates a draft job and returns inspection', async () => {
   const { status, body } = await postFile('序时账.xlsx', makeXlsxBytes());
   assert.equal(status, 201);
@@ -232,6 +259,20 @@ test('inspect re-detects a selected sheet and header row', async () => {
   assert.equal(response.body.job.id, id);
 });
 
+test('completed job delete soft-deletes and removes its files', async () => {
+  const uploaded = await postFile('delete-completed.xlsx', makeXlsxBytes());
+  const id = uploaded.body.job.id;
+  const job = state.jobs.get(id);
+  state.jobs.set(id, { ...job, status: 'completed', progress: 100 });
+  const uiDir = path.join(tempRoot, 'storage', 'journal-entry', id, 'ui');
+  fs.mkdirSync(uiDir, { recursive: true, mode: 0o700 });
+  fs.writeFileSync(path.join(uiDir, 'summary.json'), '{}');
+  const response = await fetch(`${base}/api/journal-entry-analyses/${id}`, { method: 'DELETE' });
+  assert.equal(response.status, 200);
+  assert.ok(state.jobs.get(id).deletedAt);
+  assert.equal(fs.existsSync(path.join(tempRoot, 'storage', 'journal-entry', id)), false);
+});
+
 test('owner scoping hides another user job', async () => {
   const uploaded = await postFile('owner.xlsx', makeXlsxBytes());
   const id = uploaded.body.job.id;
@@ -239,6 +280,18 @@ test('owner scoping hides another user job', async () => {
     headers: { Accept: 'application/json', 'x-user': 'someone-else' }
   });
   assert.equal(response.status, 404);
+});
+
+test('another owner cannot delete a completed job', async () => {
+  const uploaded = await postFile('delete-owner.xlsx', makeXlsxBytes());
+  const id = uploaded.body.job.id;
+  state.jobs.set(id, { ...state.jobs.get(id), status: 'completed' });
+  const response = await fetch(`${base}/api/journal-entry-analyses/${id}`, {
+    method: 'DELETE',
+    headers: { 'x-user': 'someone-else' }
+  });
+  assert.equal(response.status, 404);
+  assert.ok(state.jobs.has(id));
 });
 
 test('queued job cannot be deleted', async () => {
@@ -249,12 +302,109 @@ test('queued job cannot be deleted', async () => {
   assert.equal(response.status, 409);
 });
 
+
+test('upload enforces the 25 MB file boundary', async () => {
+  const nearLimit = Buffer.concat([
+    Buffer.from([0x50, 0x4b, 0x03, 0x04]),
+    Buffer.alloc(25 * 1024 * 1024 - 100, 0)
+  ]);
+  const accepted = await postFile('near-limit.xlsx', nearLimit);
+  assert.equal(accepted.status, 201, JSON.stringify(accepted.body));
+
+  const oversize = Buffer.concat([
+    Buffer.from([0x50, 0x4b, 0x03, 0x04]),
+    Buffer.alloc(25 * 1024 * 1024 + 1, 0)
+  ]);
+  const rejected = await postFile('oversize.xlsx', oversize);
+  assert.equal(rejected.status, 413);
+  assert.match(rejected.body.error, /25MB/);
+});
+
 test('meta exposes file and mapping capabilities', async () => {
   const response = await fetch(`${base}/api/journal-entry-analyses/meta`, { headers: { Accept: 'application/json' } });
   assert.equal(response.status, 200);
   const body = await response.json();
   assert.equal(body.maxFileSizeBytes, 25 * 1024 * 1024);
   assert.ok(body.mappingFields.some((field) => field.key === 'voucher_id'));
+  assert.ok(body.mappingFields.some((field) => field.key === 'signed_amount'));
+  assert.ok(body.mappingFields.some((field) => field.key === 'line_id'));
+  const signed = body.amountLayouts.find((layout) => layout.value === 'signed_amount');
+  assert.ok(signed);
+  assert.equal(signed.positiveSideRequired, true);
+  assert.deepEqual(signed.requiredFields, ['signed_amount']);
+});
+
+test('signed_amount accepts positive_side=debit and persists it', async () => {
+  const uploaded = await postFile('signed-debit.xlsx', makeXlsxBytes());
+  const id = uploaded.body.job.id;
+  const preview = await postJson(`/api/journal-entry-analyses/${id}/preview`, signedBody('debit'));
+  assert.equal(preview.status, 200);
+  const started = await postJson(`/api/journal-entry-analyses/${id}/start`, signedBody('debit'));
+  assert.equal(started.status, 202);
+  const saved = state.jobs.get(id);
+  assert.equal(saved.requestJson.amountLayout, 'signed_amount');
+  assert.equal(saved.requestJson.positiveSide, 'debit');
+  assert.equal(saved.requestJson.mapping.signed_amount, 11);
+  assert.equal(saved.amountLayout, 'signed_amount');
+});
+
+test('signed_amount accepts positive_side=credit', async () => {
+  const uploaded = await postFile('signed-credit.xlsx', makeXlsxBytes());
+  const id = uploaded.body.job.id;
+  const preview = await postJson(`/api/journal-entry-analyses/${id}/preview`, signedBody('credit'));
+  assert.equal(preview.status, 200);
+  const started = await postJson(`/api/journal-entry-analyses/${id}/start`, signedBody('credit'));
+  assert.equal(started.status, 202);
+  assert.equal(state.jobs.get(id).requestJson.positiveSide, 'credit');
+});
+
+test('signed_amount requires positive_side', async () => {
+  const uploaded = await postFile('signed-missing.xlsx', makeXlsxBytes());
+  const id = uploaded.body.job.id;
+  const body = signedBody('debit');
+  delete body.positiveSide;
+  const preview = await postJson(`/api/journal-entry-analyses/${id}/preview`, body);
+  assert.equal(preview.status, 400);
+  assert.match(preview.body.error, /正数代表借方还是贷方/);
+  const started = await postJson(`/api/journal-entry-analyses/${id}/start`, body);
+  assert.equal(started.status, 400);
+});
+
+test('signed_amount rejects positive_side=auto', async () => {
+  const uploaded = await postFile('signed-auto.xlsx', makeXlsxBytes());
+  const id = uploaded.body.job.id;
+  const preview = await postJson(`/api/journal-entry-analyses/${id}/preview`, signedBody('auto'));
+  assert.equal(preview.status, 400);
+  assert.match(preview.body.error, /正数方向不正确/);
+  const started = await postJson(`/api/journal-entry-analyses/${id}/start`, signedBody('auto'));
+  assert.equal(started.status, 400);
+});
+
+test('non-signed layout does not require positive_side', async () => {
+  const uploaded = await postFile('direction-no-side.xlsx', makeXlsxBytes());
+  const id = uploaded.body.job.id;
+  const preview = await postJson(`/api/journal-entry-analyses/${id}/preview`, requestBody);
+  assert.equal(preview.status, 200);
+  const started = await postJson(`/api/journal-entry-analyses/${id}/start`, requestBody);
+  assert.equal(started.status, 202);
+});
+
+test('inspect keeps saved signed_amount config', async () => {
+  const uploaded = await postFile('signed-reinspect.xlsx', makeXlsxBytes());
+  const id = uploaded.body.job.id;
+  const preview = await postJson(`/api/journal-entry-analyses/${id}/preview`, signedBody('debit'));
+  assert.equal(preview.status, 200);
+  const inspected = await postJson(`/api/journal-entry-analyses/${id}/inspect`, {
+    sheetName: '序时账',
+    headerRow: 1,
+    mapping: {}
+  });
+  assert.equal(inspected.status, 200);
+  const saved = state.jobs.get(id);
+  assert.equal(saved.requestJson.amountLayout, 'signed_amount');
+  assert.equal(saved.requestJson.positiveSide, 'debit');
+  assert.equal(saved.requestJson.mapping.signed_amount, 11);
+  assert.equal(saved.amountLayout, 'signed_amount');
 });
 
 test('stubs match the route response shape', () => {

@@ -17,6 +17,10 @@ const { createContractRouter } = require('./server/contracts/routes');
 const { createExcelReviewRouter } = require('./server/excel-review/routes');
 const { createExcelReviewControlLogRouter } = require('./server/excel-review/control-log-routes');
 const { createJournalEntryRouter } = require('./server/journal-entry/routes');
+const { createJournalEntryBatchRouter } = require('./server/journal-entry/batch-routes');
+const { createJournalEntryRuntime } = require('./server/journal-entry/runtime');
+const { createSplitRouter } = require('./server/journal-entry/split-routes');
+const { createPresetRouter } = require('./server/journal-entry/split-preset-routes');
 const { createPurchaseReconciliationRouter } = require('./server/purchase-reconciliation/routes');
 const { createEquityRouter } = require('./server/equity-structure/routes');
 const { createFlowchartRouter } = require('./server/flowchart-excel/routes');
@@ -379,7 +383,11 @@ app.use('/api/excel-reviews', requireAuth, sameOriginForStateChange, createExcel
  * 序时账分析：上传 -> 字段映射 -> 异步分析 -> 结果 / Excel 导出。
  * 文件与结果保存在 storage/journal-entry/<uuid>/，接口按 owner 隔离。
  */
-app.use('/api/journal-entry-analyses', requireAuth, sameOriginForStateChange, createJournalEntryRouter({ root: ROOT, requireAuth, sameOriginForStateChange }));
+const journalEntryRuntime = createJournalEntryRuntime({ root: ROOT, cleanup: true });
+app.use('/api/journal-entry-analyses', requireAuth, sameOriginForStateChange, createJournalEntryRouter({ root: ROOT, requireAuth, sameOriginForStateChange, runtime: journalEntryRuntime }));
+app.use('/api/journal-entry-batches', requireAuth, sameOriginForStateChange, createJournalEntryBatchRouter({ root: ROOT, requireAuth, runtime: journalEntryRuntime }));
+app.use('/api/journal-entry-splits', requireAuth, sameOriginForStateChange, createSplitRouter({ root: ROOT, requireAuth }));
+app.use('/api/journal-entry-split-presets', requireAuth, sameOriginForStateChange, createPresetRouter({ requireAuth }));
 
 /*
  * 采购与退货对抵：SAP 正负数据按业务键 + FIFO 对抵，Dashboard + 分页结果 + 下载。

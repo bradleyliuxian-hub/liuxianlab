@@ -157,6 +157,29 @@ class SignedAmountAdapterTests(unittest.TestCase):
         self.assertEqual(entry.lines[1].debit, Decimal("0.00"))
         self.assertEqual(entry.lines[1].credit, Decimal("100.00"))
 
+    def test_signed_amount_zero(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = write_workbook(
+                Path(tmp) / "signed-zero.xlsx",
+                [
+                    ["日期", "凭证号", "科目名称", "金额"],
+                    ["2025-01-01", "V1", "现金", 0],
+                    ["2025-01-01", "V1", "收入", 0],
+                ],
+            )
+            result = normalize_file(
+                path,
+                mapping={
+                    "signed_amount": "金额",
+                    "positive_side": "debit",
+                },
+            )
+        entry = result.entries[0]
+        self.assertEqual(entry.total_debit, Decimal("0.00"))
+        self.assertEqual(entry.total_credit, Decimal("0.00"))
+        self.assertEqual(entry.lines[0].debit, Decimal("0.00"))
+        self.assertEqual(entry.lines[0].credit, Decimal("0.00"))
+
     def test_signed_amount_positive_credit(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = write_workbook(
@@ -177,6 +200,36 @@ class SignedAmountAdapterTests(unittest.TestCase):
         entry = result.entries[0]
         self.assertEqual(entry.lines[0].credit, Decimal("100.00"))
         self.assertEqual(entry.lines[1].debit, Decimal("100.00"))
+
+
+class DuplicateLineIdIdentityTests(unittest.TestCase):
+    def test_duplicate_external_line_id_keeps_distinct_internal_keys(self):
+        result = normalize_file(FIXTURES / "journal_duplicate_line_id.xlsx")
+        self.assertEqual(len(result.entries), 2)
+        self.assertEqual(len(result.lines), 4)
+
+        by_voucher = {entry.voucher_id: entry for entry in result.entries}
+        for voucher_id in ("SA-001", "SA-002"):
+            entry = by_voucher[voucher_id]
+            self.assertEqual(len(entry.lines), 2)
+            self.assertEqual([line.line_id for line in entry.lines], ["001", "001"])
+            internal_keys = [line.internal_line_key for line in entry.lines]
+            self.assertEqual(len(set(internal_keys)), 2)
+            serialized = entry.to_dict()["lines"]
+            self.assertEqual(
+                {line["internal_line_key"] for line in serialized},
+                set(internal_keys),
+            )
+
+        allocation = ContraEngine().analyze(by_voucher["SA-001"])
+        self.assertGreaterEqual(len(allocation.allocations), 1)
+        for item in allocation.allocations:
+            self.assertEqual(item.source_line_id, "001")
+            self.assertEqual(item.target_line_id, "001")
+            self.assertNotEqual(
+                item.source_internal_key,
+                item.target_internal_key,
+            )
 
 
 class CompatibilityAndLargeInputTests(unittest.TestCase):

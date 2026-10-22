@@ -62,6 +62,62 @@ class WorkerIntegrationTests(unittest.TestCase):
         self.assertEqual(preview["cleaningSummary"]["lineCount"], 8)
         self.assertEqual(len(preview["sampleVouchers"]), 3)
 
+    def test_signed_amount_inspection_worker_and_metadata(self):
+        shutil.copyfile(
+            FIXTURES / "journal_signed_amount.xlsx",
+            self.job_dir / "source.xlsx",
+        )
+        self.request = {
+            "sheetName": "序时账",
+            "headerRow": 1,
+            "amountLayout": "signed_amount",
+            "positiveSide": "debit",
+            "mapping": {
+                "date": 1,
+                "voucher_id": 2,
+                "account_code": 3,
+                "account_name": 4,
+                "description": 5,
+                "signed_amount": 6,
+            },
+        }
+        write_json(self.job_dir / "request.json", self.request)
+
+        inspection = build_inspection(self.job_dir)
+        self.assertTrue(inspection["ok"])
+        self.assertEqual(inspection["amountLayout"]["layout"], "signed_amount")
+        self.assertEqual(inspection["amountLayout"]["positive_side"], "debit")
+        self.assertEqual(inspection["explicitMapping"]["signed_amount"], 6)
+
+        reporter = Reporter(self.job_dir)
+        run(self.job_dir, reporter)
+        payload = json.loads(
+            (self.job_dir / "result.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            payload["input_metadata"]["amount_layout"], "signed_amount"
+        )
+        self.assertEqual(payload["input_metadata"]["positive_side"], "debit")
+        voucher = next(
+            item for item in payload["vouchers"] if item["voucher_id"] == "SA-001"
+        )
+        bank = next(
+            line for line in voucher["lines"] if line["account_code"] == "1002"
+        )
+        self.assertEqual(bank["debit"], "1000.00")
+        self.assertEqual(bank["credit"], "0.00")
+
+        export_path = self.job_dir / "journal-entry-analysis-report.xlsx"
+        self.assertTrue(export_path.exists())
+        workbook = load_workbook(export_path, read_only=True, data_only=False)
+        try:
+            self.assertEqual(
+                workbook.sheetnames,
+                ["清洗分录", "凭证汇总", "业务分类", "对方科目", "异常凭证", "数据质量问题"],
+            )
+        finally:
+            workbook.close()
+
     def test_worker_writes_result_and_export(self):
         reporter = Reporter(self.job_dir)
         run(self.job_dir, reporter)
@@ -88,10 +144,31 @@ class WorkerIntegrationTests(unittest.TestCase):
         finally:
             workbook.close()
 
+        ui_dir = self.job_dir / "ui"
+        for name in ("summary.json", "vouchers.ndjson", "findings.json", "details.bin", "details.idx.json"):
+            self.assertTrue((ui_dir / name).exists(), name)
+        ui_summary = json.loads((ui_dir / "summary.json").read_text(encoding="utf-8"))
+        self.assertEqual(ui_summary["voucher_summary"], payload["voucher_summary"])
+        self.assertEqual(ui_summary["anomaly_summary"], payload["anomaly_summary"])
+        ui_rows = [
+            json.loads(line)
+            for line in (ui_dir / "vouchers.ndjson").read_text(encoding="utf-8").splitlines()
+            if line
+        ]
+        self.assertEqual(len(ui_rows), len(payload["vouchers"]))
+        self.assertEqual(
+            {row["k"] for row in ui_rows},
+            {voucher["voucher_key"] for voucher in payload["vouchers"]},
+        )
+
         status = json.loads((self.job_dir / "status.json").read_text(encoding="utf-8"))
         self.assertEqual(status["status"], "completed")
         self.assertEqual(status["progress"], 100)
         self.assertEqual(status["result"]["voucher_count"], 3)
+        self.assertEqual(status["result"]["raw_row_count"], 8)
+        self.assertEqual(status["result"]["line_count"], 8)
+        self.assertIn("business_classified_count", status["result"])
+        self.assertIn("finding_voucher_count", status["result"])
 
 
 if __name__ == "__main__":

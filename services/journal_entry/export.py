@@ -12,7 +12,18 @@ from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 
+FORMULA_INJECTION_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def safe_excel_text(value):
+    """Keep user text as text instead of letting Excel evaluate it."""
+    if isinstance(value, str) and value.startswith(FORMULA_INJECTION_PREFIXES):
+        return "'" + value
+    return value
+
+
 def _literal(cell, value):
+    value = safe_excel_text(value)
     cell.value = value
     if isinstance(value, str):
         cell.data_type = "s"
@@ -86,6 +97,12 @@ def build_export(path: Path, payload: Any) -> None:
                 line.get("line_id"),
                 "balanced" if voucher.get("exactly_balanced") else ("within_tolerance" if voucher.get("is_within_tolerance") else "unbalanced"),
                 ", ".join(voucher.get("validation_flags") or []),
+                line.get("customer_code"),
+                line.get("customer_name"),
+                line.get("supplier_code"),
+                line.get("supplier_name"),
+                line.get("counterparty_code"),
+                line.get("counterparty_name"),
             ])
     _write_sheet(
         lines_sheet,
@@ -93,6 +110,8 @@ def build_export(path: Path, payload: Any) -> None:
             "凭证Key", "凭证号", "日期", "期间", "主体", "科目编码", "科目名称",
             "明细科目", "借方", "贷方", "摘要", "币种", "原币",
             "原始Sheet", "原始行号", "内部行Key", "业务行ID", "平衡状态", "凭证校验",
+            "客户编码", "客户名称", "供应商编码", "供应商名称",
+            "往来单位编码", "往来单位名称",
         ],
         line_rows,
     )

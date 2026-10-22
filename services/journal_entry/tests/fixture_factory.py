@@ -39,6 +39,9 @@ FIXTURE_NAMES = (
     "journal_contra_complex.xlsx",
     "journal_negative.xlsx",
     "journal_duplicate_voucher.xlsx",
+    "journal_signed_amount.xlsx",
+    "journal_duplicate_line_id.xlsx",
+    "journal_audit_split.xlsx",
 )
 
 
@@ -213,6 +216,72 @@ def anomaly_materiality_rows():
 
 
 
+SIGNED_HEADERS = [
+    "日期",
+    "凭证号",
+    "科目编码",
+    "科目名称",
+    "摘要",
+    "金额",
+]
+
+
+AUDIT_SPLIT_HEADERS = [
+    "日期", "凭证号", "科目编码", "科目名称", "客户编码", "客户名称",
+    "供应商编码", "供应商名称", "往来单位", "摘要", "借方", "贷方",
+]
+
+
+def audit_split_rows():
+    return [
+        AUDIT_SPLIT_HEADERS,
+        [date(2025, 1, 15), "V001", "1122", "应收账款", "C001", "客户A", "", "", "", "销售收入", 1000, 0],
+        [date(2025, 1, 15), "V001", "6001", "主营业务收入", "", "", "", "", "", "销售收入", 0, 1000],
+        [date(2025, 1, 31), "V002", "1122", "应收账款", "C002", "客户B", "", "", "", "销售收入", 500, 0],
+        [date(2025, 1, 31), "V002", "6001", "主营业务收入", "", "", "", "", "", "销售收入", 0, 500],
+        [date(2025, 2, 1), "V003", "2202", "应付账款", "", "", "S001", "供应商A", "", "采购付款", 0, 800],
+        [date(2025, 2, 1), "V003", "1002", "银行存款", "", "", "", "", "", "采购付款", 800, 0],
+        [date(2025, 2, 28), "V004", "6602", "管理费用", "", "", "", "", "部门A", "费用报销", 300, 0],
+        [date(2025, 2, 28), "V004", "1002", "银行存款", "", "", "", "", "", "费用报销", 0, 300],
+        [date(2025, 3, 15), "V005", "1122", "应收账款", "C001", "客户A", "S002", "供应商B", "往来B", "销售与采购", 700, 0],
+        [date(2025, 3, 15), "V005", "6001", "主营业务收入", "", "", "", "", "", "销售与采购", 0, 700],
+    ]
+
+
+DUPLICATE_LINE_ID_HEADERS = [
+    "日期",
+    "凭证号",
+    "行号",
+    "科目编码",
+    "科目名称",
+    "摘要",
+    "借方",
+    "贷方",
+]
+
+
+def duplicate_line_id_rows():
+    return [
+        DUPLICATE_LINE_ID_HEADERS,
+        [date(2025, 4, 1), "SA-001", "001", "1002", "银行存款", "重复行号-银行", 100, 0],
+        [date(2025, 4, 1), "SA-001", "001", "6001", "主营业务收入", "重复行号-收入", 0, 100],
+        [date(2025, 4, 2), "SA-002", "001", "6602", "管理费用", "重复行号-费用", 50, 0],
+        [date(2025, 4, 2), "SA-002", "001", "1002", "银行存款", "重复行号-付款", 0, 50],
+    ]
+
+
+def signed_amount_rows():
+    return [
+        SIGNED_HEADERS,
+        [date(2025, 3, 1), "SA-001", "1002", "银行存款", "收到货款", 1000],
+        [date(2025, 3, 1), "SA-001", "6001", "主营业务收入", "收到货款", -1000],
+        [date(2025, 3, 2), "SA-002", "6602", "管理费用", "支付办公费", 250],
+        [date(2025, 3, 2), "SA-002", "1002", "银行存款", "支付办公费", -250],
+        [date(2025, 3, 3), "SA-003", "1001", "库存现金", "零金额样本", 0],
+        [date(2025, 3, 3), "SA-003", "6001", "主营业务收入", "零金额样本", 0],
+    ]
+
+
 DIRECTION_HEADERS = [
     "唯一列",
     "日期",
@@ -248,6 +317,9 @@ def direction_amount_rows():
 
 FIXTURES = {
     "journal_direction_amount.xlsx": direction_amount_rows,
+    "journal_signed_amount.xlsx": signed_amount_rows,
+    "journal_duplicate_line_id.xlsx": duplicate_line_id_rows,
+    "journal_audit_split.xlsx": audit_split_rows,
     "journal_anomaly_basic.xlsx": anomaly_basic_rows,
     "journal_anomaly_business_groups.xlsx": anomaly_business_groups_rows,
     "journal_anomaly_rare_pair.xlsx": anomaly_rare_pair_rows,

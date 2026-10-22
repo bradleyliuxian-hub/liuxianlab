@@ -534,6 +534,23 @@ class WorkbookReader:
             for sheet in self.list_sheets()
         )
 
+    def read_header(self, sheet_name: str, header_row: int) -> Tuple[str, ...]:
+        """Read only up to the requested header row (no full-sheet scan)."""
+
+        header_row = int(header_row)
+        if header_row < 1:
+            raise WorkbookValidationError(
+                "header_row 必须 >= 1。",
+                details={"header_row": header_row},
+            )
+        data = self.read_sheet(sheet_name, max_rows=header_row)
+        if header_row > len(data.rows):
+            raise WorkbookValidationError(
+                "header_row 超出工作表范围。",
+                details={"header_row": header_row, "max_row": len(data.rows)},
+            )
+        return tuple(_display(value) for value in data.rows[header_row - 1])
+
     def read_table(
         self,
         sheet_name: str,

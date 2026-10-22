@@ -109,6 +109,12 @@ class JournalLine:
     account_code: Optional[str] = None
     account_name: Optional[str] = None
     detail_account: Optional[str] = None
+    customer_code: Optional[str] = None
+    customer_name: Optional[str] = None
+    supplier_code: Optional[str] = None
+    supplier_name: Optional[str] = None
+    counterparty_code: Optional[str] = None
+    counterparty_name: Optional[str] = None
 
     debit: Decimal = ZERO
     credit: Decimal = ZERO
@@ -168,6 +174,13 @@ class JournalLine:
         object.__setattr__(self, "voucher_id", voucher_id)
         object.__setattr__(self, "account_code", account_code)
         object.__setattr__(self, "account_name", account_name)
+        object.__setattr__(self, "detail_account", clean_text(self.detail_account))
+        object.__setattr__(self, "customer_code", clean_text(self.customer_code))
+        object.__setattr__(self, "customer_name", clean_text(self.customer_name))
+        object.__setattr__(self, "supplier_code", clean_text(self.supplier_code))
+        object.__setattr__(self, "supplier_name", clean_text(self.supplier_name))
+        object.__setattr__(self, "counterparty_code", clean_text(self.counterparty_code))
+        object.__setattr__(self, "counterparty_name", clean_text(self.counterparty_name))
         object.__setattr__(self, "sheet_name", sheet_name)
         object.__setattr__(self, "debit", debit)
         object.__setattr__(self, "credit", credit)
@@ -237,6 +250,12 @@ class JournalLine:
             "account_code": self.account_code,
             "account_name": self.account_name,
             "detail_account": self.detail_account,
+            "customer_code": self.customer_code,
+            "customer_name": self.customer_name,
+            "supplier_code": self.supplier_code,
+            "supplier_name": self.supplier_name,
+            "counterparty_code": self.counterparty_code,
+            "counterparty_name": self.counterparty_name,
             "debit": amount_to_string(self.debit),
             "credit": amount_to_string(self.credit),
             "currency": self.currency,

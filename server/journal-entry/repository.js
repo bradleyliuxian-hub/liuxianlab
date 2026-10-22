@@ -24,7 +24,8 @@ function mapJob(row) {
     error: row.error_message,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-    completedAt: row.completed_at
+    completedAt: row.completed_at,
+    deletedAt: row.deleted_at || null
   };
 }
 
@@ -176,6 +177,43 @@ async function listExpiredJobs(cutoff, limit = 100) {
   return result.rows.map(mapJob);
 }
 
+async function softDeleteJobForOwner(jobId, ownerUsername) {
+  const result = await query(
+    `
+    UPDATE journal_entry_jobs
+    SET deleted_at = NOW(),
+        source_path = NULL,
+        result_path = NULL,
+        export_path = NULL,
+        updated_at = NOW()
+    WHERE id = $1 AND owner_username = $2 AND deleted_at IS NULL
+      AND status IN ('draft', 'completed', 'failed')
+    RETURNING *
+    `,
+    [jobId, ownerUsername]
+  );
+  return mapJob(result.rows[0]);
+}
+
+async function listDeletedJobs(cutoff, limit = 100) {
+  const safeLimit = Math.max(1, Math.min(500, Number(limit) || 100));
+  const result = await query(
+    `
+    SELECT * FROM journal_entry_jobs
+    WHERE deleted_at IS NOT NULL AND deleted_at < $1
+    ORDER BY deleted_at ASC
+    LIMIT $2
+    `,
+    [cutoff, safeLimit]
+  );
+  return result.rows.map(mapJob);
+}
+
+async function listAllJobIds() {
+  const result = await query('SELECT id FROM journal_entry_jobs');
+  return result.rows.map((row) => row.id);
+}
+
 async function deleteJobForOwner(jobId, ownerUsername) {
   const result = await query(
     `DELETE FROM journal_entry_jobs WHERE id = $1 AND owner_username = $2 RETURNING id`,
@@ -202,5 +240,8 @@ module.exports = {
   listJobsByStatus,
   listExpiredJobs,
   deleteJobForOwner,
+  softDeleteJobForOwner,
+  listDeletedJobs,
+  listAllJobIds,
   deleteJobById
 };

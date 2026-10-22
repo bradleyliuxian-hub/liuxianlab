@@ -11,8 +11,11 @@
     "user:create": "node create-user.js",
     "user:list": "node list-users.js",
     "test": "node --test tests/contracts/*.test.js tests/excel-decimal-check/*.test.js tests/excel-hardcode-check/*.test.js tests/excel-review/*.test.js tests/journal-entry/*.test.js tests/purchase-reconciliation/*.test.js tests/equity-structure/*.test.js tests/flowchart-excel/*.test.js",
+    "smoke:journal-entry": "node scripts/smoke-journal-entry.js",
+    "e2e:journal-entry": "node scripts/e2e-journal-entry.js",
     "bench:hardcode": "node scripts/local/hardcode-benchmark.js",
-    "deploy:prod": "bash scripts/local/deploy-production.sh"
+    "deploy:prod": "bash scripts/local/deploy-production.sh",
+    "cleanup:journal-entry": "node scripts/local/cleanup-journal-entry.js"
   },
   "engines": {
     "node": ">=20"
@@ -29,5 +32,8 @@
     "pdfjs-dist": "^6.4.299",
     "pg": "^8.23.1",
     "session-file-store": "^1.5.0"
+  },
+  "devDependencies": {
+    "puppeteer-core": "^25.15.0"
   }
 }

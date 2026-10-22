@@ -58,8 +58,8 @@ def build_inspection(job_dir: Path) -> dict:
     headers = []
     data_row_count = 0
     if header_row:
-        headers, rows, _ = reader.read_table(selected, int(header_row))
-        data_row_count = len(rows)
+        headers = reader.read_header(selected, int(header_row))
+        data_row_count = max(0, int(inspection.sheet.max_row) - int(header_row))
 
     mapping_error = None
     suggested = {}
@@ -71,6 +71,9 @@ def build_inspection(job_dir: Path) -> dict:
     if headers:
         try:
             explicit_meta = {}
+            saved_mapping = request.get("mapping")
+            if isinstance(saved_mapping, dict):
+                explicit_meta.update(saved_mapping)
             if request.get("amountLayout"):
                 explicit_meta["amount_layout"] = request.get("amountLayout")
             if request.get("positiveSide"):

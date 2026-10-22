@@ -10,7 +10,11 @@
  *   POST   /api/journal-entry-analyses/:id/preview        mapping validation
  *   POST   /api/journal-entry-analyses/:id/start          queue async analysis
  *   GET    /api/journal-entry-analyses/:id                status/progress
- *   GET    /api/journal-entry-analyses/:id/result         result JSON
+ *   GET    /api/journal-entry-analyses/:id/summary        lightweight dashboard summary
+ *   GET    /api/journal-entry-analyses/:id/vouchers       paged compact voucher rows
+ *   GET    /api/journal-entry-analyses/:id/vouchers/detail?key=... lazy voucher detail
+ *   GET    /api/journal-entry-analyses/:id/findings       paged compact findings
+ *   GET    /api/journal-entry-analyses/:id/result         canonical result JSON (legacy/internal)
  *   GET    /api/journal-entry-analyses/:id/export         report.xlsx
  *   DELETE /api/journal-entry-analyses/:id                delete draft/finished
  *
@@ -23,10 +27,12 @@ const express = require('express');
 const multer = require('multer');
 
 const repository = require('./repository');
+const batchRepository = require('./batch-repository');
+const { safeRemove } = require('./storage-safety');
 const { createDraftJobFromBuffer, JobCreationError } = require('./job-factory');
-const { createPreviewRunner } = require('./preview-runner');
-const { createJournalEntryRunner } = require('./parse-runner');
+const { getJournalEntryRuntime } = require('./runtime');
 const { repairMojibake } = require('../excel-review/encoding');
+const uiProjection = require('./ui-projection');
 
 const MAX_FILE_SIZE = 25 * 1024 * 1024;
 const MAX_HISTORY = 50;
@@ -36,12 +42,37 @@ const ALLOWED_MIME = new Set([
   'application/vnd.ms-excel',
   'application/octet-stream'
 ]);
-const AMOUNT_LAYOUTS = new Set(['direction_amount', 'debit_credit']);
+const AMOUNT_LAYOUTS = new Set([
+  'direction_amount', 'debit_credit', 'signed_amount'
+]);
 const POSITIVE_SIDES = new Set(['debit', 'credit']);
 const MAPPING_FIELDS = new Set([
   'date', 'voucher_id', 'account_code', 'account_name', 'description',
-  'currency', 'direction', 'debit', 'credit', 'amount', 'original_amount'
+  'currency', 'direction', 'debit', 'credit', 'amount', 'signed_amount',
+  'line_id', 'customer_code', 'customer_name', 'supplier_code',
+  'supplier_name', 'counterparty_code', 'counterparty_name',
+  'original_amount'
 ]);
+const AMOUNT_LAYOUT_META = [
+  {
+    value: 'direction_amount',
+    label: '方向 + 金额两列',
+    requiredFields: ['direction', 'amount'],
+    positiveSideRequired: false
+  },
+  {
+    value: 'debit_credit',
+    label: '借方、贷方两列',
+    requiredFields: ['debit', 'credit'],
+    positiveSideRequired: false
+  },
+  {
+    value: 'signed_amount',
+    label: '单金额列（正负金额）',
+    requiredFields: ['signed_amount'],
+    positiveSideRequired: true
+  }
+];
 
 function validJobId(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -75,6 +106,12 @@ function publicJob(job) {
     sheetName: job.sheetName,
     headerRow: job.headerRow,
     amountLayout: job.amountLayout,
+    positiveSide: job.requestJson?.positiveSide || null,
+    configured: Boolean(
+      job.requestJson
+      && job.requestJson.mapping
+      && Object.keys(job.requestJson.mapping).length
+    ),
     createdAt: job.createdAt,
     updatedAt: job.updatedAt,
     completedAt: job.completedAt,
@@ -109,6 +146,22 @@ function cleanMapping(value) {
   return mapping;
 }
 
+function validateLayoutAndSide(amountLayout, positiveSide, { requirePositiveSide }) {
+  if (amountLayout && !AMOUNT_LAYOUTS.has(amountLayout)) {
+    throw new ValidationError('金额布局不正确。');
+  }
+  if (positiveSide && !POSITIVE_SIDES.has(positiveSide)) {
+    throw new ValidationError('正数方向不正确。');
+  }
+  if (
+    requirePositiveSide
+    && amountLayout === 'signed_amount'
+    && !positiveSide
+  ) {
+    throw new ValidationError('单金额列需要选择正数代表借方还是贷方。');
+  }
+}
+
 function normalizeInspectionRequest(body) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
     throw new ValidationError('请求参数不正确。');
@@ -121,13 +174,8 @@ function normalizeInspectionRequest(body) {
   }
   const mapping = cleanMapping(body.mapping);
   const amountLayout = body.amountLayout ? String(body.amountLayout) : null;
-  if (amountLayout && !AMOUNT_LAYOUTS.has(amountLayout)) {
-    throw new ValidationError('金额布局不正确。');
-  }
   const positiveSide = body.positiveSide ? String(body.positiveSide) : null;
-  if (positiveSide && !POSITIVE_SIDES.has(positiveSide)) {
-    throw new ValidationError('正数方向不正确。');
-  }
+  validateLayoutAndSide(amountLayout, positiveSide, { requirePositiveSide: false });
   return { sheetName, headerRow, mapping, amountLayout, positiveSide };
 }
 
@@ -143,13 +191,8 @@ function normalizeRequest(body) {
   if (!headerRow) throw new ValidationError('表头行号不正确。');
   const mapping = cleanMapping(body.mapping);
   const amountLayout = body.amountLayout ? String(body.amountLayout) : null;
-  if (amountLayout && !AMOUNT_LAYOUTS.has(amountLayout)) {
-    throw new ValidationError('金额布局不正确。');
-  }
   const positiveSide = body.positiveSide ? String(body.positiveSide) : null;
-  if (positiveSide && !POSITIVE_SIDES.has(positiveSide)) {
-    throw new ValidationError('正数方向不正确。');
-  }
+  validateLayoutAndSide(amountLayout, positiveSide, { requirePositiveSide: true });
   return { sheetName, headerRow, mapping, amountLayout, positiveSide };
 }
 
@@ -174,17 +217,18 @@ function storageFilePath(root, storageRoot, relative) {
   return abs;
 }
 
-function createJournalEntryRouter({ root, requireAuth, sameOriginForStateChange }) {
+function createJournalEntryRouter({
+  root,
+  requireAuth,
+  sameOriginForStateChange,
+  runtime
+}) {
   const router = express.Router();
-  const storageRoot = path.join(root, 'storage', 'journal-entry');
-  fs.mkdirSync(storageRoot, { recursive: true, mode: 0o700 });
-  const previewRunner = createPreviewRunner({ root });
-  const runner = createJournalEntryRunner({
+  const journalRuntime = runtime || getJournalEntryRuntime({
     root,
-    repository,
-    storageRoot,
-    maxConcurrent: Number(process.env.JOURNAL_ENTRY_MAX_CONCURRENT || 1)
+    repository
   });
+  const { storageRoot, previewRunner, runner } = journalRuntime;
 
   const upload = multer({
     storage: multer.memoryStorage(),
@@ -231,12 +275,17 @@ function createJournalEntryRouter({ root, requireAuth, sameOriginForStateChange 
     writeJsonAtomic(path.join(dir, 'request.json'), requestPayload(normalized));
   }
 
-  async function applyInspection(job, inspection) {
+  async function applyInspection(job, inspection, extra = {}) {
     const sheetName = inspection.selectedSheet || inspection.sheetName || job.sheetName || null;
     const headerRow = Number(inspection.headerRow) || job.headerRow || null;
     const amountLayout = inspection.amountLayout?.layout || job.amountLayout || null;
-    if (sheetName || headerRow || amountLayout) {
-      return repository.updateJobState(job.id, { sheetName, headerRow, amountLayout });
+    if (sheetName || headerRow || amountLayout || Object.keys(extra).length) {
+      return repository.updateJobState(job.id, {
+        sheetName,
+        headerRow,
+        amountLayout,
+        ...extra
+      });
     }
     return job;
   }
@@ -245,10 +294,7 @@ function createJournalEntryRouter({ root, requireAuth, sameOriginForStateChange 
     res.json({
       maxFileSizeBytes: MAX_FILE_SIZE,
       extensions: ['.xls', '.xlsx'],
-      amountLayouts: [
-        { value: 'direction_amount', label: '方向 + 金额两列' },
-        { value: 'debit_credit', label: '借方、贷方两列' }
-      ],
+      amountLayouts: AMOUNT_LAYOUT_META,
       positiveSides: [
         { value: 'debit', label: '正数表示借方' },
         { value: 'credit', label: '正数表示贷方' }
@@ -264,11 +310,27 @@ function createJournalEntryRouter({ root, requireAuth, sameOriginForStateChange 
         { key: 'debit', label: '借方金额' },
         { key: 'credit', label: '贷方金额' },
         { key: 'amount', label: '金额（方向+金额）' },
+        { key: 'signed_amount', label: '金额（正负单列）' },
+        { key: 'line_id', label: '外部行号' },
+        { key: 'customer_code', label: '客户编码' },
+        { key: 'customer_name', label: '客户名称' },
+        { key: 'supplier_code', label: '供应商编码' },
+        { key: 'supplier_name', label: '供应商名称' },
+        { key: 'counterparty_code', label: '往来单位编码' },
+        { key: 'counterparty_name', label: '往来单位名称' },
         { key: 'original_amount', label: '原币金额' }
       ],
       maxConcurrent: runner.maxConcurrent,
       retentionHours: runner.retentionHours,
-      polling: true
+      polling: true,
+      resultPageSize: uiProjection.DEFAULT_PAGE_SIZE,
+      resultPageSizeMax: uiProjection.MAX_PAGE_SIZE,
+      resultProjectionVersion: 1,
+      recommendedInteractiveRows: 300000,
+      legacyProjectionMaxBytes: Number(
+        process.env.JOURNAL_ENTRY_LEGACY_PROJECTION_MAX_BYTES
+          || uiProjection.DEFAULT_LEGACY_MAX_BYTES
+      )
     });
   });
 
@@ -339,7 +401,19 @@ function createJournalEntryRouter({ root, requireAuth, sameOriginForStateChange 
         return res.status(409).json({ error: '只有待确认的任务可以重新识别。' });
       }
       const normalized = normalizeInspectionRequest(req.body);
-      writeJobRequest(job, normalized);
+      const saved = job.requestJson && typeof job.requestJson === 'object'
+        ? job.requestJson
+        : {};
+      const mergedRequest = {
+        sheetName: normalized.sheetName || saved.sheetName || '',
+        headerRow: normalized.headerRow || saved.headerRow || null,
+        amountLayout: normalized.amountLayout || saved.amountLayout || null,
+        positiveSide: normalized.positiveSide || saved.positiveSide || null,
+        mapping: Object.keys(normalized.mapping).length
+          ? normalized.mapping
+          : (saved.mapping || {})
+      };
+      writeJobRequest(job, mergedRequest);
       const inspection = await previewRunner.run({
         jobDir: runner.jobDir(job.id),
         mode: 'inspect'
@@ -347,7 +421,15 @@ function createJournalEntryRouter({ root, requireAuth, sameOriginForStateChange 
       if (!inspection.ok) {
         return res.status(422).json({ error: errorMessage(inspection, '无法识别工作簿。') });
       }
-      const updated = await applyInspection(job, inspection);
+      const updated = await applyInspection(job, {
+        ...inspection,
+        amountLayout: {
+          ...(inspection.amountLayout || {}),
+          layout: mergedRequest.amountLayout || inspection.amountLayout?.layout || null
+        }
+      }, {
+        requestJson: requestPayload(mergedRequest)
+      });
       return res.json({ job: publicJob(updated), inspection });
     } catch (error) {
       if (error instanceof ValidationError) {
@@ -389,6 +471,8 @@ function createJournalEntryRouter({ root, requireAuth, sameOriginForStateChange 
             || preview.mapping?.amount_layout?.layout
             || null
         }
+      }, {
+        requestJson: requestPayload(normalized)
       });
       return res.json({ job: publicJob(updated), preview });
     } catch (error) {
@@ -441,6 +525,93 @@ function createJournalEntryRouter({ root, requireAuth, sameOriginForStateChange 
       return res.status(202).json({ job: publicJob(queued) });
     } catch (error) {
       return next(error);
+    }
+  });
+
+  function completedProjection(job) {
+    const resultFile = storageFilePath(root, storageRoot, job.resultPath);
+    if (!resultFile || !fs.existsSync(resultFile)) {
+      throw new uiProjection.ProjectionError('结果文件已过期，请重新分析。', 410);
+    }
+    return uiProjection.ensureProjection({
+      root,
+      jobId: job.id,
+      jobDir: runner.jobDir(job.id),
+      resultFile
+    });
+  }
+
+  function uiError(res, error) {
+    if (error instanceof uiProjection.ProjectionError) {
+      return res.status(error.status).json({ error: error.message });
+    }
+    throw error;
+  }
+
+  router.get('/:id/summary', requireAuth, async (req, res, next) => {
+    try {
+      const job = await getOwnedJob(req, res);
+      if (!job) return;
+      if (job.status !== 'completed') {
+        return res.status(409).json({ error: '结果尚未生成。' });
+      }
+      const uiDir = completedProjection(job);
+      res.set('Cache-Control', 'private, no-store');
+      return res.json(uiProjection.summary(job.id, uiDir));
+    } catch (error) {
+      try { return uiError(res, error); } catch (thrown) { return next(thrown); }
+    }
+  });
+
+  router.get('/:id/vouchers', requireAuth, async (req, res, next) => {
+    try {
+      const job = await getOwnedJob(req, res);
+      if (!job) return;
+      if (job.status !== 'completed') {
+        return res.status(409).json({ error: '结果尚未生成。' });
+      }
+      const uiDir = completedProjection(job);
+      const result = await uiProjection.queryVouchers(job.id, uiDir, req.query || {});
+      res.set('Cache-Control', 'private, no-store');
+      return res.json(result);
+    } catch (error) {
+      try { return uiError(res, error); } catch (thrown) { return next(thrown); }
+    }
+  });
+
+  router.get('/:id/vouchers/detail', requireAuth, async (req, res, next) => {
+    try {
+      const job = await getOwnedJob(req, res);
+      if (!job) return;
+      if (job.status !== 'completed') {
+        return res.status(409).json({ error: '结果尚未生成。' });
+      }
+      const key = typeof req.query.key === 'string' ? req.query.key : '';
+      if (!key || key.length > 1000) {
+        return res.status(400).json({ error: '凭证标识不正确。' });
+      }
+      const uiDir = completedProjection(job);
+      const detail = uiProjection.readDetail(job.id, uiDir, key);
+      res.set('Cache-Control', 'private, no-store');
+      return res.json(detail);
+    } catch (error) {
+      try { return uiError(res, error); } catch (thrown) { return next(thrown); }
+    }
+  });
+
+  router.get('/:id/findings', requireAuth, async (req, res, next) => {
+    try {
+      const job = await getOwnedJob(req, res);
+      if (!job) return;
+      if (job.status !== 'completed') {
+        return res.status(409).json({ error: '结果尚未生成。' });
+      }
+      const uiDir = completedProjection(job);
+      const rows = uiProjection.findingRows(job.id, uiDir);
+      res.set('Cache-Control', 'private, no-store');
+      return res.json(uiProjection.queryFindings(rows, req.query || {}));
+    } catch (error) {
+      try { return uiError(res, error); } catch (thrown) { return next(thrown); }
     }
   });
 
@@ -498,8 +669,22 @@ function createJournalEntryRouter({ root, requireAuth, sameOriginForStateChange 
       if (job.status === 'queued' || job.status === 'running') {
         return res.status(409).json({ error: '分析进行中，暂时不能删除。' });
       }
-      await repository.deleteJobForOwner(job.id, ownerUsername(req));
-      try { fs.rmSync(runner.jobDir(job.id), { recursive: true, force: true }); } catch (_) {}
+      const deleted = await repository.softDeleteJobForOwner(
+        job.id,
+        ownerUsername(req)
+      );
+      if (!deleted) {
+        return res.status(409).json({ error: '任务状态已变化，暂时不能删除。' });
+      }
+      await batchRepository.deleteItemsForJob(job.id);
+      uiProjection.invalidate(job.id);
+      const result = safeRemove(
+        path.join(root, 'storage', 'journal-entry'),
+        path.join(root, 'storage', 'journal-entry', String(job.id))
+      );
+      if (!result.ok) {
+        console.error('[journal-entry delete] file cleanup failed');
+      }
       return res.json({ ok: true });
     } catch (error) {
       next(error);

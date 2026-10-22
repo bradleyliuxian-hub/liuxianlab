@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="description" content="Liuxian Lab 序时账分析工具" />
   <title>序时账分析 · Liuxian Lab</title>
-  <link rel="stylesheet" href="/design-tokens.css?v=1.0.0" />
-  <link rel="stylesheet" href="/app/app-shell.css?v=1.0.0" />
-  <link rel="stylesheet" href="/app/tools/journal-entry-analysis/styles.css?v=1.0.0" />
+  <link rel="stylesheet" href="/design-tokens.css?v=1.3.0" />
+  <link rel="stylesheet" href="/app/app-shell.css?v=1.3.0" />
+  <link rel="stylesheet" href="/app/tools/journal-entry-analysis/styles.css?v=1.3.0" />
 </head>
 <body>
   <div class="page-shell">
@@ -18,8 +18,9 @@
         <div><strong>序时账分析</strong><small>Liuxian Lab / Journal Entry Analysis</small></div>
       </div>
       <div class="header-actions">
-        <span class="version-chip" title="当前工具版本">v1.0.0</span>
+        <span class="version-chip" title="当前工具版本">v1.3.1</span>
         <span class="private-badge"><i></i>私有处理</span>
+        <a class="ghost-button" id="batchWorkspaceLink" href="batch.html">批量分析</a>
         <button class="ghost-button" id="newJobButton" type="button">新建分析</button>
       </div>
     </header>
@@ -29,12 +30,28 @@
         <p class="eyebrow">JOURNAL ENTRY ANALYSIS</p>
         <h1>从序时账到可复核的凭证结论。</h1>
         <p>上传 <code>.xls</code> / <code>.xlsx</code>，确认工作表、表头与字段映射，系统在后台完成清洗、凭证汇总、业务分类、对方科目与异常凭证分析。原始文件不会被修改；结果和导出文件仅归属于当前登录用户。</p>
+        <details class="version-notes">
+          <summary>v1.3.1 更新说明</summary>
+          <ul>
+            <li>结果页改为轻量索引 + 服务器分页：浏览器不再下载完整 result.json。</li>
+            <li>凭证明细、业务分类、对方科目和异常发现按需加载；大型结果首屏独立于完整结果大小。</li>
+            <li>新增 300k 行结果浏览验证；历史小任务会自动生成轻量索引，超大历史任务需重新分析。</li>
+            <li>新增“批量分析”工作台：一次上传最多 20 个 Excel，逐文件配置后统一开始。</li>
+            <li>每个文件仍使用独立子任务、独立结果与独立 Excel 报告，不合并跨文件数据。</li>
+            <li>新增批量进度、逐文件状态、批量历史与单文件配置入口。</li>
+            <li>新增“筛选与拆分导出”：先筛选、再按科目/客户/供应商/月份等拆分，支持多 Sheet 或 ZIP。</li>
+            <li>新增安全删除与保留策略：可删除单文件任务/批次/拆分输出；过期输出提示重新生成。</li>
+            <li>大批量报告/拆分导出改为后台生成，页面轮询进度；失败会显示原因并清理临时文件。</li>
+            <li>修复分析完成瞬间结果尚未落盘时偶发“结果尚未生成”。</li>
+            <li>优化大文件上传检查，接近 25 MB 的文件也能快速完成工作表识别。</li>
+          </ul>
+        </details>
       </section>
 
       <section class="workspace-card" id="uploadPanel">
         <div class="card-heading">
           <div><span class="step-no">01</span><div><h2>上传序时账</h2><p>支持 Excel 97-2003 <code>.xls</code> 与 <code>.xlsx</code>；单个文件最大 25 MB。</p></div></div>
-          <span class="profile-chip">Journal Entry v1.0.0</span>
+          <span class="profile-chip">Journal Entry v1.3.1</span>
         </div>
 
         <label class="drop-zone" id="dropZone" for="fileInput">
@@ -85,16 +102,20 @@
             <select id="amountLayoutSelect">
               <option value="direction_amount">方向 + 金额两列</option>
               <option value="debit_credit">借方、贷方两列</option>
+              <option value="signed_amount">单金额列（正负金额）</option>
             </select>
           </label>
           <label class="field-control" id="positiveSideControl">
-            <span>正数方向</span>
-            <select id="positiveSideSelect">
-              <option value="">自动判断</option>
+            <span>正数表示</span>
+            <select id="positiveSideSelect" aria-describedby="signedAmountHint mappingError" aria-required="false" aria-invalid="false">
+              <option value="">请选择（必填）</option>
               <option value="debit">正数表示借方</option>
               <option value="credit">正数表示贷方</option>
             </select>
           </label>
+        </div>
+        <div class="signed-amount-hint" id="signedAmountHint" hidden>
+          请根据原始账套定义确认正数代表借方还是贷方。系统不会自动推断该方向。
         </div>
 
         <div class="header-candidates" id="headerCandidates"></div>
@@ -138,6 +159,7 @@
           <div><span class="step-no">05</span><div><h2>分析结果</h2><p id="resultSubtitle">—</p></div></div>
           <div class="result-actions">
             <button class="ghost-button" id="refreshResultButton" type="button">刷新</button>
+            <a class="ghost-button" id="splitLink" href="#" hidden>筛选与拆分导出</a>
             <a class="primary-button" id="exportButton" href="#" hidden>导出 Excel 报告 <span>↓</span></a>
           </div>
         </div>
@@ -157,6 +179,8 @@
         <div class="pager" id="resultPager"></div>
       </section>
 
+      <p class="retention-note">分析文件与导出结果按系统保留策略自动清理；请及时下载需要留存的报告。</p>
+
       <section class="workspace-card" id="historyPanel">
         <div class="card-heading">
           <div><span class="step-no">H</span><div><h2>历史任务</h2><p>仅显示当前登录用户的任务；完成结果可在有效期内重新打开。</p></div></div>
@@ -166,7 +190,7 @@
       </section>
     </main>
 
-    <footer class="tool-footer"><span>Liuxian Lab</span><span>Journal Entry Analysis v1.0.0</span></footer>
+    <footer class="tool-footer"><span>Liuxian Lab</span><span>Journal Entry Analysis v1.3.1</span></footer>
   </div>
 
   <div class="detail-backdrop" id="detailBackdrop" hidden></div>
@@ -179,7 +203,7 @@
   </aside>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script src="/app/app-shell.js?v=1.0.0"></script>
-  <script src="/app/tools/journal-entry-analysis/script.js?v=1.0.0"></script>
+  <script src="/app/app-shell.js?v=1.3.0"></script>
+  <script src="/app/tools/journal-entry-analysis/script.js?v=1.3.0"></script>
 </body>
 </html>

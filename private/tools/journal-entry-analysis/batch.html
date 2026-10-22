@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Liuxian Lab 序时账批量分析工作台" />
+  <title>序时账批量分析 · Liuxian Lab</title>
+  <link rel="stylesheet" href="/design-tokens.css?v=1.3.0" />
+  <link rel="stylesheet" href="/app/app-shell.css?v=1.3.0" />
+  <link rel="stylesheet" href="/app/tools/journal-entry-analysis/styles.css?v=1.3.0" />
+  <link rel="stylesheet" href="/app/tools/journal-entry-analysis/batch.css?v=1.3.0" />
+</head>
+<body>
+  <div class="page-shell">
+    <header class="tool-header">
+      <a class="back-link" href="index.html" aria-label="返回单文件分析">←</a>
+      <div class="tool-brand">
+        <span class="tool-mark">JB</span>
+        <div><strong>序时账批量分析</strong><small>Liuxian Lab / Batch Workspace</small></div>
+      </div>
+      <div class="header-actions">
+        <span class="version-chip" title="当前工具版本">v1.3.1</span>
+        <span class="private-badge"><i></i>私有处理</span>
+        <a class="ghost-button" href="index.html">单文件分析</a>
+      </div>
+    </header>
+
+    <main class="tool-main je-main">
+      <section class="intro-section">
+        <p class="eyebrow">JOURNAL ENTRY BATCH</p>
+        <h1>一次上传，逐文件复核。</h1>
+        <p>批量上传最多 20 个 Excel，系统为每个文件创建独立子任务。每个文件仍使用自己的 Sheet、表头、金额布局和字段映射；分析结果与 Excel 报告也保持逐文件独立。</p>
+        <details class="version-notes">
+          <summary>v1.3.1 更新说明</summary>
+          <ul>
+            <li>结果页改为轻量索引 + 服务器分页：浏览器不再下载完整 result.json。</li>
+            <li>凭证明细、业务分类、对方科目和异常发现按需加载；大型结果首屏独立于完整结果大小。</li>
+            <li>新增 300k 行结果浏览验证；历史小任务会自动生成轻量索引，超大历史任务需重新分析。</li>
+            <li>新增多文件批量工作台：上传、逐文件配置、统一开始、批量进度。</li>
+            <li>每个子任务继续使用单文件 inspect / preview / worker / result / export。</li>
+            <li>批量历史与逐文件结果入口；不合并跨文件数据。</li>
+            <li>新增筛选与拆分导出入口（按科目/客户/供应商/月份等拆分）。</li>
+            <li>新增删除批次/删除输出；批次删除保留独立单文件结果。</li>
+            <li>大批量报告/拆分导出改为后台生成，页面轮询进度；失败会显示原因并清理临时文件。</li>
+            <li>修复分析完成瞬间结果尚未落盘时偶发“结果尚未生成”。</li>
+            <li>优化大文件上传检查，接近 25 MB 的文件也能快速完成工作表识别。</li>
+          </ul>
+        </details>
+      </section>
+
+      <section class="workspace-card" id="batchUploadPanel">
+        <div class="card-heading">
+          <div><span class="step-no">01</span><div><h2>选择批量文件</h2><p id="batchLimits">最多 20 个文件，单个 25 MB，总计 100 MB。</p></div></div>
+          <span class="profile-chip">Batch v1.3.1</span>
+        </div>
+
+        <label class="drop-zone" id="batchDropZone" for="batchFileInput">
+          <input id="batchFileInput" type="file" multiple accept=".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden />
+          <span class="drop-icon">↥</span>
+          <strong>拖入多个序时账，或点击选择文件</strong>
+          <small>支持 .xls / .xlsx · 同名文件会分别保留 · 上传后逐文件确认映射</small>
+        </label>
+
+        <div class="batch-file-list" id="batchFileList"></div>
+        <div class="upload-progress" id="batchUploadProgress" hidden>
+          <div class="progress-track"><span id="batchUploadBar"></span></div>
+          <small id="batchUploadText">正在上传…</small>
+        </div>
+        <div class="upload-actions">
+          <p>上传只会创建待配置子任务，不会立即开始分析。</p>
+          <button class="primary-button" id="batchUploadButton" type="button" disabled>上传并创建批量任务 <span>→</span></button>
+        </div>
+        <div class="error-box" id="batchError" hidden></div>
+      </section>
+
+      <section class="workspace-card" id="batchWorkspacePanel" hidden>
+        <div class="card-heading">
+          <div><span class="step-no">02</span><div><h2 id="batchTitle">批量任务</h2><p id="batchSubtitle">逐文件完成映射后，统一开始分析。</p></div></div>
+          <div class="result-actions">
+            <span class="job-status" id="batchStatus">DRAFT</span>
+            <span class="batch-ready-meta" id="batchReadyMeta"></span>
+            <button class="ghost-button" id="batchRefreshButton" type="button">刷新</button>
+            <a class="ghost-button" id="batchSplitLink" href="#" hidden>筛选与拆分</a>
+            <button class="ghost-button" id="deleteBatchButton" type="button">删除批次</button>
+            <button class="primary-button batch-start" id="batchStartButton" type="button">开始全部已就绪</button>
+          </div>
+        </div>
+
+        <div class="batch-progress">
+          <div class="progress-track large"><span id="batchProgressBar"></span></div>
+          <div class="progress-meta"><strong id="batchProgressValue">0%</strong><span id="batchProgressMeta"></span></div>
+        </div>
+        <div class="summary-metrics compact" id="batchMetrics"></div>
+        <div class="batch-summary">
+          <h3>已完成文件汇总</h3>
+          <div class="summary-metrics compact" id="batchSummaryMetrics"></div>
+          <p class="batch-summary-basis" id="batchSummaryBasis"></p>
+        </div>
+        <div class="batch-notice" id="batchNotice" hidden></div>
+        <div class="batch-output" id="batchOutputPanel">
+          <div class="batch-output-head">
+            <div><h3>批量输出</h3><p id="batchOutputMeta">尚未生成批量输出。</p></div>
+            <div class="batch-output-actions">
+              <a class="ghost-button" id="downloadSummary" data-output="summary" hidden>下载汇总表</a>
+              <a class="ghost-button" id="downloadMerged" data-output="merged" hidden>下载合并标准分录</a>
+              <a class="ghost-button" id="downloadZip" data-output="zip" hidden>下载批量报告 ZIP</a>
+              <button class="ghost-button" id="deleteBatchOutput" type="button" hidden>删除输出</button>
+              <button class="primary-button" id="batchGenerateOutput" type="button">生成/刷新批量输出</button>
+            </div>
+          </div>
+          <div class="error-box" id="batchOutputError" hidden></div>
+        </div>
+        <div class="batch-table-wrap" id="batchTableWrap"></div>
+        <div class="error-box" id="batchWorkspaceError" hidden></div>
+      </section>
+
+      <p class="retention-note">分析文件、批次输出与拆分结果按系统保留策略自动清理；请及时下载需要留存的报告。</p>
+
+      <section class="workspace-card" id="batchHistoryPanel">
+        <div class="card-heading">
+          <div><span class="step-no">H</span><div><h2>批量历史</h2><p>仅显示当前登录用户的批量任务；单个子任务仍可在单文件历史中查看。</p></div></div>
+          <button class="ghost-button" id="batchRefreshHistoryButton" type="button">刷新</button>
+        </div>
+        <div class="history-list" id="batchHistoryList"><p class="empty-note">正在载入批量历史…</p></div>
+      </section>
+    </main>
+
+    <footer class="tool-footer"><span>Liuxian Lab</span><span>Journal Entry Batch v1.3.1</span></footer>
+  </div>
+
+  <div class="config-backdrop" id="configBackdrop" hidden></div>
+  <section class="config-modal" id="configModal" hidden role="dialog" aria-modal="true" aria-label="文件配置">
+    <div class="config-head">
+      <div><p class="eyebrow">FILE CONFIGURATION</p><h2 id="configTitle">文件配置</h2><small>完成映射与预览后关闭此面板，返回批量工作台。</small></div>
+      <button class="icon-button" id="closeConfigButton" type="button" aria-label="关闭配置">×</button>
+    </div>
+    <iframe id="configFrame" title="序时账字段配置"></iframe>
+  </section>
+
+  <div class="toast" id="batchToast" role="status" aria-live="polite"></div>
+  <script src="/app/app-shell.js?v=1.3.0"></script>
+  <script src="/app/tools/journal-entry-analysis/batch.js?v=1.3.0"></script>
+</body>
+</html>

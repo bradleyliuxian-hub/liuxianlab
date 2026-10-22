@@ -195,3 +195,17 @@ class MappingErrorTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class CounterpartyMappingTests(unittest.TestCase):
+    def test_customer_supplier_counterparty_aliases(self):
+        from services.journal_entry.mapping import suggest_mapping
+        mapping = suggest_mapping([
+            "日期", "凭证号", "科目编码", "客户编码", "客户名称",
+            "供应商编码", "供应商名称", "往来单位", "借方金额", "贷方金额",
+        ])
+        self.assertEqual(mapping.get("customer_code").source_column, "客户编码")
+        self.assertEqual(mapping.get("customer_name").source_column, "客户名称")
+        self.assertEqual(mapping.get("supplier_code").source_column, "供应商编码")
+        self.assertEqual(mapping.get("supplier_name").source_column, "供应商名称")
+        self.assertEqual(mapping.get("counterparty_name").source_column, "往来单位")
+        self.assertIsNone(mapping.get("counterparty_code"))

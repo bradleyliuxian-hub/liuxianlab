@@ -6,7 +6,8 @@ Usage:
 
 Reads request.json + source.xlsx/source.xls from the job directory, runs the
 canonical normalization, business classification, contra analysis, and anomaly
-analysis, then writes result.json, report.xlsx, and status.json.
+analysis, then writes result.json, report.xlsx, the browser UI projection,
+and status.json. The UI projection is a transform of the canonical result only.
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ from .errors import JournalEntryError
 from .export import build_export
 from .job_io import normalize_request, read_json
 from .status import Reporter
+from .ui_projection import build_ui_projection
 
 EXPORT_FILENAME = "journal-entry-analysis-report.xlsx"
 RESULT_FILENAME = "result.json"
@@ -89,12 +91,24 @@ def run(job_dir: Path, reporter: Reporter) -> dict:
 
     export_path = job_dir / EXPORT_FILENAME
     build_export(export_path, payload)
-    reporter.update(98, "正在完成…")
+    reporter.update(97, "正在生成浏览索引…")
+    build_ui_projection(payload, job_dir / "ui")
+    reporter.update(99, "正在完成…")
+    cleaning = payload.get("cleaning_summary", {})
+    business = payload.get("business_classification_summary", {})
     reporter.finish(
         message="序时账分析完成。",
         progress=100,
         result={
+            "raw_row_count": cleaning.get("raw_row_count"),
+            "line_count": cleaning.get("line_count"),
             "voucher_count": len(normalization.entries),
+            "issue_count": cleaning.get("issue_count"),
+            "unbalanced_voucher_count": cleaning.get(
+                "unbalanced_voucher_count"
+            ),
+            "business_classified_count": business.get("classified_count"),
+            "business_voucher_count": business.get("voucher_count"),
             "finding_count": len(anomaly_result.findings),
             "finding_voucher_count": anomaly_result.summary.get(
                 "finding_voucher_count", 0

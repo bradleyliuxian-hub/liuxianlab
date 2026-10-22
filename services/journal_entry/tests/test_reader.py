@@ -72,6 +72,17 @@ class ReaderTests(unittest.TestCase):
             with self.assertRaises(WorkbookValidationError):
                 WorkbookReader(path)
 
+    def test_reads_synthetic_legacy_xls(self):
+        reader = WorkbookReader(FIXTURES / "journal_basic.xls")
+        sheets = reader.list_sheets()
+        self.assertEqual(len(sheets), 1)
+        self.assertEqual(sheets[0].name, "序时账")
+        self.assertEqual(sheets[0].max_row, 7)
+        self.assertEqual(sheets[0].max_column, 11)
+        headers, rows, _ = reader.read_table("序时账", 1)
+        self.assertEqual(headers[0], "日期")
+        self.assertEqual(len(rows), 6)
+
     def test_corrupt_xls_is_rejected_on_read(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "book.xls"
