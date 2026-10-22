@@ -6,8 +6,8 @@ Updated: 2026-10-22
 
 ## Git State
 
-- 分支：`main`；HEAD：`6ea15eeb4dba5037302232ef918c860f39a3cf7f`。
-- 工作区：dirty（Phase 1–4A 未提交成果；未 reset / checkout / stash / clean / commit / push）。
+- 分支：`main`；HEAD：`f437782dce2ed87797cb5e3e9f02c76d834473a2`；与 `origin/main` 一致。
+- 工作区：clean（v1.3.2 Export Columns 已提交并推送；本次 resume 仅校正状态与索引文档）。
 - 生产：未部署；未改生产数据库。
 
 ## Current Focus
@@ -79,12 +79,12 @@ Flowchart-to-Excel 仍为 PAUSED / Coming Soon。
 
 ## Pending Decision
 
-- 是否 commit / push Phase 1–4A 变更并进入生产部署窗口。
-- 部署前必须确认生产库执行 `002_journal_entry_batches.sql`，并保持 PM2 单实例（进程内队列）。
-- Phase 5B.1 结论为 LARGE RESULT DELIVERY READY；是否按此进入生产部署窗口，以及生产 RAM/proxy/disk 验证安排。
+- Phase 1–5B 与 v1.3.2 已全部 commit / push（HEAD `f437782`）；是否进入生产部署窗口。
+- 部署前必须确认生产库执行 `002`–`006` migrations，并保持 PM2 单实例（进程内队列）。
+- 生产 RAM / proxy / disk 验证安排；300k preview/start 同步请求约 65 s，Nginx 超时需实测。
 
 ## Next Action
 
-- 决定是否 commit / push Phase 1–5B 变更；不自动提交。
-- 在生产窗口应用 002–006 migrations，并确认 PM2 fork/单实例、Nginx 100 MB 上传/600 s 输出超时、磁盘与 RAM 余量。
+- 若继续开发：P1 批量合并导出列选择器 → P2 单文件报告列选择器（均非阻塞）。
+- 若上线：先做部署 preflight，再在生产窗口应用 002–006 migrations，确认 PM2 fork/单实例、Nginx 100 MB 上传/600 s 输出超时、磁盘与 RAM 余量。
 - 部署后在真实登录浏览器复核批量工作台、拆分页与 v1.3.2 更新说明。

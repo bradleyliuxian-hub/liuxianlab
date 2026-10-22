@@ -23,6 +23,17 @@ against code and Git; this index only routes, it is not a source of truth.
 
 Frontend tools are Vanilla HTML/CSS/JS. Do not introduce React/Vue/Tailwind without explicit approval.
 
+## 序时账分析 （journal-entry / `/tools/journal-entry-analysis`）
+
+| Item | Location |
+|---|---|
+| Docs | `docs/agent/journal-entry-analysis/*`（start at `web-integration.md`；checkpoints: `phase5b-checkpoint.md`, `phase5b1-report.md`） |
+| Node | `server/journal-entry/`（routes、batch-routes、split-routes/presets、runtime、repository、export-columns、ui-projection、cleanup） |
+| Python | `services/journal_entry/`（reader、mapping、normalize、business、contra、anomaly、export、batch_output、split_export、worker） |
+| Frontend | `private/tools/journal-entry-analysis/`（`index.html`、`batch.html`、`split.html`） |
+| Migrations | `server/journal-entry/migrations/001..006` |
+| Tests | `tests/journal-entry/*`, `services/journal_entry/tests/*` |
+
 ## Excel Review （批注整理 / `/tools/excel-review`）
 
 | Item | Location |
