@@ -101,6 +101,25 @@ const fakeRunner = {
       }
     };
   },
+  async generateReport(request) {
+    const dir = path.join(tempRoot, 'generated-report', String(Date.now()));
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, 'custom-analysis-report.xlsx');
+    fs.writeFileSync(file, 'fake-report');
+    return {
+      ok: true,
+      dir,
+      file,
+      payload: {
+        output_file: 'custom-analysis-report.xlsx',
+        candidate_line_count: 10,
+        included_line_count: request.row_selection_mode === 'only_selected'
+          ? (request.included_rows || []).length
+          : 10 - (request.excluded_rows || []).length,
+        included_voucher_count: 5
+      }
+    };
+  },
   async generate(request) {
     const dir = path.join(tempRoot, 'generated', String(Date.now()));
     fs.mkdirSync(dir, { recursive: true });
@@ -227,6 +246,35 @@ test('standard export returns a workbook and rejects candidate mismatch', async 
   assert.equal(await response.text(), 'fake-xlsx');
 
   const mismatch = await post('/api/journal-entry-standard-exports/export', spec({
+    expectedCandidateLineCount: 9
+  }));
+  assert.equal(mismatch.status, 409);
+});
+
+
+test('custom full report export is job-only and owner scoped', async () => {
+  const response = await fetch(`${base}/api/journal-entry-standard-exports/report`, {
+    method: 'POST',
+    headers: { 'x-user': 'tester', 'Content-Type': 'application/json' },
+    body: JSON.stringify(spec({ expectedCandidateLineCount: 10 }))
+  });
+  assert.equal(response.status, 200);
+  assert.equal(await response.text(), 'fake-report');
+
+  const batch = await post('/api/journal-entry-standard-exports/report', spec({
+    scopeType: 'batch',
+    scopeId: BATCH_ID
+  }));
+  assert.equal(batch.status, 422);
+
+  const hidden = await fetch(`${base}/api/journal-entry-standard-exports/report`, {
+    method: 'POST',
+    headers: { 'x-user': 'someone-else', 'Content-Type': 'application/json' },
+    body: JSON.stringify(spec())
+  });
+  assert.equal(hidden.status, 404);
+
+  const mismatch = await post('/api/journal-entry-standard-exports/report', spec({
     expectedCandidateLineCount: 9
   }));
   assert.equal(mismatch.status, 409);

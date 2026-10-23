@@ -101,6 +101,40 @@ function createStandardExportRunner({ root, storageRoot }) {
     }
   }
 
+  async function generateReport(request) {
+    const dir = path.join(tempRoot, crypto.randomUUID());
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const requestFile = path.join(dir, 'request.json');
+    const outputFile = path.join(dir, 'result.json');
+    fs.writeFileSync(requestFile, `${JSON.stringify(request)}\n`, { mode: 0o600 });
+    const run = await runPython({
+      root,
+      args: [
+        '-m', 'services.journal_entry.standard_export',
+        '--mode', 'report',
+        '--request', requestFile,
+        '--output', outputFile,
+        '--output-dir', dir
+      ],
+      logFile: path.join(dir, 'report.log')
+    });
+    if (!run.ok) {
+      try { fs.rmSync(dir, { recursive: true, force: true }); } catch (_) {}
+      return { ok: false, error: run.error };
+    }
+    if (!fs.existsSync(outputFile)) {
+      try { fs.rmSync(dir, { recursive: true, force: true }); } catch (_) {}
+      return { ok: false, error: '报告导出未返回结果。' };
+    }
+    const payload = JSON.parse(fs.readFileSync(outputFile, 'utf8'));
+    const file = path.join(dir, payload.output_file);
+    if (!fs.existsSync(file)) {
+      try { fs.rmSync(dir, { recursive: true, force: true }); } catch (_) {}
+      return { ok: false, error: '报告文件缺失。' };
+    }
+    return { ok: true, payload, dir, file };
+  }
+
   async function generate(request) {
     const dir = path.join(tempRoot, crypto.randomUUID());
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -135,7 +169,7 @@ function createStandardExportRunner({ root, storageRoot }) {
     return { ok: true, payload, dir, file };
   }
 
-  return { preview, generate, tempRoot };
+  return { preview, generate, generateReport, tempRoot };
 }
 
 module.exports = { createStandardExportRunner, resolvePythonBin };

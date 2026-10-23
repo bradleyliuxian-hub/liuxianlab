@@ -5,10 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="description" content="Liuxian Lab 序时账筛选与拆分导出" />
   <title>筛选与拆分导出 · Liuxian Lab</title>
-  <link rel="stylesheet" href="/design-tokens.css?v=1.3.3" />
-  <link rel="stylesheet" href="/app/app-shell.css?v=1.3.3" />
-  <link rel="stylesheet" href="/app/tools/journal-entry-analysis/styles.css?v=1.3.3" />
-  <link rel="stylesheet" href="/app/tools/journal-entry-analysis/split.css?v=1.3.3" />
+  <link rel="stylesheet" href="/design-tokens.css?v=1.3.4" />
+  <link rel="stylesheet" href="/app/app-shell.css?v=1.3.4" />
+  <link rel="stylesheet" href="/app/tools/journal-entry-analysis/styles.css?v=1.3.4" />
+  <link rel="stylesheet" href="/app/tools/journal-entry-analysis/split.css?v=1.3.4" />
 </head>
 <body>
   <div class="page-shell">
@@ -19,7 +19,7 @@
         <div><strong>筛选与拆分导出</strong><small>Liuxian Lab / Ledger Filter &amp; Split</small></div>
       </div>
       <div class="header-actions">
-        <span class="version-chip">v1.3.3</span>
+        <span class="version-chip">v1.3.4</span>
         <span class="private-badge"><i></i>私有处理</span>
       </div>
     </header>
@@ -30,8 +30,9 @@
         <h1>先筛选，再拆分。</h1>
         <p>所有数据来自已完成的标准化结果，不会重新打开原始 Excel 或重新执行分析。先筛选、再拆分，然后在真实数据预览中确认保留行与导出列，最后生成一个多 Sheet Excel 或多个 Excel 的 ZIP。</p>
         <details class="version-notes">
-          <summary>v1.3.3 更新说明</summary>
+          <summary>v1.3.4 更新说明</summary>
           <ul>
+            <li>完整分析报告支持配置标准序时账 Sheet 的列与行；其他分析 Sheet 不变。</li>
             <li>新增“导出数据预览工作台”：在网页中直接查看即将导出的真实行和列，而不是只看汇总数字。</li>
             <li>预览表格使用服务器分页（25/50/100/200 行），浏览器不会下载完整 100k / 300k 结果。</li>
             <li>新增手工行选择：默认全部保留，可排除当前页、恢复当前页、恢复全部排除，或仅保留当前页。</li>
@@ -195,7 +196,7 @@
       <p class="retention-note">分析文件、批次输出与拆分结果按系统保留策略自动清理；请及时下载需要留存的报告。</p>
     </main>
 
-    <footer class="tool-footer"><span>Liuxian Lab</span><span>Ledger Filter &amp; Split v1.3.3</span></footer>
+    <footer class="tool-footer"><span>Liuxian Lab</span><span>Ledger Filter &amp; Split v1.3.4</span></footer>
   </div>
   <div class="config-backdrop" id="presetBackdrop" hidden></div>
   <section class="config-modal split-preset-modal" id="presetSaveModal" hidden role="dialog" aria-modal="true" aria-label="保存拆分模板">
@@ -211,7 +212,7 @@
     <div class="preset-modal-body"><div class="preset-list" id="presetList"></div></div>
   </section>
   <div class="toast" id="splitToast" role="status" aria-live="polite"></div>
-  <script src="/app/app-shell.js?v=1.3.3"></script>
-  <script src="/app/tools/journal-entry-analysis/split.js?v=1.3.3"></script>
+  <script src="/app/app-shell.js?v=1.3.4"></script>
+  <script src="/app/tools/journal-entry-analysis/split.js?v=1.3.4"></script>
 </body>
 </html>

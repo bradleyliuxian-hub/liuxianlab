@@ -16,8 +16,9 @@ from typing import Any, Dict, List, Sequence
 from openpyxl import Workbook
 from openpyxl.styles import Font
 
-from .export import HEADER_FILL, _write_sheet, safe_excel_text
+from .export import HEADER_FILL, _write_sheet, build_export, safe_excel_text
 from .split_export import (
+    COLUMN_BY_ID,
     DEFAULT_PAGE_SIZE,
     MAX_EXPLICIT_ROWS,
     MAX_PAGE_SIZE,
@@ -131,6 +132,58 @@ def _write_explanation(workbook, request, final, columns) -> None:
     sheet.column_dimensions["B"].width = 96
 
 
+
+def build_custom_report(output_dir: Path, request: Dict[str, Any]) -> Dict[str, Any]:
+    """Regenerate the full analysis report with a custom standard journal sheet.
+
+    Only the 清洗分录 sheet is projected from the selected rows/columns. Every
+    other analysis sheet still uses the complete canonical result.
+    """
+    jobs = list(request.get("jobs") or [])
+    if len(jobs) != 1:
+        raise ValueError("完整分析报告只能针对单个任务生成。")
+    result_path = Path(str(jobs[0].get("result_path") or ""))
+    if not result_path.exists():
+        raise ValueError("结果文件不存在。")
+    payload = json.loads(result_path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict) or not isinstance(payload.get("vouchers"), list):
+        raise ValueError("结果文件结构不完整。")
+
+    preview = preview_standard({**request, "page": 1, "page_size": MAX_PAGE_SIZE})
+    if not preview["included_line_count"]:
+        raise ValueError("最终保留行为 0，无法导出。")
+    records = load_records(jobs)
+    filtered = apply_filters(records, request.get("filters") or {})
+    final, selection = resolve_row_selection(records, filtered, request)
+    columns = preview["columns"]
+    headers = _standard_headers(columns)
+    rows = [_standard_row(record, columns) for record in final]
+    kinds = [COLUMN_BY_ID[column_id]["kind"] for column_id in columns]
+
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / "custom-analysis-report.xlsx"
+    build_export(
+        output_path,
+        payload,
+        standard_sheet={"headers": headers, "rows": rows, "kinds": kinds},
+    )
+    try:
+        output_path.chmod(0o600)
+    except OSError:
+        pass
+    return {
+        "output_file": output_path.name,
+        "included_line_count": len(final),
+        "included_voucher_count": len({(record.job_id, record.voucher_key) for record in final}),
+        "candidate_line_count": len(filtered),
+        "selected_columns": columns,
+        "row_selection_mode": selection["mode"],
+        "excluded_rows": selection["excluded_rows"],
+        "included_rows": selection["included_rows"],
+        "included_job_ids": [str(job.get("job_id")) for job in jobs],
+    }
+
 def build_standard_output(output_dir: Path, request: Dict[str, Any]) -> Dict[str, Any]:
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -177,7 +230,7 @@ def build_standard_output(output_dir: Path, request: Dict[str, Any]) -> Dict[str
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Liuxian Lab standardized journal export")
-    parser.add_argument("--mode", choices=("preview", "export"), required=True)
+    parser.add_argument("--mode", choices=("preview", "export", "report"), required=True)
     parser.add_argument("--request", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--output-dir", required=False)
@@ -189,7 +242,11 @@ def main(argv=None) -> int:
         else:
             if not args.output_dir:
                 raise ValueError("missing output directory")
-            payload = build_standard_output(Path(args.output_dir), request)
+            payload = (
+                build_custom_report(Path(args.output_dir), request)
+                if args.mode == "report"
+                else build_standard_output(Path(args.output_dir), request)
+            )
         Path(args.output).write_text(
             json.dumps(payload, ensure_ascii=False), encoding="utf-8"
         )

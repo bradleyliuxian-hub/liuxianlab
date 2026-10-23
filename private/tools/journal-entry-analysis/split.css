@@ -221,7 +221,7 @@
 .column-chip button:disabled { opacity: .35; cursor: default; }
 .column-chip .remove { color: #b91c1c; }
 
-/* Export preview workspace v1.3.3 */
+/* Export preview workspace v1.3.4 */
 .column-drawer {
   border: 1px solid var(--border, #dbe3ee);
   border-radius: 12px;

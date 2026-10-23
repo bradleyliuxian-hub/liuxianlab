@@ -720,6 +720,51 @@ class StandardExportTests(unittest.TestCase):
         workbook.close()
 
 
+    def test_custom_full_report_only_changes_standard_sheet(self):
+        from services.journal_entry.standard_export import build_custom_report
+        from services.journal_entry.export import build_export
+        request = {
+            **request_for(self.result_path),
+            "row_selection_mode": "all_except",
+            "excluded_rows": [{"job_id": "job-1", "internal_line_key": "3:序时账:2"}],
+            "columns": ["date", "voucher_id", "internal_line_key", "debit", "credit"],
+        }
+        default_path = self.root / "default-report.xlsx"
+        payload = json.loads(self.result_path.read_text(encoding="utf-8"))
+        build_export(default_path, payload)
+        out_dir = self.root / "custom-report"
+        result = build_custom_report(out_dir, request)
+        self.assertEqual(result["included_line_count"], 9)
+        custom_path = out_dir / "custom-analysis-report.xlsx"
+
+        default_wb = load_workbook(default_path, read_only=True)
+        custom_wb = load_workbook(custom_path, read_only=True)
+        try:
+            self.assertEqual(default_wb.sheetnames, custom_wb.sheetnames)
+            custom_sheet = custom_wb["清洗分录"]
+            headers = [cell.value for cell in next(custom_sheet.iter_rows(max_row=1))]
+            self.assertEqual(
+                headers,
+                ["日期", "凭证号", "内部行标识（系统追溯）", "借方金额", "贷方金额"],
+            )
+            keys = [
+                row[2]
+                for row in custom_sheet.iter_rows(min_row=2, values_only=True)
+            ]
+            self.assertEqual(len(keys), 9)
+            self.assertNotIn("3:序时账:2", keys)
+            for name in ("凭证汇总", "业务分类", "对方科目", "异常凭证", "数据质量问题"):
+                self.assertEqual(
+                    default_wb[name].max_row,
+                    custom_wb[name].max_row,
+                    f"{name} row count changed",
+                )
+            self.assertEqual(default_wb["凭证汇总"].max_row, custom_wb["凭证汇总"].max_row)
+        finally:
+            default_wb.close()
+            custom_wb.close()
+
+
 class RowSelectionPaginationAndBatchTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -824,3 +869,44 @@ class RowSelectionPaginationAndBatchTests(unittest.TestCase):
         self.assertEqual(len(pairs), 9)
         self.assertNotIn(("a.xlsx", "3:Sheet:3"), pairs)
         self.assertIn(("b.xlsx", "3:Sheet:3"), pairs)
+
+    def test_only_selected_pagination_and_zero_false_are_not_empty(self):
+        from services.journal_entry.split_export import preview_rows
+        result_path = self._synthetic_result("only-selected.json", 60)
+        payload = json.loads(result_path.read_text(encoding="utf-8"))
+        payload["vouchers"][0]["lines"][0]["currency"] = False
+        payload["vouchers"][0]["lines"][0]["original_amount"] = "0.00"
+        payload["vouchers"][1]["lines"][0]["original_amount"] = "0.00"
+        result_path.write_text(json.dumps(payload), encoding="utf-8")
+        request = request_for(result_path, group_by="account")
+        first = preview_rows({**request, "page": 1, "page_size": 25})
+        selected = [
+            {"job_id": "job-1", "internal_line_key": row["internal_line_key"]}
+            for row in first["rows"][:2]
+        ]
+        page_one = preview_rows({
+            **request, "page": 1, "page_size": 25,
+            "row_selection_mode": "only_selected", "included_rows": selected,
+        })
+        self.assertEqual(page_one["included_line_count"], 2)
+        self.assertEqual(page_one["excluded_line_count"], 58)
+        self.assertEqual(
+            [row["internal_line_key"] for row in page_one["rows"] if row["included"]],
+            [selected[0]["internal_line_key"], selected[1]["internal_line_key"]],
+        )
+        page_two = preview_rows({
+            **request, "page": 2, "page_size": 25,
+            "row_selection_mode": "only_selected", "included_rows": selected,
+        })
+        self.assertEqual(page_two["included_line_count"], 2)
+        self.assertFalse(any(row["included"] for row in page_two["rows"]))
+        back = preview_rows({
+            **request, "page": 1, "page_size": 25,
+            "row_selection_mode": "only_selected", "included_rows": selected,
+        })
+        self.assertTrue(back["rows"][0]["included"])
+        self.assertTrue(back["rows"][1]["included"])
+        self.assertTrue(back["column_stats"]["currency"]["non_empty_count"] > 0)
+        self.assertTrue(back["column_stats"]["original_amount"]["non_empty_count"] > 0)
+        self.assertEqual(back["column_stats"]["currency"]["entirely_empty"], False)
+        self.assertEqual(back["column_stats"]["original_amount"]["entirely_empty"], False)

@@ -922,6 +922,24 @@ function xlsxHeaders(file) {
 
 
 
+
+function xlsxSheetData(file, sheetName) {
+  const code = [
+    'import json,sys',
+    'from openpyxl import load_workbook',
+    'wb=load_workbook(sys.argv[1], read_only=True, data_only=True)',
+    'try:',
+    '    ws=wb[sys.argv[2]]',
+    '    rows=list(ws.iter_rows(values_only=True))',
+    '    header=list(rows[0]) if rows else []',
+    '    data=[list(r) for r in rows[1:]]',
+    '    print(json.dumps({"headers": header, "rows": data}, ensure_ascii=False))',
+    'finally: wb.close()'
+  ].join('\n');
+  const python = process.env.JOURNAL_ENTRY_PYTHON_BIN || path.join(ROOT, '.venv', 'bin', 'python');
+  return JSON.parse(execFileSync(python, ['-c', code, file, sheetName], { encoding: 'utf8' }));
+}
+
 function xlsxRowCounts(file) {
   const code = [
     'import json,sys',
@@ -1091,6 +1109,10 @@ async function main() {
       return match ? match[1] : null;
     });
     assert.ok(debitJobId, 'single job id not found');
+    await waitVisible(page, '#reportExportLink');
+    const reportHref = await page.$eval('#reportExportLink', (node) => node.getAttribute('href'));
+    assert.match(reportHref, /standard-preview\.html\?scopeType=job/);
+    assert.match(reportHref, /mode=report/);
     log(`  export: PASS (${download.name}, ${download.size} bytes)`);
 
     log('SIGNED_AMOUNT');
@@ -1331,6 +1353,129 @@ async function main() {
     assert.match(finalZip.name, /\.zip$/);
     await shot(page, 'batch-output-ready');
     log(`  batch output downloads: PASS (${finalSummary.size} / ${finalMerged.size} / ${finalZip.size} bytes)`);
+
+    const batchScopeId = await page.$eval('#batchSplitLink', (node) => {
+      const url = new URL(node.getAttribute('href'), location.href);
+      return url.searchParams.get('scopeId');
+    });
+    assert.ok(batchScopeId, 'batch id missing from split link');
+    await page.goto(
+      `${serverInfo.base}/app/tools/journal-entry-analysis/standard-preview.html?scopeType=batch&scopeId=${batchScopeId}`,
+      { waitUntil: 'networkidle0' }
+    );
+    await waitVisible(page, '#scopeCard');
+    await page.waitForFunction(() => document.querySelector('#scopeBadge')?.textContent === 'BATCH');
+    await page.waitForFunction(() => document.querySelectorAll('#rowTableWrap tbody tr').length > 0, { timeout: 30000 });
+    for (const label of ['内部行标识（系统追溯）', '外部行 ID']) {
+      await page.evaluate((target) => {
+        const row = [...document.querySelectorAll('#columnGroups .column-row')]
+          .find((item) => item.textContent.includes(target));
+        if (row && !row.querySelector('input[type="checkbox"]').checked) {
+          row.querySelector('input[type="checkbox"]').click();
+        }
+      }, label);
+      await page.waitForFunction((target) => {
+        const labels = [...document.querySelectorAll('#columnOrder .column-chip > span:first-child')]
+          .map((node) => node.textContent.trim());
+        return labels.includes(target);
+      }, {}, label);
+    }
+    await page.evaluate(() => {
+      const chips = [...document.querySelectorAll('#columnOrder .column-chip')];
+      const last = chips[chips.length - 1];
+      const up = last?.querySelector('button[aria-label^="上移"]');
+      if (up && !up.disabled) up.click();
+    });
+    const batchSelectedHeaders = await page.$$eval(
+      '#columnOrder .column-chip > span:first-child',
+      (nodes) => nodes.map((node) => node.textContent.trim())
+    );
+    await page.waitForFunction(() => {
+      const headers = [...document.querySelectorAll('#rowTableWrap thead th')]
+        .map((node) => node.textContent.trim());
+      return headers.includes('原始文件')
+        && headers.includes('外部行 ID')
+        && headers.includes('内部行标识（系统追溯）');
+    });
+    const batchTarget = await page.evaluate(() => {
+      const headers = [...document.querySelectorAll('#rowTableWrap thead th')]
+        .map((node) => node.textContent.trim());
+      const fileIndex = headers.indexOf('原始文件');
+      const lineIndex = headers.indexOf('外部行 ID');
+      const keyIndex = headers.indexOf('内部行标识（系统追溯）');
+      if (fileIndex < 0 || lineIndex < 0 || keyIndex < 0) {
+        throw new Error('batch preview identity/source columns missing');
+      }
+      const rows = [...document.querySelectorAll('#rowTableWrap tbody tr')].map((tr, index) => ({
+        index,
+        file: tr.children[fileIndex]?.textContent.trim() || '',
+        line: tr.children[lineIndex]?.textContent.trim() || '',
+        key: tr.children[keyIndex]?.textContent.trim() || ''
+      }));
+      const duplicate = rows.find((row) => row.file.includes('journal_duplicate_line_id.xlsx'));
+      if (!duplicate) throw new Error('duplicate external line_id file row missing');
+      return {
+        duplicate,
+        basicCount: rows.filter((row) => row.file.includes('journal_basic.xlsx')).length,
+        duplicateCount: rows.filter((row) => row.file.includes('journal_duplicate_line_id.xlsx')).length
+      };
+    });
+    const batchInitialIncluded = Number(await page.$eval(
+      '[data-metric="matchedLines"] strong',
+      (node) => node.textContent
+    ));
+    assert.ok(batchInitialIncluded > 0);
+    await page.click(`#rowTableWrap tbody tr:nth-child(${batchTarget.duplicate.index + 1}) input[type="checkbox"]`);
+    await page.waitForFunction(() => document.querySelector('[data-metric="excludedLines"] strong')?.textContent === '1');
+    const batchAfterExclusion = await page.evaluate(() => {
+      const headers = [...document.querySelectorAll('#rowTableWrap thead th')]
+        .map((node) => node.textContent.trim());
+      const fileIndex = headers.indexOf('原始文件');
+      const rows = [...document.querySelectorAll('#rowTableWrap tbody tr')];
+      return {
+        basic: rows.filter((tr) => (tr.children[fileIndex]?.textContent || '').includes('journal_basic.xlsx')).length,
+        duplicate: rows.filter((tr) => (tr.children[fileIndex]?.textContent || '').includes('journal_duplicate_line_id.xlsx')).length
+      };
+    });
+    assert.equal(batchAfterExclusion.basic, batchTarget.basicCount, 'Child B rows changed');
+    assert.equal(batchAfterExclusion.duplicate, batchTarget.duplicateCount, 'Child A sibling rows changed');
+    const batchMergeFile = await downloadOutput(page, cdp, '#standardExportButton', '.xlsx');
+    const batchMergeData = xlsxSheetData(path.join(DOWNLOAD_DIR, batchMergeFile.name), '标准分录');
+    assert.deepEqual(batchMergeData.headers, batchSelectedHeaders, 'batch headers/order mismatch');
+    const batchKeyIndex = batchMergeData.headers.indexOf('内部行标识（系统追溯）');
+    const batchFileIndex = batchMergeData.headers.indexOf('原始文件');
+    const batchLineIndex = batchMergeData.headers.indexOf('外部行 ID');
+    const batchKeys = batchMergeData.rows.map((row) => row[batchKeyIndex]);
+    assert.equal(batchMergeData.rows.length, batchInitialIncluded - 1, 'batch row count mismatch');
+    assert.ok(!batchMergeData.rows.some((row) => (
+      String(row[batchFileIndex]).includes('journal_duplicate_line_id.xlsx')
+      && row[batchKeyIndex] === batchTarget.duplicate.key
+    )), 'excluded Child A row exported');
+    assert.ok(batchMergeData.rows.some((row) => String(row[batchFileIndex]).includes('journal_basic.xlsx')), 'Child B missing');
+    assert.ok(
+      batchMergeData.rows.some((row) => (
+        String(row[batchFileIndex]).includes('journal_duplicate_line_id.xlsx')
+        && row[batchLineIndex] === batchTarget.duplicate.line
+      )),
+      'duplicate external line_id sibling was incorrectly removed'
+    );
+    log(`  batch merge preview + cross-job row exclusion: PASS (${batchMergeData.rows.length} rows)`);
+
+    await page.click('#restoreAllRows');
+    await page.waitForFunction(() => document.querySelector('[data-metric="excludedLines"] strong')?.textContent === '0');
+    const onlyPageRequest = page.waitForRequest(
+      (request) => request.url().endsWith('/api/journal-entry-standard-exports/preview')
+        && request.method() === 'POST'
+    );
+    await page.click('#onlyPage');
+    const onlyPageBody = JSON.parse((await onlyPageRequest).postData() || '{}');
+    assert.equal(onlyPageBody.rowSelectionMode, 'only_selected');
+    assert.equal((onlyPageBody.includedRows || []).length, batchInitialIncluded);
+    await page.waitForFunction(() => /仅保留选中/.test(document.querySelector('#rowStatus')?.textContent || ''));
+    log('  only_selected current-page mode: PASS');
+
+    await page.goto(`${serverInfo.base}/app/tools/journal-entry-analysis/batch.html?batch=${batchScopeId}`, { waitUntil: 'networkidle0' });
+    await waitVisible(page, '#batchWorkspacePanel');
 
     fs.rmSync(DOWNLOAD_DIR, { recursive: true, force: true });
     fs.mkdirSync(DOWNLOAD_DIR, { recursive: true });
@@ -1651,6 +1796,70 @@ async function main() {
     const standardRows = xlsxRowCounts(path.join(DOWNLOAD_DIR, standardFile.name));
     assert.equal(standardRows['标准分录'], Number(standardInitial) - 1);
     log(`  standard journal preview + row exclusion: PASS (${standardFile.size} bytes)`);
+
+    log('CUSTOM FULL ANALYSIS REPORT');
+    await page.goto(
+      `${serverInfo.base}/app/tools/journal-entry-analysis/standard-preview.html?scopeType=job&scopeId=${debitJobId}&mode=report`,
+      { waitUntil: 'networkidle0' }
+    );
+    await waitVisible(page, '#scopeCard');
+    await waitVisible(page, '#reportModeNotice');
+    await page.waitForFunction(() => document.querySelectorAll('#rowTableWrap tbody tr').length > 0, { timeout: 30000 });
+    assert.match(await page.$eval('#standardExportButton', (node) => node.textContent), /完整分析报告/);
+    for (const label of ['内部行标识（系统追溯）', '外部行 ID']) {
+      await page.evaluate((target) => {
+        const row = [...document.querySelectorAll('#columnGroups .column-row')]
+          .find((item) => item.textContent.includes(target));
+        if (row && !row.querySelector('input[type="checkbox"]').checked) {
+          row.querySelector('input[type="checkbox"]').click();
+        }
+      }, label);
+      await page.waitForFunction((target) => {
+        const labels = [...document.querySelectorAll('#columnOrder .column-chip > span:first-child')]
+          .map((node) => node.textContent.trim());
+        return labels.includes(target);
+      }, {}, label);
+    }
+    const reportSelectedHeaders = await page.$$eval(
+      '#columnOrder .column-chip > span:first-child',
+      (nodes) => nodes.map((node) => node.textContent.trim())
+    );
+    const reportTarget = await page.evaluate(() => {
+      const headers = [...document.querySelectorAll('#rowTableWrap thead th')]
+        .map((node) => node.textContent.trim());
+      const keyIndex = headers.indexOf('内部行标识（系统追溯）');
+      const firstRow = document.querySelector('#rowTableWrap tbody tr');
+      if (!firstRow || keyIndex < 0) throw new Error('report preview identity missing');
+      return { key: firstRow.children[keyIndex]?.textContent.trim() || '' };
+    });
+    assert.ok(reportTarget.key);
+    const reportInitialIncluded = Number(await page.$eval(
+      '[data-metric="matchedLines"] strong',
+      (node) => node.textContent
+    ));
+    await page.click('#rowTableWrap tbody tr:first-child input[type="checkbox"]');
+    await page.waitForFunction(() => document.querySelector('[data-metric="excludedLines"] strong')?.textContent === '1');
+    const reportFile = await downloadOutput(page, cdp, '#standardExportButton', '.xlsx');
+    const reportData = xlsxSheetData(path.join(DOWNLOAD_DIR, reportFile.name), '清洗分录');
+    assert.deepEqual(reportData.headers, reportSelectedHeaders, 'custom report headers/order mismatch');
+    const reportKeyIndex = reportData.headers.indexOf('内部行标识（系统追溯）');
+    const reportKeys = reportData.rows.map((row) => row[reportKeyIndex]);
+    assert.equal(reportKeys.length, reportInitialIncluded - 1, 'custom report row count mismatch');
+    assert.ok(!reportKeys.includes(reportTarget.key), 'excluded row still in standard sheet');
+    const defaultReport = path.join(
+      TEMP_ROOT, 'storage', 'journal-entry', debitJobId, 'journal-entry-analysis-report.xlsx'
+    );
+    assert.ok(fs.existsSync(defaultReport), 'default analysis report missing');
+    const defaultCounts = xlsxRowCounts(defaultReport);
+    const customCounts = xlsxRowCounts(path.join(DOWNLOAD_DIR, reportFile.name));
+    for (const [sheet, count] of Object.entries(defaultCounts)) {
+      if (sheet === '清洗分录') {
+        assert.equal(customCounts[sheet], reportInitialIncluded - 1);
+      } else {
+        assert.equal(customCounts[sheet], count, `analysis sheet changed: ${sheet}`);
+      }
+    }
+    log(`  custom full report only changes standard sheet: PASS (${reportFile.size} bytes)`);
 
     await page.goto(`${serverInfo.base}/app/tools/journal-entry-analysis/batch.html?batch=${batchId}`, { waitUntil: 'networkidle0' });
     await waitVisible(page, '#batchWorkspacePanel');

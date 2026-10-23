@@ -22,10 +22,12 @@
     restoreAllRows: $('#restoreAllRows'), widePreview: $('#widePreview'),
     standardMetrics: $('#standardMetrics'), standardWarning: $('#standardWarning'),
     standardExportButton: $('#standardExportButton'), previewError: $('#previewError'),
-    toast: $('#standardToast')
+    toast: $('#standardToast'), reportNotice: $('#reportModeNotice'),
+    pageHeading: $('#pageHeading'), pageIntro: $('#pageIntro')
   };
 
   const state = {
+    reportMode: false,
     scopeType: '', scopeId: '', scope: null, meta: null,
     columnDefs: [], columnGroups: [], defaultColumnOrder: [], columns: [], columnsDirty: false,
     columnStats: null, rows: [], page: 1, pageSize: 50, totalPages: 0,
@@ -227,6 +229,13 @@
 
   async function loadScope() {
     const params = new URLSearchParams(window.location.search);
+    state.reportMode = params.get('mode') === 'report';
+    if (state.reportMode) {
+      document.title = '完整分析报告导出设置 · Liuxian Lab';
+      dom.pageHeading.textContent = '配置完整分析报告。';
+      dom.pageIntro.textContent = '标准序时账 Sheet 使用这里选择的行和列；其他分析 Sheet 仍使用完整分析结果。';
+      dom.reportNotice.hidden = false;
+    }
     state.scopeType = params.get('scopeType') || 'job';
     state.scopeId = params.get('scopeId') || '';
     if (!/^[0-9a-f-]{36}$/i.test(state.scopeId) || !['job', 'batch'].includes(state.scopeType)) {
@@ -396,7 +405,9 @@
       || !state.columns.length || !state.includedLines;
     dom.standardExportButton.textContent = state.exporting
       ? '正在生成…'
-      : `导出标准序时账（${state.includedLines} 行）`;
+      : state.reportMode
+        ? `导出完整分析报告（${state.includedLines} 行）`
+        : `导出标准序时账（${state.includedLines} 行）`;
   }
 
   function renderAll() {
@@ -552,7 +563,7 @@
     showError('');
     renderSummary();
     try {
-      const response = await fetch(`${API}/export`, {
+      const response = await fetch(`${API}/${state.reportMode ? 'report' : 'export'}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify({
@@ -576,7 +587,7 @@
       }
       const blob = await response.blob();
       const disposition = response.headers.get('content-disposition') || '';
-      let filename = '标准序时账.xlsx';
+      let filename = state.reportMode ? '分析报告.xlsx' : '标准序时账.xlsx';
       const match = /filename\*=UTF-8''([^;]+)/i.exec(disposition)
         || /filename="?([^";]+)"?/i.exec(disposition);
       if (match) {
@@ -590,7 +601,7 @@
       link.click();
       link.remove();
       setTimeout(() => URL.revokeObjectURL(url), 30000);
-      showToast('标准序时账已生成，正在下载。');
+      showToast(state.reportMode ? '完整分析报告已生成，正在下载。' : '标准序时账已生成，正在下载。');
     } catch (error) {
       showError('导出失败，请重试。');
     } finally {

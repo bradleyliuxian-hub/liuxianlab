@@ -1,7 +1,7 @@
 # Journal Entry Export Preview Workspace
 
 Date: 2026-10-23
-Version: v1.3.3
+Version: v1.3.4
 
 ## Scope
 
@@ -104,11 +104,18 @@ column_order
 GET  /api/journal-entry-standard-exports/meta
 POST /api/journal-entry-standard-exports/preview
 POST /api/journal-entry-standard-exports/export
+POST /api/journal-entry-standard-exports/report
 ```
 
-`scopeType` is `job` or `batch`. Batch scope consumes completed child jobs only
-and validates owner isolation. The export endpoint generates
-`standard-journal.xlsx` and streams it; no canonical data is modified.
+`scopeType` is `job` or `batch` for preview/export. Batch scope consumes
+completed child jobs only and validates owner isolation. The export endpoint
+generates `standard-journal.xlsx` and streams it; no canonical data is modified.
+
+`/report` is job-only. It regenerates the full analysis report in a temporary
+directory and applies the selected columns/rows **only to the 清洗分录
+(standard journal) sheet**. Every other analysis sheet is written from the
+complete canonical result. The existing pre-generated report is never
+overwritten.
 
 ### Body size
 
@@ -129,6 +136,11 @@ exclusion list fits while the rest of the API keeps the small default.
 
 - `preview_standard` for single / batch merge preview.
 - `build_standard_output` writes `标准分录` + `导出说明`.
+- `build_custom_report` writes the full analysis report with a custom
+  `清洗分录` projection.
+
+`services/journal_entry/export.py` accepts an optional `standard_sheet`
+(headers / rows / column kinds). Its default behavior is unchanged.
 
 Both reuse the existing canonical result readers; no new accounting logic.
 
@@ -153,6 +165,9 @@ Standard preview page (`standard-preview.html`):
 - Same table / column / row selection model for single and batch merged
   standard journals.
 - Batch mode adds `原始文件` by default so mixed-file rows are identifiable.
+- `mode=report` switches the page to “完整分析报告” mode. The same preview and
+  row selection are reused; export calls `/report` and clearly states that only
+  the standard journal sheet changes.
 - Export downloads the generated workbook.
 
 Entry points:
@@ -163,9 +178,9 @@ Entry points:
 ## Verification
 
 ```text
-Journal Entry Python:  271 pass / 0 fail
+Journal Entry Python:  273 pass / 0 fail
 Excel Review Python:    79 pass / 0 fail
-npm test:              475 pass / 0 fail
+npm test:              476 pass / 0 fail
 smoke:                 PASS
 browser E2E:           PASS (1440, 1366x768, 1920x1080)
 compileall / diff:     PASS
@@ -177,6 +192,12 @@ E2E coverage added:
 - filter change resets selection with notice;
 - exported multi-sheet workbook omits the excluded row;
 - standard preview excludes a row and export contains one fewer row;
+- batch merge preview with two completed child jobs: column add/reorder,
+  exclude one row from Child A, Child B unchanged, duplicate external `line_id`
+  sibling retained, exported headers/order and row count verified with openpyxl;
+- only_selected current-page request contract;
+- full analysis report: custom `清洗分录` headers/rows, excluded row absent,
+  every other analysis sheet row count unchanged;
 - console / pageerror / HTTP 404 = 0.
 
 ## Performance
@@ -184,23 +205,26 @@ E2E coverage added:
 Synthetic 100k-line result (62.4 MB JSON), measured server-side:
 
 ```text
-first page (50 rows):      2.58 s
-page 2:                    2.46 s
-exclusion + stats/groups:  2.39 s
+first page (50 rows):      2.62 s
+page 2:                    2.60 s
+exclusion + stats/groups:  2.46 s
+column statistics:         1.02 s
+group summary:             0.39 s
+response payload:          87,253 bytes
+full result:               65,392,725 bytes
 group count:               100
+Node RSS before/after:     14 / 15 MiB
 ```
 
 The browser only receives the current page (50 rows) plus grouped summary.
 Node does not load the canonical result; Python is the process that reads it.
-The 300k case was not re-run end-to-end in this phase.
+The 300k case was **not** run in this phase.
 
 ## Known limitations
 
-- Full analysis report (`导出 Excel 报告`) still exports the standard journal
-  sheet with its existing column set; per-report row exclusion is only available
-  through the new standard journal export workspace.
-- Batch split preview uses the same row-selection API but this phase's browser
-  E2E exercises batch navigation rather than batch row exclusion. Python tests
-  cover batch composite identity and cross-file exclusion.
-- 300k export preview has not been benchmarked; 100k is under 3 s per request.
+- Batch **split** (multi-Sheet/ZIP) browser E2E still exercises navigation
+  rather than cross-file row exclusion; Python tests cover composite identity
+  and cross-file exclusion for split export.
+- 300k export preview was intentionally not run in this phase; 100k is under 3 s
+  per request.
 - No production deploy or migration was performed.

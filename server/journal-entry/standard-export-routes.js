@@ -241,6 +241,57 @@ function createStandardExportRouter({ root, requireAuth, runner }) {
     }
   });
 
+  router.post('/report', requireAuth, async (req, res, next) => {
+    if (active >= limit) {
+      return res.status(429).json({ error: '已有报告正在导出，请稍后再试。' });
+    }
+    active += 1;
+    let generated = null;
+    try {
+      const spec = normalizeSpec(req.body);
+      if (spec.scopeType !== 'job') {
+        return res.status(422).json({ error: '完整分析报告只支持单个任务。' });
+      }
+      const paging = cleanPaging(req.body);
+      const scopeData = await buildScope(spec.scopeType, spec.scopeId, ownerUsername(req));
+      if (!scopeData) return res.status(404).json({ error: '数据范围不存在。' });
+      const request = requestFor(scopeData, spec, paging);
+      generated = await exportRunner.generateReport(request);
+      if (!generated.ok) {
+        return res.status(422).json({ error: generated.error || '报告导出失败。' });
+      }
+      const expected = Number(req.body.expectedCandidateLineCount);
+      if (
+        Number.isInteger(expected)
+        && expected >= 0
+        && expected !== generated.payload.candidate_line_count
+      ) {
+        return res.status(409).json({ error: '筛选结果已变化，请重新预览后再导出。' });
+      }
+      if (!generated.payload.included_line_count) {
+        return res.status(422).json({ error: '最终保留行为 0，无法导出。' });
+      }
+      const scope = scopeData.scope.name || '序时账';
+      const base = path.basename(String(scope), path.extname(String(scope))) || '序时账';
+      res.set('Cache-Control', 'private, no-store');
+      return res.download(
+        generated.file,
+        `${base.slice(0, 120)}-分析报告.xlsx`,
+        () => {
+          try { fs.rmSync(generated.dir, { recursive: true, force: true }); } catch (_) {}
+        }
+      );
+    } catch (error) {
+      if (generated?.dir) {
+        try { fs.rmSync(generated.dir, { recursive: true, force: true }); } catch (_) {}
+      }
+      if (error instanceof ValidationError) return res.status(422).json({ error: error.message });
+      return next(error);
+    } finally {
+      active -= 1;
+    }
+  });
+
   return router;
 }
 

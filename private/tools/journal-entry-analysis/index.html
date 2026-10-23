@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="description" content="Liuxian Lab 序时账分析工具" />
   <title>序时账分析 · Liuxian Lab</title>
-  <link rel="stylesheet" href="/design-tokens.css?v=1.3.3" />
-  <link rel="stylesheet" href="/app/app-shell.css?v=1.3.3" />
-  <link rel="stylesheet" href="/app/tools/journal-entry-analysis/styles.css?v=1.3.3" />
+  <link rel="stylesheet" href="/design-tokens.css?v=1.3.4" />
+  <link rel="stylesheet" href="/app/app-shell.css?v=1.3.4" />
+  <link rel="stylesheet" href="/app/tools/journal-entry-analysis/styles.css?v=1.3.4" />
 </head>
 <body>
   <div class="page-shell">
@@ -18,7 +18,7 @@
         <div><strong>序时账分析</strong><small>Liuxian Lab / Journal Entry Analysis</small></div>
       </div>
       <div class="header-actions">
-        <span class="version-chip" title="当前工具版本">v1.3.3</span>
+        <span class="version-chip" title="当前工具版本">v1.3.4</span>
         <span class="private-badge"><i></i>私有处理</span>
         <a class="ghost-button" id="batchWorkspaceLink" href="batch.html">批量分析</a>
         <button class="ghost-button" id="newJobButton" type="button">新建分析</button>
@@ -31,8 +31,9 @@
         <h1>从序时账到可复核的凭证结论。</h1>
         <p>上传 <code>.xls</code> / <code>.xlsx</code>，确认工作表、表头与字段映射，系统在后台完成清洗、凭证汇总、业务分类、对方科目与异常凭证分析。原始文件不会被修改；结果和导出文件仅归属于当前登录用户。</p>
         <details class="version-notes">
-          <summary>v1.3.3 更新说明</summary>
+          <summary>v1.3.4 更新说明</summary>
           <ul>
+            <li>完整分析报告新增“配置完整分析报告”：标准序时账 Sheet 可使用网页选择的行和列，其他分析 Sheet 保持不变。</li>
             <li>新增“导出数据预览工作台”：在网页中查看即将导出的真实行和列，支持服务器分页、列选择与手工排除行。</li>
             <li>新增单文件 / 批量合并“标准序时账导出预览”，可选择列、排除行后再导出。</li>
             <li>修改筛选条件会清空手工行选择并提示；拆分模板不保存具体行选择。</li>
@@ -57,7 +58,7 @@
       <section class="workspace-card" id="uploadPanel">
         <div class="card-heading">
           <div><span class="step-no">01</span><div><h2>上传序时账</h2><p>支持 Excel 97-2003 <code>.xls</code> 与 <code>.xlsx</code>；单个文件最大 25 MB。</p></div></div>
-          <span class="profile-chip">Journal Entry v1.3.3</span>
+          <span class="profile-chip">Journal Entry v1.3.4</span>
         </div>
 
         <label class="drop-zone" id="dropZone" for="fileInput">
@@ -167,6 +168,7 @@
             <button class="ghost-button" id="refreshResultButton" type="button">刷新</button>
             <a class="ghost-button" id="splitLink" href="#" hidden>筛选与拆分导出</a>
             <a class="ghost-button" id="standardExportLink" href="#" hidden>标准序时账导出预览</a>
+            <a class="ghost-button" id="reportExportLink" href="#" hidden>配置完整分析报告</a>
             <a class="primary-button" id="exportButton" href="#" hidden>导出 Excel 报告 <span>↓</span></a>
           </div>
         </div>
@@ -197,7 +199,7 @@
       </section>
     </main>
 
-    <footer class="tool-footer"><span>Liuxian Lab</span><span>Journal Entry Analysis v1.3.3</span></footer>
+    <footer class="tool-footer"><span>Liuxian Lab</span><span>Journal Entry Analysis v1.3.4</span></footer>
   </div>
 
   <div class="detail-backdrop" id="detailBackdrop" hidden></div>
@@ -210,7 +212,7 @@
   </aside>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script src="/app/app-shell.js?v=1.3.3"></script>
-  <script src="/app/tools/journal-entry-analysis/script.js?v=1.3.3"></script>
+  <script src="/app/app-shell.js?v=1.3.4"></script>
+  <script src="/app/tools/journal-entry-analysis/script.js?v=1.3.4"></script>
 </body>
 </html>
