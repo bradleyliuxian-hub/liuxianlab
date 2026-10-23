@@ -74,6 +74,10 @@ DEFAULT_COLUMN_ORDER = (
 DEFAULT_MAX_GROUPS_MULTI_SHEET = 200
 DEFAULT_MAX_GROUPS_ZIP = 500
 DEFAULT_MAX_ROWS_PER_SHEET = 1_048_000
+MAX_EXPLICIT_ROWS = 5000
+DEFAULT_PAGE_SIZE = 50
+MAX_PAGE_SIZE = 200
+ROW_SELECTION_MODES = ("all_except", "only_selected")
 BLANK_LABELS = {
     "account": "未指定科目",
     "customer": "未指定客户",
@@ -300,6 +304,137 @@ def apply_filters(records: Sequence[Record], filters: Dict[str, Any]) -> List[Re
     return result
 
 
+def row_identity(record: Record) -> Tuple[str, str]:
+    key = _text(record.line.get("internal_line_key"))
+    if not key:
+        raise SplitExportError("结果缺少稳定行标识，无法进行行选择。")
+    return record.job_id, key
+
+
+def _row_ref(value: Any) -> Tuple[str, str]:
+    if not isinstance(value, dict):
+        raise SplitExportError("行选择格式不正确。")
+    job_id = _text(value.get("job_id") or value.get("jobId"))
+    key = _text(value.get("internal_line_key") or value.get("internalLineKey"))
+    if not key:
+        raise SplitExportError("行选择缺少内部行标识。")
+    if len(key) > 200:
+        raise SplitExportError("行标识过长。")
+    if len(job_id) > 100:
+        raise SplitExportError("行选择任务标识过长。")
+    return job_id, key
+
+
+def normalize_row_selection(request: Dict[str, Any]) -> Dict[str, Any]:
+    mode = _text(
+        request.get("row_selection_mode")
+        or request.get("selection_mode")
+        or "all_except"
+    ) or "all_except"
+    if mode not in ROW_SELECTION_MODES:
+        raise SplitExportError("行选择模式无效。")
+
+    def collect(raw: Any, field: str) -> List[Tuple[str, str]]:
+        if raw in (None, ""):
+            return []
+        if not isinstance(raw, (list, tuple)):
+            raise SplitExportError(f"{field} 必须是数组。")
+        if len(raw) > MAX_EXPLICIT_ROWS:
+            raise SplitExportError(f"手工{field}超过 {MAX_EXPLICIT_ROWS} 行上限，请改用筛选条件。")
+        refs: List[Tuple[str, str]] = []
+        seen = set()
+        for item in raw:
+            ref = _row_ref(item)
+            if ref in seen:
+                continue
+            seen.add(ref)
+            refs.append(ref)
+        return refs
+
+    excluded = collect(
+        request.get("excluded_rows") or request.get("excludedRows"),
+        "排除行",
+    )
+    included = collect(
+        request.get("included_rows") or request.get("includedRows"),
+        "保留行",
+    )
+    if mode == "all_except" and included:
+        raise SplitExportError("全部保留模式下不能提交保留行清单。")
+    if mode == "only_selected" and excluded:
+        raise SplitExportError("仅保留选中模式下不能提交排除行清单。")
+    if mode == "only_selected" and not included:
+        raise SplitExportError("仅保留选中行时必须选择至少 1 行。")
+    return {
+        "mode": mode,
+        "excluded": excluded,
+        "included": included,
+    }
+
+
+def resolve_row_selection(
+    all_records: Sequence[Record],
+    filtered: Sequence[Record],
+    request: Dict[str, Any],
+) -> Tuple[List[Record], Dict[str, Any]]:
+    selection = normalize_row_selection(request)
+    scope_jobs = {record.job_id for record in all_records}
+    if not scope_jobs:
+        raise SplitExportError("数据范围为空，无法进行行选择。")
+    if len(scope_jobs) == 1:
+        only_job = next(iter(scope_jobs))
+    else:
+        only_job = ""
+
+    known = {row_identity(record) for record in all_records}
+    candidate_keys = {row_identity(record) for record in filtered}
+
+    def resolve_refs(refs: Sequence[Tuple[str, str]], field: str) -> set:
+        resolved = set()
+        for job_id, key in refs:
+            if not job_id:
+                if not only_job:
+                    raise SplitExportError(f"{field}必须包含来源任务标识。")
+                job_id = only_job
+            if job_id not in scope_jobs:
+                raise SplitExportError(f"{field}不属于当前数据范围。")
+            identity = (job_id, key)
+            if identity not in known:
+                raise SplitExportError(f"{field}包含无效行标识。")
+            resolved.add(identity)
+        return resolved
+
+    excluded = resolve_refs(selection["excluded"], "排除行")
+    included = resolve_refs(selection["included"], "保留行")
+    if selection["mode"] == "only_selected":
+        missing = included - candidate_keys
+        if missing:
+            raise SplitExportError("所选行不在当前筛选结果中，请重新选择。")
+
+    final: List[Record] = []
+    for record in filtered:
+        identity = row_identity(record)
+        keep = (
+            identity not in excluded
+            if selection["mode"] == "all_except"
+            else identity in included
+        )
+        if keep:
+            final.append(record)
+
+    return final, {
+        "mode": selection["mode"],
+        "excluded_rows": [
+            {"job_id": job_id, "internal_line_key": key}
+            for job_id, key in selection["excluded"]
+        ],
+        "included_rows": [
+            {"job_id": job_id, "internal_line_key": key}
+            for job_id, key in selection["included"]
+        ],
+    }
+
+
 def _dimension_identity(
     record: Record,
     dimension: str,
@@ -437,17 +572,12 @@ def _limits(request: Dict[str, Any]) -> Dict[str, int]:
     }
 
 
-def preview_split(request: Dict[str, Any]) -> Dict[str, Any]:
-    dimensions = _normalize_dimensions(request.get("group_by"))
-    if request.get("row_mode") not in (None, "", "matched_only"):
-        raise SplitExportError("FULL VOUCHER MODE NOT IMPLEMENTED")
-    jobs = list(request.get("jobs") or [])
-    records = load_records(jobs)
-    filtered = apply_filters(records, request.get("filters") or {})
-    groups = group_records(filtered, dimensions, request.get("group_options") or {})
-    stats = _column_statistics(filtered)
-    selected_columns = _normalize_columns(request.get("columns"), stats)
-    limits = _limits(request)
+def _preview_warnings(
+    records: Sequence[Record],
+    groups: Sequence[Dict[str, Any]],
+    dimensions: Sequence[str],
+    limits: Dict[str, int],
+) -> List[str]:
     warnings = []
     for dimension in dimensions:
         if dimension in ("customer", "supplier", "counterparty"):
@@ -463,17 +593,39 @@ def preview_split(request: Dict[str, Any]) -> Dict[str, Any]:
         for group in groups
     ):
         warnings.append("blank_group_included")
+    if len(groups) > limits["max_groups"]:
+        warnings.append("group_limit_exceeded")
+    return warnings
+
+
+def preview_split(request: Dict[str, Any]) -> Dict[str, Any]:
+    dimensions = _normalize_dimensions(request.get("group_by"))
+    if request.get("row_mode") not in (None, "", "matched_only"):
+        raise SplitExportError("FULL VOUCHER MODE NOT IMPLEMENTED")
+    jobs = list(request.get("jobs") or [])
+    records = load_records(jobs)
+    filtered = apply_filters(records, request.get("filters") or {})
+    final, selection = resolve_row_selection(records, filtered, request)
+    groups = group_records(final, dimensions, request.get("group_options") or {})
+    stats = _column_statistics(final)
+    selected_columns = _normalize_columns(request.get("columns"), stats)
+    limits = _limits(request)
+    warnings = _preview_warnings(records, groups, dimensions, limits)
     group_count = len(groups)
     limit_exceeded = group_count > limits["max_groups"]
-    if limit_exceeded:
-        warnings.append("group_limit_exceeded")
-    vouchers = {(record.job_id, record.voucher_key) for record in filtered}
+    vouchers = {(record.job_id, record.voucher_key) for record in final}
     return {
         "schema_version": SPLIT_SCHEMA_VERSION,
-        "matched_lines": len(filtered),
+        "matched_lines": len(final),
         "matched_vouchers": len(vouchers),
+        "candidate_lines": len(filtered),
+        "candidate_vouchers": len({(record.job_id, record.voucher_key) for record in filtered}),
+        "excluded_lines": len(filtered) - len(final),
+        "row_selection_mode": selection["mode"],
+        "excluded_rows": selection["excluded_rows"],
+        "included_rows": selection["included_rows"],
         "completed_files": len(jobs),
-        "source_file_count": len({record.filename for record in filtered}),
+        "source_file_count": len({record.filename for record in final}),
         "group_count": group_count,
         "group_by": dimensions,
         "dimensions": dimensions,
@@ -500,6 +652,133 @@ def preview_split(request: Dict[str, Any]) -> Dict[str, Any]:
             }
             for group in groups
         ],
+    }
+
+
+def _display_value(record: Record, column_id: str) -> Any:
+    value = _column_value(record, column_id)
+    definition = COLUMN_BY_ID[column_id]
+    if _is_empty(value):
+        return None
+    if definition["kind"] == "amount":
+        try:
+            return format(Decimal(str(value)).quantize(Decimal("0.01")), ".2f")
+        except (InvalidOperation, ValueError):
+            return _text(value) or None
+    if definition["kind"] == "date":
+        return _text(value)[:10] or None
+    if definition["kind"] == "number":
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return _text(value) or None
+    return _text(value) or None
+
+
+def _page_numbers(request: Dict[str, Any]) -> Tuple[int, int]:
+    try:
+        page = int(request.get("page") or 1)
+    except (TypeError, ValueError):
+        page = 1
+    try:
+        page_size = int(request.get("page_size") or request.get("pageSize") or DEFAULT_PAGE_SIZE)
+    except (TypeError, ValueError):
+        page_size = DEFAULT_PAGE_SIZE
+    return max(1, page), max(1, min(MAX_PAGE_SIZE, page_size))
+
+
+def _group_payload(groups: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    return [
+        {
+            "group_key": group["group_key"],
+            "display_name": group["display_name"],
+            "values": group["values"],
+            "raw_values": group["raw_values"],
+            "line_count": group["line_count"],
+            "voucher_count": group["voucher_count"],
+            "debit_total": format(group["debit_total"], ".2f"),
+            "credit_total": format(group["credit_total"], ".2f"),
+        }
+        for group in groups
+    ]
+
+
+def preview_rows(request: Dict[str, Any]) -> Dict[str, Any]:
+    """Server-side paged export preview with manual row selection."""
+
+    dimensions = _normalize_dimensions(request.get("group_by"))
+    if request.get("row_mode") not in (None, "", "matched_only"):
+        raise SplitExportError("FULL VOUCHER MODE NOT IMPLEMENTED")
+    jobs = list(request.get("jobs") or [])
+    records = load_records(jobs)
+    filtered = apply_filters(records, request.get("filters") or {})
+    final, selection = resolve_row_selection(records, filtered, request)
+    groups = group_records(final, dimensions, request.get("group_options") or {})
+    stats = _column_statistics(final)
+    selected_columns = _normalize_columns(request.get("columns"), stats)
+    limits = _limits(request)
+    warnings = _preview_warnings(records, groups, dimensions, limits)
+
+    page, page_size = _page_numbers(request)
+    total = len(filtered)
+    total_pages = (total + page_size - 1) // page_size if total else 0
+    start = (page - 1) * page_size
+    page_records = filtered[start:start + page_size]
+
+    selection_keys = (
+        {(item["job_id"], item["internal_line_key"]) for item in selection["excluded_rows"]}
+        if selection["mode"] == "all_except"
+        else {(item["job_id"], item["internal_line_key"]) for item in selection["included_rows"]}
+    )
+
+    rows = []
+    for record in page_records:
+        identity = row_identity(record)
+        included = (
+            identity not in selection_keys
+            if selection["mode"] == "all_except"
+            else identity in selection_keys
+        )
+        rows.append({
+            "job_id": record.job_id,
+            "internal_line_key": identity[1],
+            "voucher_key": record.voucher_key,
+            "included": included,
+            "values": {
+                column_id: _display_value(record, column_id)
+                for column_id in COLUMN_BY_ID
+            },
+        })
+
+    return {
+        "schema_version": SPLIT_SCHEMA_VERSION,
+        "candidate_line_count": total,
+        "included_line_count": len(final),
+        "excluded_line_count": total - len(final),
+        "candidate_voucher_count": len({(record.job_id, record.voucher_key) for record in filtered}),
+        "included_voucher_count": len({(record.job_id, record.voucher_key) for record in final}),
+        "page": page,
+        "page_size": page_size,
+        "total_pages": total_pages,
+        "columns": selected_columns,
+        "column_order": selected_columns,
+        "column_stats": stats,
+        "rows": rows,
+        "row_selection_mode": selection["mode"],
+        "excluded_rows": selection["excluded_rows"],
+        "included_rows": selection["included_rows"],
+        "group_summary": {
+            "group_count": len(groups),
+            "groups": _group_payload(groups),
+        },
+        "group_count": len(groups),
+        "groups": _group_payload(groups),
+        "limit_exceeded": len(groups) > limits["max_groups"],
+        "limits": limits,
+        "warnings": warnings,
+        "dimensions": dimensions,
+        "group_by": dimensions,
+        "included_job_ids": [str(job.get("job_id")) for job in jobs],
     }
 
 
@@ -717,8 +996,11 @@ def _description_rows(request: Dict[str, Any], preview: Dict[str, Any], group: O
         ["拆分维度", json.dumps(preview.get("group_by"), ensure_ascii=False)],
         ["输出模式", request.get("output_mode")],
         ["输出范围", request.get("row_mode") or "matched_only"],
-        ["匹配行数", preview.get("matched_lines")],
+        ["候选行数", preview.get("candidate_lines", preview.get("matched_lines"))],
+        ["导出保留行数", preview.get("matched_lines")],
+        ["手工排除行数", preview.get("excluded_lines", 0)],
         ["匹配凭证数", preview.get("matched_vouchers")],
+        ["行选择模式", preview.get("row_selection_mode", "all_except")],
         ["分组数量", preview.get("group_count")],
         ["来源文件数", preview.get("source_file_count")],
         ["导出字段", json.dumps(preview.get("selected_columns"), ensure_ascii=False)],
@@ -823,8 +1105,9 @@ def build_split_output(output_dir: Path, request: Dict[str, Any]) -> Dict[str, A
     jobs = list(request.get("jobs") or [])
     records = load_records(jobs)
     filtered = apply_filters(records, request.get("filters") or {})
+    final, selection = resolve_row_selection(records, filtered, request)
     dimensions = _normalize_dimensions(request.get("group_by"))
-    groups = group_records(filtered, dimensions, request.get("group_options") or {})
+    groups = group_records(final, dimensions, request.get("group_options") or {})
     max_rows = preview["limits"]["max_rows_per_sheet"]
     manifest_groups = []
     if output_mode == "multi_sheet":
@@ -840,30 +1123,37 @@ def build_split_output(output_dir: Path, request: Dict[str, Any]) -> Dict[str, A
                 "voucher_count": group["voucher_count"],
                 "output_filename": output_path.name,
             })
+        final_vouchers = len({(record.job_id, record.voucher_key) for record in final})
+        manifest = {
+            "schema_version": SPLIT_SCHEMA_VERSION,
+            "selected_columns": preview["selected_columns"],
+            "scope": request.get("scope"),
+            "generated_at": request.get("generated_at"),
+            "filters": request.get("filters") or {},
+            "group_by": dimensions,
+            "dimensions": dimensions,
+            "group_options": request.get("group_options") or {},
+            "output_mode": output_mode,
+            "row_mode": request.get("row_mode") or "matched_only",
+            "row_selection_mode": selection["mode"],
+            "excluded_rows": selection["excluded_rows"],
+            "included_rows": selection["included_rows"],
+            "candidate_line_count": len(filtered),
+            "final_line_count": len(final),
+            "candidate_voucher_count": len({(record.job_id, record.voucher_key) for record in filtered}),
+            "matched_lines": len(final),
+            "matched_vouchers": final_vouchers,
+            "group_count": len(groups),
+            "groups": manifest_groups,
+        }
         return {
             "output_mode": output_mode,
             "output_file": output_path.name,
             "group_count": len(groups),
-            "matched_lines": len(filtered),
-            "matched_vouchers": len({(record.job_id, record.voucher_key) for record in filtered}),
+            "matched_lines": len(final),
+            "matched_vouchers": final_vouchers,
             "selected_columns": preview["selected_columns"],
-            "manifest": {
-                "schema_version": SPLIT_SCHEMA_VERSION,
-                "selected_columns": preview["selected_columns"],
-                "scope": request.get("scope"),
-                "generated_at": request.get("generated_at"),
-                "filters": request.get("filters") or {},
-                "group_by": dimensions,
-                "dimensions": dimensions,
-                "group_options": request.get("group_options") or {},
-                "output_mode": output_mode,
-                "row_mode": request.get("row_mode") or "matched_only",
-                "matched_lines": len(filtered),
-                "matched_vouchers": len({(record.job_id, record.voucher_key) for record in filtered}),
-                "group_count": len(groups),
-                "selected_columns": preview["selected_columns"],
-                "groups": manifest_groups,
-            },
+            "manifest": manifest,
         }
 
     zip_path = output_dir / "split-export.zip"
@@ -898,6 +1188,7 @@ def build_split_output(output_dir: Path, request: Dict[str, Any]) -> Dict[str, A
                 "part": part_index,
                 "part_count": len(parts),
             })
+    final_vouchers = len({(record.job_id, record.voucher_key) for record in final})
     manifest = {
         "schema_version": SPLIT_SCHEMA_VERSION,
         "scope": request.get("scope"),
@@ -908,8 +1199,14 @@ def build_split_output(output_dir: Path, request: Dict[str, Any]) -> Dict[str, A
         "group_options": request.get("group_options") or {},
         "output_mode": output_mode,
         "row_mode": request.get("row_mode") or "matched_only",
-        "matched_lines": len(filtered),
-        "matched_vouchers": len({(record.job_id, record.voucher_key) for record in filtered}),
+        "row_selection_mode": selection["mode"],
+        "excluded_rows": selection["excluded_rows"],
+        "included_rows": selection["included_rows"],
+        "candidate_line_count": len(filtered),
+        "final_line_count": len(final),
+        "candidate_voucher_count": len({(record.job_id, record.voucher_key) for record in filtered}),
+        "matched_lines": len(final),
+        "matched_vouchers": final_vouchers,
         "group_count": len(groups),
         "selected_columns": preview["selected_columns"],
         "groups": manifest_groups,
@@ -926,8 +1223,8 @@ def build_split_output(output_dir: Path, request: Dict[str, Any]) -> Dict[str, A
         "output_mode": output_mode,
         "output_file": zip_path.name,
         "group_count": len(groups),
-        "matched_lines": len(filtered),
-        "matched_vouchers": len({(record.job_id, record.voucher_key) for record in filtered}),
+        "matched_lines": len(final),
+        "matched_vouchers": final_vouchers,
         "selected_columns": preview["selected_columns"],
         "manifest": manifest,
     }
@@ -935,7 +1232,7 @@ def build_split_output(output_dir: Path, request: Dict[str, Any]) -> Dict[str, A
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Liuxian Lab split export engine")
-    parser.add_argument("--mode", choices=("preview", "dimensions", "generate"), required=True)
+    parser.add_argument("--mode", choices=("preview", "preview_rows", "dimensions", "generate"), required=True)
     parser.add_argument("--request", required=True)
     parser.add_argument("--output", required=False)
     parser.add_argument("--output-dir", required=False)
@@ -944,6 +1241,8 @@ def main(argv=None) -> int:
         request = json.loads(Path(args.request).read_text(encoding="utf-8"))
         if args.mode == "preview":
             payload = preview_split(request)
+        elif args.mode == "preview_rows":
+            payload = preview_rows(request)
         elif args.mode == "dimensions":
             payload = dimension_options(request)
         else:

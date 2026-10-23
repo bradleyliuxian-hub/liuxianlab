@@ -157,3 +157,19 @@ test('invalid spec and duplicate dimensions are rejected', async () => {
   assert.equal(legacy.status, 201);
   assert.equal(legacy.body.preset.spec.columns, null);
 });
+
+test('presets do not persist row selection', async () => {
+  const response = await request('POST', '/api/journal-entry-split-presets', {
+    name: '无行选择模板',
+    spec: {
+      ...spec,
+      rowSelectionMode: 'all_except',
+      excludedRows: [{ job_id: 'job-1', internal_line_key: '3:sheet:2' }],
+      includedRows: [{ job_id: 'job-1', internal_line_key: '3:sheet:3' }]
+    }
+  });
+  assert.equal(response.status, 201, JSON.stringify(response.body));
+  assert.equal(response.body.preset.spec.rowSelectionMode, undefined);
+  assert.equal(response.body.preset.spec.excludedRows, undefined);
+  assert.equal(response.body.preset.spec.includedRows, undefined);
+});

@@ -27,10 +27,10 @@ Frontend tools are Vanilla HTML/CSS/JS. Do not introduce React/Vue/Tailwind with
 
 | Item | Location |
 |---|---|
-| Docs | `docs/agent/journal-entry-analysis/*`（start at `web-integration.md`；checkpoints: `phase5b-checkpoint.md`, `phase5b1-report.md`） |
-| Node | `server/journal-entry/`（routes、batch-routes、split-routes/presets、runtime、repository、export-columns、ui-projection、cleanup） |
-| Python | `services/journal_entry/`（reader、mapping、normalize、business、contra、anomaly、export、batch_output、split_export、worker） |
-| Frontend | `private/tools/journal-entry-analysis/`（`index.html`、`batch.html`、`split.html`） |
+| Docs | `docs/agent/journal-entry-analysis/*`（start at `web-integration.md`；checkpoints: `phase5b-checkpoint.md`, `phase5b1-report.md`, `phase6-export-preview.md`） |
+| Node | `server/journal-entry/`（routes、batch-routes、split-routes/presets、standard-export-routes、runtime、repository、export-columns、ui-projection、cleanup） |
+| Python | `services/journal_entry/`（reader、mapping、normalize、business、contra、anomaly、export、batch_output、split_export、standard_export、worker） |
+| Frontend | `private/tools/journal-entry-analysis/`（`index.html`、`batch.html`、`split.html`、`standard-preview.html`） |
 | Migrations | `server/journal-entry/migrations/001..006` |
 | Tests | `tests/journal-entry/*`, `services/journal_entry/tests/*` |
 

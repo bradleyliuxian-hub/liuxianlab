@@ -465,6 +465,7 @@ async function startServer() {
   const { createJournalEntryBatchRouter } = require(path.join(ROOT, 'server', 'journal-entry', 'batch-routes.js'));
   const { createSplitRouter } = require(path.join(ROOT, 'server', 'journal-entry', 'split-routes.js'));
   const { createPresetRouter } = require(path.join(ROOT, 'server', 'journal-entry', 'split-preset-routes.js'));
+  const { createStandardExportRouter } = require(path.join(ROOT, 'server', 'journal-entry', 'standard-export-routes.js'));
   const { createJournalEntryRuntime } = require(path.join(ROOT, 'server', 'journal-entry', 'runtime.js'));
   const journalEntryRuntime = createJournalEntryRuntime({
     root: TEMP_ROOT,
@@ -509,6 +510,8 @@ async function startServer() {
     }));
   app.use('/api/journal-entry-split-presets', auth.requireAuth, auth.sameOrigin,
     createPresetRouter({ requireAuth: auth.requireAuth }));
+  app.use('/api/journal-entry-standard-exports', auth.requireAuth, auth.sameOrigin,
+    createStandardExportRouter({ root: TEMP_ROOT, requireAuth: auth.requireAuth }));
 
   app.use((error, _req, res, _next) => {
     console.error('[e2e server]', error);
@@ -917,6 +920,61 @@ function xlsxHeaders(file) {
   return JSON.parse(execFileSync(python, ['-c', code, file], { encoding: 'utf8' }));
 }
 
+
+
+function xlsxRowCounts(file) {
+  const code = [
+    'import json,sys',
+    'from openpyxl import load_workbook',
+    'wb=load_workbook(sys.argv[1], read_only=True, data_only=True)',
+    'try:',
+    '    print(json.dumps({s: max(0, (wb[s].max_row or 1) - 1) for s in wb.sheetnames}, ensure_ascii=False))',
+    'finally: wb.close()'
+  ].join('\n');
+  const python = process.env.JOURNAL_ENTRY_PYTHON_BIN || path.join(ROOT, '.venv', 'bin', 'python');
+  return JSON.parse(execFileSync(python, ['-c', code, file], { encoding: 'utf8' }));
+}
+
+function xlsxInternalKeys(file) {
+  const code = [
+    'import io,json,sys,zipfile',
+    'from openpyxl import load_workbook',
+    'path=sys.argv[1]; keys=[]',
+    'def scan(stream,name):',
+    '    wb=load_workbook(stream, read_only=True, data_only=True)',
+    '    try:',
+    '        for s in wb.sheetnames:',
+    '            if s in ("拆分说明","分组索引","导出说明","标准分录"):',
+    '                continue',
+    '            rows=wb[s].iter_rows(values_only=True)',
+    '            header=next(rows,None)',
+    '            if not header or "内部行标识（系统追溯）" not in header: continue',
+    '            idx=header.index("内部行标识（系统追溯）")',
+    '            for row in rows:',
+    '                if idx < len(row) and row[idx] not in (None, ""): keys.append(row[idx])',
+    '    finally: wb.close()',
+    'if path.lower().endswith(".zip"):',
+    '    with zipfile.ZipFile(path) as z:',
+    '        for n in z.namelist():',
+    '            if n.lower().endswith(".xlsx"): scan(io.BytesIO(z.read(n)), n)',
+    'else: scan(path, path)',
+    'if not keys:',
+    '    wb=load_workbook(path, read_only=True, data_only=True)',
+    '    try:',
+    '        for s in wb.sheetnames:',
+    '            rows=wb[s].iter_rows(values_only=True)',
+    '            header=next(rows,None)',
+    '            if not header or "内部行标识（系统追溯）" not in header: continue',
+    '            idx=header.index("内部行标识（系统追溯）")',
+    '            for row in rows:',
+    '                if idx < len(row) and row[idx] not in (None, ""): keys.append(row[idx])',
+    '    finally: wb.close()',
+    'print(json.dumps(keys, ensure_ascii=False))'
+  ].join('\n');
+  const python = process.env.JOURNAL_ENTRY_PYTHON_BIN || path.join(ROOT, '.venv', 'bin', 'python');
+  return JSON.parse(execFileSync(python, ['-c', code, file], { encoding: 'utf8' }));
+}
+
 function dataHeaders(headers, expected) {
   const hits = [];
   for (const sheets of Object.values(headers)) {
@@ -954,7 +1012,13 @@ async function main() {
     executablePath: chromePath(),
     headless: true,
     args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
-    defaultViewport: { width: 1440, height: 1000 },
+    defaultViewport: (() => {
+      const raw = process.env.JE_E2E_VIEWPORT || '';
+      const match = /^(\d+)x(\d+)$/i.exec(raw);
+      return match
+        ? { width: Number(match[1]), height: Number(match[2]) }
+        : { width: 1440, height: 1000 };
+    })(),
     protocolTimeout: 900000
   });
 
@@ -1404,6 +1468,38 @@ async function main() {
     assert.ok(!selectedHeaders.includes('明细科目'));
     await shot(page, 'split-column-settings');
     log('  column selector + empty-column removal: PASS');
+
+    await page.waitForFunction(() => document.querySelectorAll('#rowTableWrap tbody tr').length > 0);
+    const rowHeaders = await page.$$eval('#rowTableWrap thead th', (nodes) => nodes.map((node) => node.textContent.trim()));
+    const keyIndex = rowHeaders.indexOf('内部行标识（系统追溯）');
+    assert.ok(keyIndex > 0, 'internal line key column missing from preview');
+    const firstKey = await page.$eval(
+      `#rowTableWrap tbody tr:first-child td:nth-child(${keyIndex + 1})`,
+      (node) => node.textContent.trim()
+    );
+    assert.ok(firstKey, 'first row internal key missing');
+    assert.equal(await page.$eval('[data-metric="matchedLines"] strong', (node) => node.textContent), '10');
+    await page.click('#rowTableWrap tbody tr:first-child input[type="checkbox"]');
+    await page.waitForFunction(() => document.querySelector('[data-metric="excludedLines"] strong')?.textContent === '1');
+    assert.equal(await page.$eval('[data-metric="matchedLines"] strong', (node) => node.textContent), '9');
+    await page.click('#restoreAllRows');
+    await page.waitForFunction(() => document.querySelector('[data-metric="excludedLines"] strong')?.textContent === '0');
+    log('  row exclusion + restore: PASS');
+
+    await page.click('#rowTableWrap tbody tr:first-child input[type="checkbox"]');
+    await page.waitForFunction(() => document.querySelector('[data-metric="excludedLines"] strong')?.textContent === '1');
+    await setInputValue(page, '#dateFrom', '2025-01-01');
+    await page.waitForFunction(() => !document.querySelector('#selectionNotice').hidden);
+    assert.match(await page.$eval('#selectionNotice', (node) => node.textContent), /手工行排除已重置/);
+    await setInputValue(page, '#dateFrom', '');
+    await page.click('#previewButton');
+    await waitVisible(page, '#previewCard');
+    await page.waitForFunction(() => document.querySelector('[data-metric="excludedLines"] strong')?.textContent === '0');
+    await page.waitForFunction(() => document.querySelectorAll('#rowTableWrap tbody tr').length > 0);
+    log('  filter change resets row selection: PASS');
+
+    await page.click('#rowTableWrap tbody tr:first-child input[type="checkbox"]');
+    await page.waitForFunction(() => document.querySelector('[data-metric="excludedLines"] strong')?.textContent === '1');
     const accountOutput = await generateSplitOutput(page);
     assert.equal(accountOutput.output.outputMode, 'multi_sheet');
     await waitVisible(page, '#splitDownload');
@@ -1411,7 +1507,10 @@ async function main() {
     assert.match(accountSplit.name, /\.xlsx$/);
     const accountHeaders = xlsxHeaders(path.join(DOWNLOAD_DIR, accountSplit.name));
     assert.ok(dataHeaders(accountHeaders, selectedHeaders).length >= 1, 'selected columns not reflected in multi-sheet header');
-    log(`  account multi-sheet: PASS (${accountSplit.size} bytes; selected columns match)`);
+    const exportedKeys = xlsxInternalKeys(path.join(DOWNLOAD_DIR, accountSplit.name));
+    assert.equal(exportedKeys.length, 9, 'excluded row still present in workbook');
+    assert.ok(!exportedKeys.includes(firstKey), 'excluded row key present in workbook');
+    log(`  account multi-sheet: PASS (${accountSplit.size} bytes; selected columns and rows match)`);
 
     await setGroupLevels(page, ['customer', 'month']);
     await page.select('#outputMode', 'zip');
@@ -1533,6 +1632,25 @@ async function main() {
     await waitVisible(page, '#scopeError');
     assert.match(await page.$eval('#scopeError', (node) => node.textContent), /数据范围无效/);
     log('  invalid split scope is a product error, not static 404: PASS');
+
+    log('STANDARD EXPORT PREVIEW');
+    await page.goto(
+      `${serverInfo.base}/app/tools/journal-entry-analysis/standard-preview.html?scopeType=job&scopeId=${debitJobId}`,
+      { waitUntil: 'networkidle0' }
+    );
+    await waitVisible(page, '#scopeCard');
+    await page.waitForFunction(() => document.querySelector('#scopeBadge')?.textContent === 'JOB');
+    await page.waitForFunction(() => document.querySelectorAll('#rowTableWrap tbody tr').length > 0, { timeout: 30000 });
+    const standardInitial = await page.$eval('[data-metric="matchedLines"] strong', (node) => node.textContent);
+    assert.ok(Number(standardInitial) > 0, 'standard preview has no rows');
+    await page.click('#rowTableWrap tbody tr:first-child input[type="checkbox"]');
+    await page.waitForFunction(() => document.querySelector('[data-metric="excludedLines"] strong')?.textContent === '1');
+    await shot(page, 'standard-export-preview');
+    const standardFile = await downloadOutput(page, cdp, '#standardExportButton', '.xlsx');
+    assert.match(standardFile.name, /\.xlsx$/);
+    const standardRows = xlsxRowCounts(path.join(DOWNLOAD_DIR, standardFile.name));
+    assert.equal(standardRows['标准分录'], Number(standardInitial) - 1);
+    log(`  standard journal preview + row exclusion: PASS (${standardFile.size} bytes)`);
 
     await page.goto(`${serverInfo.base}/app/tools/journal-entry-analysis/batch.html?batch=${batchId}`, { waitUntil: 'networkidle0' });
     await waitVisible(page, '#batchWorkspacePanel');

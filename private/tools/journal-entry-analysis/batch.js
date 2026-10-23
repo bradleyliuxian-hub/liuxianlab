@@ -25,7 +25,8 @@
     outputError: $('#batchOutputError'), generateOutputButton: $('#batchGenerateOutput'),
     downloadSummary: $('#downloadSummary'), downloadMerged: $('#downloadMerged'), downloadZip: $('#downloadZip'),
     startButton: $('#batchStartButton'), refreshButton: $('#batchRefreshButton'), error: $('#batchWorkspaceError'),
-    splitLink: $('#batchSplitLink'), deleteBatchButton: $('#deleteBatchButton'),
+    splitLink: $('#batchSplitLink'),
+    standardExportLink: $('#batchStandardExportLink'), deleteBatchButton: $('#deleteBatchButton'),
     deleteBatchOutput: $('#deleteBatchOutput'),
     historyList: $('#batchHistoryList'), refreshHistoryButton: $('#batchRefreshHistoryButton'),
     configBackdrop: $('#configBackdrop'), configModal: $('#configModal'), configFrame: $('#configFrame'),
@@ -395,6 +396,12 @@
     dom.subtitle.textContent = `${formatDate(batch.createdAt)} · ${batch.totalCount} 个文件 · 逐文件独立结果`;
     dom.status.textContent = batchStatusLabel(batch.status);
     dom.status.className = `badge ${statusTone(batch.status)}`;
+    if (dom.standardExportLink) {
+      dom.standardExportLink.hidden = !batch.completedCount;
+      if (batch.completedCount) {
+        dom.standardExportLink.href = `standard-preview.html?scopeType=batch&scopeId=${encodeURIComponent(batch.id)}`;
+      }
+    }
     if (dom.splitLink) {
       dom.splitLink.hidden = !batch.completedCount;
       if (batch.completedCount) {

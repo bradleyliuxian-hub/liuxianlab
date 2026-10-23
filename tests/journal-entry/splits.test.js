@@ -138,6 +138,12 @@ function installStubs() {
           schema_version: 1,
           matched_lines: empty ? 0 : 10,
           matched_vouchers: empty ? 0 : 5,
+          candidate_lines: empty ? 0 : 10,
+          candidate_vouchers: empty ? 0 : 5,
+          excluded_lines: 0,
+          row_selection_mode: request.row_selection_mode || 'all_except',
+          excluded_rows: request.excluded_rows || [],
+          included_rows: request.included_rows || [],
           completed_files: request.jobs.length,
           source_file_count: request.jobs.length,
           group_count: empty ? 0 : (limited ? 2 : 1),
@@ -162,6 +168,51 @@ function installStubs() {
             line_count: 10, voucher_count: 5,
             debit_total: '100.00', credit_total: '100.00'
           }]
+        }
+      };
+    },
+    async rows(request) {
+      const selected = request.row_selection_mode === 'only_selected'
+        ? (request.included_rows || []).length
+        : 10 - (request.excluded_rows || []).length;
+      return {
+        ok: true,
+        payload: {
+          schema_version: 1,
+          candidate_line_count: 10,
+          included_line_count: selected,
+          excluded_line_count: 10 - selected,
+          candidate_voucher_count: 5,
+          included_voucher_count: 5,
+          page: request.page || 1,
+          page_size: request.page_size || 50,
+          total_pages: 1,
+          columns: request.columns || ['date', 'voucher_id', 'debit', 'credit'],
+          column_order: request.columns || ['date', 'voucher_id', 'debit', 'credit'],
+          column_stats: {
+            date: { non_empty_count: selected, total_count: selected, entirely_empty: false },
+            voucher_id: { non_empty_count: selected, total_count: selected, entirely_empty: false },
+            debit: { non_empty_count: selected, total_count: selected, entirely_empty: false },
+            credit: { non_empty_count: 0, total_count: selected, entirely_empty: true }
+          },
+          rows: [{
+            job_id: request.jobs[0].job_id,
+            internal_line_key: '3:sheet:2',
+            voucher_key: 'V001',
+            included: true,
+            values: { date: '2025-01-01', voucher_id: 'V001', debit: '100.00', credit: null }
+          }],
+          row_selection_mode: request.row_selection_mode || 'all_except',
+          excluded_rows: request.excluded_rows || [],
+          included_rows: request.included_rows || [],
+          group_summary: { group_count: 1, groups: [] },
+          group_count: 1,
+          groups: [],
+          limit_exceeded: false,
+          limits: request.limits,
+          warnings: [],
+          dimensions: request.group_by,
+          included_job_ids: request.jobs.map((job) => job.job_id)
         }
       };
     },
@@ -200,7 +251,7 @@ let base;
 
 test.before(async () => {
   const app = express();
-  app.use(express.json());
+  app.use(express.json({ limit: '2mb' }));
   app.use((req, _res, next) => {
     req.session = { auth: { username: req.headers['x-user'] || 'tester' } };
     next();
@@ -415,4 +466,63 @@ test('stale preview job set is rejected', async () => {
 test('other users cannot preview another owner job', async () => {
   const response = await post('/api/journal-entry-splits/preview', spec(), 'someone-else');
   assert.equal(response.status, 404);
+});
+
+
+test('preview-rows returns paged rows and validates row selection', async () => {
+  const response = await post('/api/journal-entry-splits/preview-rows', {
+    ...spec({ columns: ['date', 'voucher_id', 'debit'] }),
+    page: 1,
+    pageSize: 50
+  });
+  assert.equal(response.status, 200, JSON.stringify(response.body));
+  assert.equal(response.body.candidate_line_count, 10);
+  assert.equal(response.body.page, 1);
+  assert.equal(response.body.pageSize, 50);
+  assert.equal(response.body.rows.length, 1);
+  assert.equal(response.body.rows[0].internal_line_key, '3:sheet:2');
+  assert.equal(response.body.columns[0], 'date');
+
+  const invalidMode = await post('/api/journal-entry-splits/preview-rows', {
+    ...spec(),
+    rowSelectionMode: 'all_selected'
+  });
+  assert.equal(invalidMode.status, 422);
+
+  const tooMany = await post('/api/journal-entry-splits/preview-rows', {
+    ...spec(),
+    rowSelectionMode: 'all_except',
+    excludedRows: Array.from({ length: 5001 }, (_, index) => ({
+      job_id: JOB_ID, internal_line_key: `key-${index}`
+    }))
+  });
+  assert.equal(tooMany.status, 422);
+
+  const otherOwner = await post('/api/journal-entry-splits/preview-rows', spec(), 'someone-else');
+  assert.equal(otherOwner.status, 404);
+});
+
+test('generate persists row selection snapshot and rejects candidate mismatch', async () => {
+  const rows = await post('/api/journal-entry-splits/preview-rows', spec());
+  const response = await post('/api/journal-entry-splits', {
+    ...spec(),
+    rowSelectionMode: 'all_except',
+    excludedRows: [{ job_id: JOB_ID, internal_line_key: '3:sheet:2' }],
+    expectedIncludedJobIds: rows.body.included_job_ids,
+    expectedCandidateLineCount: 10
+  });
+  assert.equal(response.status, 202, JSON.stringify(response.body));
+  const output = await waitForSplitOutput('job', JOB_ID, response.body.output.id);
+  assert.equal(output.snapshot.row_selection_mode, 'all_except');
+  assert.deepEqual(output.snapshot.excluded_rows, [
+    { job_id: JOB_ID, internal_line_key: '3:sheet:2' }
+  ]);
+  assert.equal(output.snapshot.candidate_line_count, 10);
+  assert.equal(output.snapshot.final_line_count, 10);
+
+  const mismatch = await post('/api/journal-entry-splits', {
+    ...spec(),
+    expectedCandidateLineCount: 9
+  });
+  assert.equal(mismatch.status, 409);
 });

@@ -541,3 +541,286 @@ class SplitOutputTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RowSelectionPreviewTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.result_path = make_result(self.root)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _rows(self, **overrides):
+        from services.journal_entry.split_export import preview_rows
+        return preview_rows(request_for(self.result_path, group_by="customer", **overrides))
+
+    def test_all_except_row_selection_and_stats(self):
+        first = self._rows()
+        key = first["rows"][0]["internal_line_key"]
+        excluded = [{"job_id": "job-1", "internal_line_key": key}]
+        preview = self._rows(
+            row_selection_mode="all_except", excluded_rows=excluded
+        )
+        self.assertEqual(preview["candidate_line_count"], 10)
+        self.assertEqual(preview["included_line_count"], 9)
+        self.assertEqual(preview["excluded_line_count"], 1)
+        self.assertFalse(preview["rows"][0]["included"])
+        self.assertEqual(preview["row_selection_mode"], "all_except")
+        self.assertEqual(preview["excluded_rows"], excluded)
+        groups = {
+            group["display_name"]: group["line_count"]
+            for group in preview["groups"]
+        }
+        self.assertEqual(groups["客户A"], 1)
+
+    def test_all_customer_rows_excluded_marks_column_empty(self):
+        preview = self._rows()
+        customer_keys = [
+            {"job_id": "job-1", "internal_line_key": row["internal_line_key"]}
+            for row in preview["rows"]
+            if row["values"]["customer_name"]
+        ]
+        self.assertEqual(len(customer_keys), 3)
+        filtered = self._rows(
+            row_selection_mode="all_except", excluded_rows=customer_keys
+        )
+        self.assertTrue(filtered["column_stats"]["customer_name"]["entirely_empty"])
+        self.assertEqual(filtered["column_stats"]["customer_name"]["non_empty_count"], 0)
+        self.assertEqual(filtered["included_line_count"], 7)
+
+    def test_only_selected_mode(self):
+        preview = self._rows()
+        selected = [
+            {"job_id": "job-1", "internal_line_key": preview["rows"][0]["internal_line_key"]},
+            {"job_id": "job-1", "internal_line_key": preview["rows"][4]["internal_line_key"]},
+        ]
+        filtered = self._rows(
+            row_selection_mode="only_selected", included_rows=selected
+        )
+        self.assertEqual(filtered["included_line_count"], 2)
+        self.assertEqual(filtered["excluded_line_count"], 8)
+        self.assertEqual(
+            [row["internal_line_key"] for row in filtered["rows"] if row["included"]],
+            [selected[0]["internal_line_key"], selected[1]["internal_line_key"]],
+        )
+        self.assertEqual(
+            filtered["column_stats"]["customer_name"]["non_empty_count"], 1
+        )
+
+    def test_row_selection_validation(self):
+        from services.journal_entry.split_export import preview_rows
+        with self.assertRaises(SplitExportError):
+            preview_rows(request_for(
+                self.result_path,
+                row_selection_mode="only_selected",
+                included_rows=[],
+            ))
+        with self.assertRaises(SplitExportError):
+            preview_rows(request_for(
+                self.result_path,
+                row_selection_mode="all_except",
+                excluded_rows=[{"job_id": "other-job", "internal_line_key": "3:序时账:2"}],
+            ))
+        with self.assertRaises(SplitExportError):
+            preview_rows(request_for(
+                self.result_path,
+                row_selection_mode="all_except",
+                excluded_rows=[{"job_id": "job-1", "internal_line_key": "nope"}],
+            ))
+        with self.assertRaises(SplitExportError):
+            preview_rows(request_for(
+                self.result_path,
+                row_selection_mode="all_except",
+                excluded_rows=[{"job_id": "job-1", "internal_line_key": "3:序时账:2"}],
+                included_rows=[{"job_id": "job-1", "internal_line_key": "3:序时账:3"}],
+            ))
+
+    def test_multi_sheet_and_zip_exclude_rows(self):
+        preview = self._rows(
+            row_selection_mode="all_except",
+            excluded_rows=[{"job_id": "job-1", "internal_line_key": "3:序时账:2"}],
+            columns=["date", "voucher_id", "internal_line_key", "debit", "credit"],
+        )
+        self.assertEqual(preview["included_line_count"], 9)
+        for mode, suffix in (("multi_sheet", "xlsx"), ("zip", "zip")):
+            out_dir = self.root / f"out-{mode}"
+            result = build_split_output(out_dir, request_for(
+                self.result_path,
+                group_by="customer",
+                output_mode=mode,
+                row_selection_mode="all_except",
+                excluded_rows=[{"job_id": "job-1", "internal_line_key": "3:序时账:2"}],
+                columns=["date", "voucher_id", "internal_line_key", "debit", "credit"],
+            ))
+            self.assertEqual(result["matched_lines"], 9)
+            keys = []
+            if mode == "multi_sheet":
+                workbook = load_workbook(result_path := out_dir / "split-export.xlsx")
+                for sheet in workbook.worksheets:
+                    if sheet.title in ("拆分说明", "分组索引"):
+                        continue
+                    headers = [cell.value for cell in sheet[1]]
+                    idx = headers.index("内部行标识（系统追溯）")
+                    keys.extend(row[idx] for row in sheet.iter_rows(min_row=2, values_only=True))
+                workbook.close()
+            else:
+                with zipfile.ZipFile(out_dir / "split-export.zip") as archive:
+                    manifest = json.loads(archive.read("manifest.json"))
+                    self.assertEqual(manifest["row_selection_mode"], "all_except")
+                    for item in manifest["groups"]:
+                        workbook = load_workbook(out_dir / item["output_filename"])
+                        sheet = workbook["序时账"]
+                        headers = [cell.value for cell in sheet[1]]
+                        idx = headers.index("内部行标识（系统追溯）")
+                        keys.extend(
+                            row[idx]
+                            for row in sheet.iter_rows(min_row=2, values_only=True)
+                        )
+                        workbook.close()
+            self.assertEqual(len(keys), 9)
+            self.assertNotIn("3:序时账:2", keys)
+
+
+class StandardExportTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.result_path = make_result(self.root)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_standard_preview_and_export(self):
+        from services.journal_entry.standard_export import (
+            build_standard_output,
+            preview_standard,
+        )
+        request = request_for(self.result_path)
+        preview = preview_standard(request)
+        self.assertEqual(preview["candidate_line_count"], 10)
+        self.assertEqual(preview["included_line_count"], 10)
+        self.assertTrue(preview["column_stats"]["customer_name"]["non_empty_count"] == 3)
+        out_dir = self.root / "standard"
+        result = build_standard_output(out_dir, request_for(
+            self.result_path,
+            row_selection_mode="all_except",
+            excluded_rows=[{"job_id": "job-1", "internal_line_key": "3:序时账:2"}],
+            columns=["date", "voucher_id", "internal_line_key", "debit", "credit"],
+        ))
+        self.assertEqual(result["included_line_count"], 9)
+        workbook = load_workbook(out_dir / "standard-journal.xlsx")
+        sheet = workbook["标准分录"]
+        headers = [cell.value for cell in sheet[1]]
+        self.assertEqual(headers, ["日期", "凭证号", "内部行标识（系统追溯）", "借方金额", "贷方金额"])
+        keys = [row[2] for row in sheet.iter_rows(min_row=2, values_only=True)]
+        self.assertEqual(len(keys), 9)
+        self.assertNotIn("3:序时账:2", keys)
+        workbook.close()
+
+
+class RowSelectionPaginationAndBatchTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _synthetic_result(self, name="synthetic.json", count=60):
+        vouchers = []
+        for index in range(count):
+            line = {
+                "entity": "E1", "period": "2025-01",
+                "date": "2025-01-01", "voucher_id": f"V{index:05d}",
+                "line_id": f"L{index}", "internal_line_key": f"3:Sheet:{index + 2}",
+                "account_code": "1002", "account_name": "银行存款",
+                "detail_account": "", "customer_code": "", "customer_name": "",
+                "supplier_code": "", "supplier_name": "",
+                "counterparty_code": "", "counterparty_name": "",
+                "debit": "10.00", "credit": "0.00", "original_amount": None,
+                "currency": "CNY", "description": "synthetic", "preparer": "tester",
+                "sheet_name": "Sheet", "source_row": index + 2,
+            }
+            vouchers.append({
+                "voucher_key": f"K{index:05d}", "voucher_id": f"V{index:05d}",
+                "date": "2025-01-01", "period": "2025-01", "entity": "E1",
+                "lines": [line],
+            })
+        path = self.root / name
+        path.write_text(json.dumps({"schema_version": 1, "vouchers": vouchers}), encoding="utf-8")
+        return path
+
+    def test_preview_rows_pagination_and_exclusion_persistence(self):
+        from services.journal_entry.split_export import preview_rows
+        result_path = self._synthetic_result()
+        request = request_for(result_path, group_by="account")
+        first = preview_rows({**request, "page": 1, "page_size": 25})
+        self.assertEqual(first["candidate_line_count"], 60)
+        self.assertEqual(first["total_pages"], 3)
+        self.assertEqual(len(first["rows"]), 25)
+        excluded = [{
+            "job_id": "job-1",
+            "internal_line_key": first["rows"][3]["internal_line_key"],
+        }]
+        page_one = preview_rows({
+            **request, "page": 1, "page_size": 25,
+            "row_selection_mode": "all_except", "excluded_rows": excluded,
+        })
+        self.assertFalse(page_one["rows"][3]["included"])
+        self.assertEqual(page_one["included_line_count"], 59)
+        page_two = preview_rows({
+            **request, "page": 2, "page_size": 25,
+            "row_selection_mode": "all_except", "excluded_rows": excluded,
+        })
+        self.assertEqual(page_two["page"], 2)
+        self.assertEqual(page_two["included_line_count"], 59)
+        back = preview_rows({
+            **request, "page": 1, "page_size": 25,
+            "row_selection_mode": "all_except", "excluded_rows": excluded,
+        })
+        self.assertFalse(back["rows"][3]["included"])
+        self.assertEqual(
+            back["rows"][3]["internal_line_key"],
+            first["rows"][3]["internal_line_key"],
+        )
+
+    def test_batch_scope_excludes_only_target_file_row(self):
+        from services.journal_entry.split_export import preview_rows, build_split_output
+        path_a = self._synthetic_result("a.json", 5)
+        path_b = self._synthetic_result("b.json", 5)
+        jobs = [
+            {"job_id": "job-a", "original_filename": "a.xlsx", "position": 0, "result_path": str(path_a)},
+            {"job_id": "job-b", "original_filename": "b.xlsx", "position": 1, "result_path": str(path_b)},
+        ]
+        request = request_for(path_a, jobs=jobs, group_by="account")
+        excluded = [{"job_id": "job-a", "internal_line_key": "3:Sheet:3"}]
+        preview = preview_rows({
+            **request, "row_selection_mode": "all_except", "excluded_rows": excluded,
+        })
+        self.assertEqual(preview["candidate_line_count"], 10)
+        self.assertEqual(preview["included_line_count"], 9)
+        out_dir = self.root / "batch-out"
+        result = build_split_output(out_dir, {
+            **request, "row_selection_mode": "all_except",
+            "excluded_rows": excluded,
+            "columns": ["internal_line_key", "original_filename"],
+        })
+        self.assertEqual(result["matched_lines"], 9)
+        workbook = load_workbook(out_dir / "split-export.xlsx")
+        pairs = []
+        for sheet in workbook.worksheets:
+            if sheet.title in ("拆分说明", "分组索引"):
+                continue
+            headers = [cell.value for cell in sheet[1]]
+            key_idx = headers.index("内部行标识（系统追溯）")
+            file_idx = headers.index("原始文件")
+            pairs.extend(
+                (row[file_idx], row[key_idx])
+                for row in sheet.iter_rows(min_row=2, values_only=True)
+            )
+        workbook.close()
+        self.assertEqual(len(pairs), 9)
+        self.assertNotIn(("a.xlsx", "3:Sheet:3"), pairs)
+        self.assertIn(("b.xlsx", "3:Sheet:3"), pairs)

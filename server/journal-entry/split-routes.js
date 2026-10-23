@@ -17,6 +17,9 @@ const {
 const MAX_GROUPS_MULTI_SHEET = 200;
 const MAX_GROUPS_ZIP = 500;
 const MAX_ROWS_PER_SHEET = 1048000;
+const MAX_EXPLICIT_ROWS = 5000;
+const PREVIEW_PAGE_SIZES = [25, 50, 100, 200];
+const ROW_SELECTION_MODES = ['all_except', 'only_selected'];
 const GROUP_BY = new Set([
   'account', 'customer', 'supplier', 'counterparty',
   'month', 'period', 'entity', 'source_file'
@@ -100,6 +103,72 @@ function cleanFilters(value) {
     }
   }
   return filters;
+}
+
+function cleanRowRefs(value, field) {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) throw new ValidationError(`${field}必须是数组。`);
+  if (value.length > MAX_EXPLICIT_ROWS) {
+    throw new ValidationError(`手工${field}超过 ${MAX_EXPLICIT_ROWS} 行上限，请改用筛选条件。`);
+  }
+  const refs = [];
+  const seen = new Set();
+  for (const item of value) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      throw new ValidationError(`${field}格式不正确。`);
+    }
+    const jobId = String(item.job_id || item.jobId || '').trim();
+    const key = String(
+      item.internal_line_key || item.internalLineKey || ''
+    ).trim();
+    if (!key || key.length > 200) {
+      throw new ValidationError(`${field}缺少有效的内部行标识。`);
+    }
+    if (jobId.length > 100) throw new ValidationError(`${field}任务标识过长。`);
+    const identity = `${jobId}\u0000${key}`;
+    if (seen.has(identity)) continue;
+    seen.add(identity);
+    refs.push({ job_id: jobId, internal_line_key: key });
+  }
+  return refs;
+}
+
+function cleanRowSelection(body) {
+  const mode = String(
+    body.rowSelectionMode || body.row_selection_mode || 'all_except'
+  );
+  if (!ROW_SELECTION_MODES.includes(mode)) {
+    throw new ValidationError('行选择模式无效。');
+  }
+  const excludedRows = cleanRowRefs(
+    body.excludedRows !== undefined ? body.excludedRows : body.excluded_rows,
+    '排除行'
+  );
+  const includedRows = cleanRowRefs(
+    body.includedRows !== undefined ? body.includedRows : body.included_rows,
+    '保留行'
+  );
+  if (mode === 'all_except' && includedRows.length) {
+    throw new ValidationError('全部保留模式下不能提交保留行清单。');
+  }
+  if (mode === 'only_selected' && excludedRows.length) {
+    throw new ValidationError('仅保留选中模式下不能提交排除行清单。');
+  }
+  if (mode === 'only_selected' && !includedRows.length) {
+    throw new ValidationError('仅保留选中行时必须选择至少 1 行。');
+  }
+  return { rowSelectionMode: mode, excludedRows, includedRows };
+}
+
+function cleanPaging(body) {
+  let page = Number(body.page);
+  if (!Number.isInteger(page) || page < 1) page = 1;
+  page = Math.min(page, 1000000);
+  let pageSize = Number(body.pageSize || body.page_size);
+  if (!Number.isInteger(pageSize) || !PREVIEW_PAGE_SIZES.includes(pageSize)) {
+    pageSize = 50;
+  }
+  return { page, pageSize };
 }
 
 function cleanGroupOptions(value) {
@@ -224,12 +293,14 @@ function normalizeSpec(body) {
     filters: cleanFilters(body.filters),
     groupOptions: cleanGroupOptions(body.groupOptions || body.group_options),
     limits: cleanLimits(body.limits, outputMode),
-    columns
+    columns,
+    ...cleanRowSelection(body)
   };
 }
 
 function createSplitRouter({ root, requireAuth, runner, repository: splitRepo = splitRepository }) {
   const router = express.Router();
+  router.use(express.json({ limit: '2mb' }));
   const storageRoot = path.join(root, 'storage', 'journal-entry-splits');
   fs.mkdirSync(storageRoot, { recursive: true, mode: 0o700 });
   const splitRunner = runner || createSplitRunner({ root, storageRoot });
@@ -336,7 +407,10 @@ function createSplitRouter({ root, requireAuth, runner, repository: splitRepo = 
       row_mode: spec.rowMode,
       output_mode: spec.outputMode,
       limits: spec.limits,
-      columns: spec.columns
+      columns: spec.columns,
+      row_selection_mode: spec.rowSelectionMode,
+      excluded_rows: spec.excludedRows,
+      included_rows: spec.includedRows
     };
   }
 
@@ -357,6 +431,9 @@ function createSplitRouter({ root, requireAuth, runner, repository: splitRepo = 
       columnGroups: COLUMN_GROUPS,
       columns: COLUMN_DEFINITIONS,
       defaultColumnOrder: DEFAULT_COLUMN_ORDER,
+      rowSelectionModes: ROW_SELECTION_MODES,
+      previewPageSizes: PREVIEW_PAGE_SIZES,
+      maxExplicitRows: MAX_EXPLICIT_ROWS,
       retentionHours: Math.max(1, Number(process.env.JOURNAL_ENTRY_OUTPUT_RETENTION_HOURS || process.env.JOURNAL_ENTRY_RETENTION_HOURS || 72)),
       limits: {
         maxGroupsMultiSheet: MAX_GROUPS_MULTI_SHEET,
@@ -431,6 +508,39 @@ function createSplitRouter({ root, requireAuth, runner, repository: splitRepo = 
     }
   });
 
+  router.post('/preview-rows', requireAuth, async (req, res, next) => {
+    try {
+      const spec = normalizeSpec(req.body);
+      const paging = cleanPaging(req.body);
+      const scopeData = await buildScope(spec.scopeType, spec.scopeId, ownerUsername(req));
+      if (!scopeData) return res.status(404).json({ error: '数据范围不存在。' });
+      const request = {
+        ...requestFor(scopeData, spec),
+        page: paging.page,
+        page_size: paging.pageSize
+      };
+      const result = await splitRunner.rows(request);
+      if (!result.ok) return res.status(422).json({ error: result.error || '导出预览失败。' });
+      return res.json({
+        ...result.payload,
+        scope: scopeData.scope,
+        excluded: scopeData.excluded,
+        completedFiles: scopeData.completedFiles,
+        totalFiles: scopeData.totalFiles || scopeData.completedFiles,
+        filters: spec.filters,
+        groupBy: spec.groupBy,
+        groupOptions: spec.groupOptions,
+        outputMode: spec.outputMode,
+        rowMode: spec.rowMode,
+        page: paging.page,
+        pageSize: paging.pageSize
+      });
+    } catch (error) {
+      if (error instanceof ValidationError) return res.status(422).json({ error: error.message });
+      return next(error);
+    }
+  });
+
   router.post('/', requireAuth, async (req, res, next) => {
     let outputId = null;
     let outputDir = null;
@@ -461,6 +571,14 @@ function createSplitRouter({ root, requireAuth, runner, repository: splitRepo = 
           preview: preview.payload
         });
       }
+      const expectedCandidate = Number(req.body.expectedCandidateLineCount);
+      if (
+        Number.isInteger(expectedCandidate)
+        && expectedCandidate >= 0
+        && expectedCandidate !== preview.payload.candidate_lines
+      ) {
+        return res.status(409).json({ error: '筛选结果已变化，请重新预览后再生成。' });
+      }
       if (activeGenerations >= generationLimit) {
         return res.status(429).json({ error: '已有拆分导出正在生成，请稍后再试。' });
       }
@@ -479,6 +597,11 @@ function createSplitRouter({ root, requireAuth, runner, repository: splitRepo = 
           row_mode: spec.rowMode,
           selected_columns: preview.payload.selected_columns,
           column_order: preview.payload.column_order,
+          row_selection_mode: preview.payload.row_selection_mode,
+          excluded_rows: preview.payload.excluded_rows,
+          included_rows: preview.payload.included_rows,
+          candidate_line_count: preview.payload.candidate_lines,
+          final_line_count: preview.payload.matched_lines,
           matched_lines: preview.payload.matched_lines,
           matched_vouchers: preview.payload.matched_vouchers,
           group_count: preview.payload.group_count,
@@ -523,7 +646,11 @@ function createSplitRouter({ root, requireAuth, runner, repository: splitRepo = 
                 output_file: result.payload.output_file,
                 group_count: result.payload.group_count,
                 matched_lines: result.payload.matched_lines,
-                matched_vouchers: result.payload.matched_vouchers
+                matched_vouchers: result.payload.matched_vouchers,
+                candidate_line_count: result.payload.manifest?.candidate_line_count
+                  ?? snapshot.candidate_line_count,
+                final_line_count: result.payload.manifest?.final_line_count
+                  ?? snapshot.final_line_count
               };
               await splitRepo.markCompleted(outputId, {
                 filePath,
@@ -624,7 +751,10 @@ module.exports = {
   normalizePresetSpec,
   ValidationError,
   cleanFilters,
+  cleanRowSelection,
   MAX_GROUPS_MULTI_SHEET,
   MAX_GROUPS_ZIP,
-  MAX_ROWS_PER_SHEET
+  MAX_ROWS_PER_SHEET,
+  MAX_EXPLICIT_ROWS,
+  PREVIEW_PAGE_SIZES
 };

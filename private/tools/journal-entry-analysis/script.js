@@ -58,6 +58,7 @@
     resultWarnings: $('#resultWarnings'), resultFilters: $('#resultFilters'),
     resultTableWrap: $('#resultTableWrap'), resultPager: $('#resultPager'),
     exportButton: $('#exportButton'), refreshResultButton: $('#refreshResultButton'),
+    standardExportLink: $('#standardExportLink'),
     splitLink: $('#splitLink'),
     refreshHistoryButton: $('#refreshHistoryButton'), historyList: $('#historyList'),
     newJobButton: $('#newJobButton'), toast: $('#toast'),
@@ -753,6 +754,10 @@
       dom.resultPanel.hidden = false;
       dom.exportButton.hidden = false;
       dom.exportButton.href = `${API}/${encodeURIComponent(jobId)}/export`;
+      if (dom.standardExportLink) {
+        dom.standardExportLink.hidden = false;
+        dom.standardExportLink.href = `standard-preview.html?scopeType=job&scopeId=${encodeURIComponent(jobId)}`;
+      }
       dom.splitLink.hidden = false;
       const splitUrl = new URL('split.html', window.location.href);
       splitUrl.searchParams.set('scopeType', 'job');
@@ -1493,6 +1498,7 @@
     dom.resultPanel.hidden = true;
     dom.uploadProgress.hidden = true;
     dom.exportButton.hidden = true;
+    if (dom.standardExportLink) dom.standardExportLink.hidden = true;
     if (dom.splitLink) dom.splitLink.hidden = true;
     showError(dom.uploadError, '');
     showError(dom.mappingError, '');

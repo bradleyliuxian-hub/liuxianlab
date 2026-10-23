@@ -49,7 +49,13 @@
     outputCard: $('#outputCard'), outputMeta: $('#outputMeta'), download: $('#splitDownload'),
     deleteOutput: $('#deleteSplitOutput'),
     toast: $('#splitToast'), dateFrom: $('#dateFrom'), dateTo: $('#dateTo'),
-    debitMin: $('#debitMin'), debitMax: $('#debitMax'), creditMin: $('#creditMin'), creditMax: $('#creditMax')
+    debitMin: $('#debitMin'), debitMax: $('#debitMax'), creditMin: $('#creditMin'), creditMax: $('#creditMax'),
+    rowStatus: $('#rowStatus'), rowTableWrap: $('#rowTableWrap'), rowPagination: $('#rowPagination'),
+    rowPagePrev: $('#rowPagePrev'), rowPageNext: $('#rowPageNext'), rowPageInfo: $('#rowPageInfo'),
+    rowPageSize: $('#rowPageSize'), selectionNotice: $('#selectionNotice'),
+    excludePage: $('#excludePage'), restorePage: $('#restorePage'), onlyPage: $('#onlyPage'),
+    restoreAllRows: $('#restoreAllRows'), widePreview: $('#widePreview'),
+    previewCard: $('#previewCard'), generateButton: $('#generateSplitButton')
   };
 
   const GROUP_OPTIONS = [
@@ -78,6 +84,23 @@
     columns: [],
     columnStats: null,
     columnsDirty: false,
+    rows: [],
+    page: 1,
+    pageSize: 50,
+    totalPages: 0,
+    candidateLines: 0,
+    includedLines: 0,
+    excludedLines: 0,
+    candidateVouchers: 0,
+    includedVouchers: 0,
+    selectionMode: 'all_except',
+    excludedRows: new Map(),
+    includedRows: new Map(),
+    rowsLoading: false,
+    refreshTimer: null,
+    requestToken: 0,
+    expectedCandidateLines: null,
+    wide: false,
     presets: [],
     builtinPresets: [],
     presetId: null,
@@ -135,14 +158,61 @@
     });
   }
 
-  function invalidatePreview() {
+  function rowKey(ref) {
+    return `${ref.job_id || ''}\u0000${ref.internal_line_key || ''}`;
+  }
+
+  function rowRef(row) {
+    return { job_id: row.job_id, internal_line_key: row.internal_line_key };
+  }
+
+  function selectionSize() {
+    return state.selectionMode === 'only_selected'
+      ? state.includedRows.size
+      : state.excludedRows.size;
+  }
+
+  function resetRowSelection() {
+    state.excludedRows.clear();
+    state.includedRows.clear();
+    state.selectionMode = 'all_except';
+  }
+
+  function invalidatePreview({ resetSelection = false, notice = '' } = {}) {
+    if (resetSelection && selectionSize()) {
+      resetRowSelection();
+      showSelectionNotice(notice || '筛选条件已变化，之前的手工行排除已重置。');
+    } else if (resetSelection) {
+      resetRowSelection();
+    }
     state.preview = null;
     state.columnStats = null;
+    state.rows = [];
+    state.page = 1;
+    state.totalPages = 0;
+    state.candidateLines = 0;
+    state.includedLines = 0;
+    state.excludedLines = 0;
+    state.expectedCandidateLines = null;
     renderColumns();
     dom.previewCard.hidden = true;
     dom.generateButton.disabled = true;
     dom.generateButton.textContent = '生成拆分文件';
     showError(dom.splitError, '');
+  }
+
+  function showSelectionNotice(message) {
+    if (!dom.selectionNotice) return;
+    dom.selectionNotice.textContent = message || '';
+    dom.selectionNotice.hidden = !message;
+  }
+
+  function previewErrorMessage(error) {
+    if (!error) return '无法加载导出预览，请重试。';
+    if (/failed to fetch|networkerror|load failed/i.test(String(error.message || ''))) {
+      return '无法加载导出预览，请重试。';
+    }
+    return error.message || '无法加载导出预览，请重试。';
   }
 
   function makeMulti(container, key) {
@@ -173,7 +243,7 @@
         remove.addEventListener('click', () => {
           state.selected[key].delete(value);
           renderChips();
-          invalidatePreview();
+          invalidatePreview({ resetSelection: true });
         });
         chip.append(remove);
         selectedContainer.append(chip);
@@ -202,7 +272,7 @@
               renderChips();
               input.value = '';
               suggestions.hidden = true;
-              invalidatePreview();
+              invalidatePreview({ resetSelection: true });
             });
             suggestions.append(button);
           });
@@ -273,6 +343,10 @@
     state.columns = [...new Set(columns)].filter((id) => state.columnDefs.some((item) => item.id === id));
     state.columnsDirty = dirty;
     renderColumns();
+    if (state.preview) {
+      renderRowTable();
+      renderPagination();
+    }
   }
 
   function recommendedColumnIds() {
@@ -362,7 +436,13 @@
       dom.columnOrder.append(chip);
     });
     if (state.preview) {
-      dom.generateButton.disabled = !state.columns.length || state.preview.limit_exceeded || !state.preview.matched_lines || state.generating;
+      dom.generateButton.disabled = !state.columns.length
+        || state.preview.limit_exceeded
+        || !state.includedLines
+        || state.generating
+        || state.rowsLoading;
+      dom.generateButton.textContent = generateButtonLabel();
+      renderRowTable();
     }
     dom.previewButton.disabled = !state.columns.length || state.unavailableGroups.length > 0;
   }
@@ -397,7 +477,14 @@
       groupOptions,
       rowMode: 'matched_only',
       outputMode: dom.outputMode.value,
-      columns: state.columnsDirty ? state.columns.slice() : undefined
+      columns: state.columnsDirty ? state.columns.slice() : undefined,
+      rowSelectionMode: state.selectionMode,
+      excludedRows: state.selectionMode === 'all_except'
+        ? [...state.excludedRows.values()]
+        : [],
+      includedRows: state.selectionMode === 'only_selected'
+        ? [...state.includedRows.values()]
+        : []
     };
   }
 
@@ -544,10 +631,10 @@
   function updateGroupOptions() {
     state.unavailableGroups = state.levels.filter((dimension) => !dimensionAvailable(dimension));
     renderGroupLevels();
-    updateGroupHint();
+    updateGroupHint({ invalidate: false });
   }
 
-  function updateGroupHint() {
+  function updateGroupHint({ invalidate = true } = {}) {
     dom.accountPrefixControl.hidden = !state.levels.includes('account');
     state.unavailableGroups = state.levels.filter((dimension) => !dimensionAvailable(dimension));
     if (state.unavailableGroups.length) {
@@ -567,7 +654,7 @@
         : '';
       dom.previewButton.disabled = false;
     }
-    invalidatePreview();
+    if (invalidate) invalidatePreview({ resetSelection: false });
   }
 
   function renderPresetSelect() {
@@ -649,6 +736,8 @@
       ? state.builtinPresets.find((item) => String(item.id) === id)
       : state.presets.find((item) => String(item.id) === id);
     if (!preset) return;
+    resetRowSelection();
+    showSelectionNotice('');
     const spec = preset.spec || {};
     const groupBy = Array.isArray(spec.groupBy) ? spec.groupBy : [spec.groupBy || 'account'];
     resetFilterSelections();
@@ -807,23 +896,146 @@
     return box;
   }
 
+  function displayCell(value) {
+    if (value === null || value === undefined || value === '') return '—';
+    return String(value);
+  }
+
+  function renderRowTable() {
+    if (!dom.rowTableWrap) return;
+    clear(dom.rowTableWrap);
+    if (!state.preview) {
+      dom.rowTableWrap.append(el('div', 'table-skeleton', '正在加载导出预览…'));
+      return;
+    }
+    if (!state.rows.length) {
+      dom.rowTableWrap.append(el('div', 'table-skeleton', '当前筛选结果没有数据。'));
+      return;
+    }
+    const table = el('table', 'row-preview-table');
+    const thead = el('thead');
+    const head = el('tr');
+    head.append(el('th', 'select-cell', '保留'));
+    state.columns.forEach((id) => {
+      head.append(el('th', '', columnLabel(id)));
+    });
+    thead.append(head);
+    table.append(thead);
+    const tbody = el('tbody');
+    state.rows.forEach((row, index) => {
+      const tr = el('tr');
+      if (!row.included) tr.classList.add('excluded');
+      const selectCell = el('td', 'select-cell');
+      const checkbox = el('input');
+      checkbox.type = 'checkbox';
+      checkbox.checked = row.included;
+      checkbox.setAttribute('aria-label', `保留第 ${index + 1} 行`);
+      checkbox.addEventListener('change', () => toggleRow(index, checkbox.checked));
+      selectCell.append(checkbox);
+      tr.append(selectCell);
+      state.columns.forEach((id) => {
+        const definition = state.columnDefs.find((item) => item.id === id) || {};
+        const cell = el('td', '', displayCell(row.values?.[id]));
+        if (definition.kind === 'amount') cell.classList.add('amount-cell', 'num');
+        else if (definition.kind === 'date') cell.classList.add('date-cell');
+        else if (id === 'voucher_id') cell.classList.add('voucher-cell');
+        else if (id === 'description') cell.classList.add('desc-cell');
+        else if (definition.kind === 'key') cell.classList.add('key-cell');
+        if (!row.included) {
+          const tag = el('span', 'excluded-tag', '已排除');
+          cell.append(tag);
+        }
+        cell.title = displayCell(row.values?.[id]);
+        tr.append(cell);
+      });
+      tbody.append(tr);
+    });
+    table.append(tbody);
+    dom.rowTableWrap.append(table);
+  }
+
+  function renderPagination() {
+    if (!dom.rowPagination) return;
+    const pages = state.totalPages || (state.candidateLines ? 1 : 0);
+    dom.rowPageInfo.textContent = pages
+      ? `第 ${state.page} / ${pages} 页 · 共 ${state.candidateLines} 行`
+      : '没有可预览的行';
+    dom.rowPagePrev.disabled = state.page <= 1 || state.rowsLoading;
+    dom.rowPageNext.disabled = !pages || state.page >= pages || state.rowsLoading;
+    dom.rowPageSize.value = String(state.pageSize);
+  }
+
+  function renderSelectionSummary() {
+    if (!state.preview) return;
+    const modeLabel = state.selectionMode === 'only_selected' ? '仅保留选中' : '全部保留';
+    dom.rowStatus.innerHTML = '';
+    const parts = [
+      ['筛选匹配', state.candidateLines, ' 行'],
+      ['已保留', state.includedLines, ' 行'],
+      ['已排除', state.excludedLines, ' 行'],
+      ['涉及凭证', state.includedVouchers, '']
+    ];
+    parts.forEach(([label, value, suffix]) => {
+      const item = el('span', '');
+      item.append(document.createTextNode(`${label} `));
+      item.append(el('strong', '', `${value}${suffix}`));
+      dom.rowStatus.append(item, document.createTextNode(' · '));
+    });
+    const mode = el('span', '');
+    mode.append(document.createTextNode('模式：'));
+    mode.append(el('strong', '', modeLabel));
+    dom.rowStatus.append(mode);
+    if (state.rowsLoading) {
+      dom.rowStatus.append(document.createTextNode(' · '), el('strong', '', '正在重新计算…'));
+    }
+    dom.excludePage.disabled = state.rowsLoading || !state.rows.length;
+    dom.restorePage.disabled = state.rowsLoading || !state.rows.length || selectionSize() === 0;
+    dom.onlyPage.disabled = state.rowsLoading || !state.rows.length;
+    dom.restoreAllRows.disabled = state.rowsLoading || selectionSize() === 0;
+  }
+
+  function generateButtonLabel() {
+    if (state.generating) return '正在生成…';
+    if (dom.outputMode.value === 'zip') {
+      const count = state.preview?.group_count ?? 0;
+      return `生成 ZIP（${count} 个文件）`;
+    }
+    return '生成多 Sheet Excel';
+  }
+
   function renderPreview() {
     const preview = state.preview;
     if (!preview) return;
     dom.previewCard.hidden = false;
-    dom.previewSubtitle.textContent = `${preview.matched_lines} 条分录 · ${preview.matched_vouchers} 张凭证 · ${preview.group_count} 个组合分组`;
+    dom.previewSubtitle.textContent = `${state.candidateLines} 条候选中保留 ${state.includedLines} 条 · ${state.includedVouchers} 张凭证 · ${preview.group_count} 个组合分组`;
     dom.previewLimit.textContent = preview.limit_exceeded
       ? `超过上限 ${preview.limits.max_groups}`
-      : preview.matched_lines
+      : state.includedLines
         ? '可以生成'
-        : '无匹配行';
+        : '无保留行';
     clear(dom.splitMetrics);
     dom.splitMetrics.append(
-      metric('匹配分录', preview.matched_lines, '', 'matchedLines'),
-      metric('匹配凭证', preview.matched_vouchers, '', 'matchedVouchers'),
+      metric('候选行', state.candidateLines, '', 'candidateLines'),
+      metric('保留行', state.includedLines, '', 'matchedLines'),
+      metric('排除行', state.excludedLines, '', 'excludedLines'),
+      metric('保留凭证', state.includedVouchers, '', 'matchedVouchers'),
       metric('分组', preview.group_count, '', 'groupCount'),
-      metric('来源文件', preview.completed_files, '', 'completedFiles')
+      metric('来源文件', preview.completed_files || 1, '', 'completedFiles')
     );
+    renderSelectionSummary();
+    dirWarnings(preview);
+    renderRowTable();
+    renderPagination();
+    renderColumns();
+    dom.generateButton.disabled = state.generating
+      || state.rowsLoading
+      || !state.includedLines
+      || !state.columns.length
+      || preview.limit_exceeded;
+    dom.generateButton.textContent = generateButtonLabel();
+  }
+
+  function dirWarnings(preview) {
     const warnings = [];
     if (preview.limit_exceeded) {
       warnings.push(`预计生成 ${preview.group_count} 个分组，超过当前输出上限 ${preview.limits.max_groups}。请增加筛选条件或选择更高层级分组。`);
@@ -833,6 +1045,9 @@
     }
     if (preview.warnings?.includes('blank_group_included')) {
       warnings.push('存在空维度值，已归入“未指定”分组。');
+    }
+    if (state.excludedLines) {
+      warnings.push(`已手工排除 ${state.excludedLines} 行；这些行不会进入任何 Excel 或 ZIP。`);
     }
     dom.splitWarning.hidden = warnings.length === 0;
     dom.splitWarning.textContent = warnings.join(' ');
@@ -867,8 +1082,6 @@
     }
     table.append(thead, tbody);
     dom.splitGroupTable.append(table);
-    dom.generateButton.disabled = state.generating || !preview.matched_lines || preview.limit_exceeded;
-    dom.generateButton.textContent = state.generating ? '正在生成…' : '生成拆分文件';
   }
 
   function renderOutput() {
@@ -915,7 +1128,7 @@
     if (dom.deleteOutput) dom.deleteOutput.hidden = false;
     if (!state.preview && !state.generating) {
       dom.generateButton.disabled = true;
-      dom.generateButton.textContent = '生成拆分文件';
+      if (state.output?.status === 'completed') dom.generateButton.textContent = generateButtonLabel();
     }
   }
 
@@ -930,7 +1143,32 @@
     }
   }
 
-  async function preview() {
+  function applyPreviewPayload(payload) {
+    state.preview = payload;
+    state.columnStats = payload.column_stats || payload.columnStats || null;
+    if (!state.columnsDirty && Array.isArray(payload.columns || payload.selected_columns)) {
+      state.columns = (payload.columns || payload.selected_columns).slice();
+      state.columnsDirty = true;
+    }
+    state.candidateLines = Number(payload.candidate_line_count || 0);
+    state.includedLines = Number(payload.included_line_count || 0);
+    state.excludedLines = Number(payload.excluded_line_count || 0);
+    state.candidateVouchers = Number(payload.candidate_voucher_count || 0);
+    state.includedVouchers = Number(payload.included_voucher_count || 0);
+    state.page = Number(payload.page || 1);
+    state.totalPages = Number(payload.total_pages || 0);
+    state.rows = Array.isArray(payload.rows) ? payload.rows : [];
+    state.selectionMode = payload.row_selection_mode || 'all_except';
+    state.excludedRows = new Map(
+      (payload.excluded_rows || []).map((ref) => [rowKey(ref), ref])
+    );
+    state.includedRows = new Map(
+      (payload.included_rows || []).map((ref) => [rowKey(ref), ref])
+    );
+    state.expectedCandidateLines = state.candidateLines;
+  }
+
+  async function loadPreview({ page = 1, scroll = false } = {}) {
     showError(dom.splitError, '');
     if (state.unavailableGroups.length) {
       showError(dom.splitError, '所选拆分维度当前数据未映射，无法预览。');
@@ -943,32 +1181,178 @@
       showError(dom.splitError, error.message);
       return;
     }
+    const token = ++state.requestToken;
+    state.rowsLoading = true;
     dom.previewButton.disabled = true;
+    dom.previewButton.textContent = '正在加载预览…';
     dom.generateButton.disabled = true;
     try {
-      const payload = await api(`${API}/preview`, {
+      const payload = await api(`${API}/preview-rows`, {
         method: 'POST',
-        body: JSON.stringify(spec)
+        body: JSON.stringify({ ...spec, page, pageSize: state.pageSize })
       });
-      state.preview = payload;
-      state.columnStats = payload.column_stats || payload.columnStats || null;
-      if (!state.columnsDirty && Array.isArray(payload.selected_columns)) {
-        state.columns = payload.selected_columns.slice();
-      }
-      renderColumns();
-      renderPreview();
-      dom.previewCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      if (token !== state.requestToken) return;
+      applyPreviewPayload(payload);
+      if (scroll) dom.previewCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
     } catch (error) {
+      if (token !== state.requestToken) return;
       state.preview = null;
+      state.rows = [];
       dom.previewCard.hidden = true;
-      showError(dom.splitError, error.message || '预览失败。');
+      showError(dom.splitError, previewErrorMessage(error));
     } finally {
-      dom.previewButton.disabled = false;
+      if (token === state.requestToken) {
+        state.rowsLoading = false;
+        dom.previewButton.disabled = false;
+        dom.previewButton.textContent = '加载导出预览';
+        renderPreview();
+      }
     }
+  }
+
+  async function preview() {
+    await loadPreview({ page: 1, scroll: true });
+  }
+
+  async function refreshSelection() {
+    if (!state.preview) return;
+    let spec;
+    try {
+      spec = buildSpecPayload();
+    } catch (error) {
+      showError(dom.splitError, error.message);
+      return;
+    }
+    const token = ++state.requestToken;
+    state.rowsLoading = true;
+    renderPreview();
+    try {
+      const payload = await api(`${API}/preview-rows`, {
+        method: 'POST',
+        body: JSON.stringify({
+          ...spec,
+          page: state.page,
+          pageSize: state.pageSize
+        })
+      });
+      if (token !== state.requestToken) return;
+      applyPreviewPayload(payload);
+    } catch (error) {
+      if (token !== state.requestToken) return;
+      showError(dom.splitError, previewErrorMessage(error));
+    } finally {
+      if (token === state.requestToken) {
+        state.rowsLoading = false;
+        renderPreview();
+      }
+    }
+  }
+
+  function scheduleSelectionRefresh() {
+    clearTimeout(state.refreshTimer);
+    state.rowsLoading = true;
+    renderPreview();
+    state.refreshTimer = setTimeout(() => {
+      state.refreshTimer = null;
+      refreshSelection();
+    }, 180);
+  }
+
+  function toggleRow(index, checked) {
+    const row = state.rows[index];
+    if (!row) return;
+    const ref = rowRef(row);
+    const key = rowKey(ref);
+    if (state.selectionMode === 'all_except') {
+      if (checked) state.excludedRows.delete(key);
+      else state.excludedRows.set(key, ref);
+    } else {
+      if (checked) {
+        if (state.includedRows.size >= 5000) {
+          showToast('最多手工保留 5000 行，请改用筛选条件。');
+          renderRowTable();
+          return;
+        }
+        state.includedRows.set(key, ref);
+      } else {
+        if (state.includedRows.size <= 1) {
+          showToast('至少保留 1 行。');
+          renderRowTable();
+          return;
+        }
+        state.includedRows.delete(key);
+      }
+    }
+    row.included = checked;
+    renderRowTable();
+    renderSelectionSummary();
+    scheduleSelectionRefresh();
+  }
+
+  function currentPageRefs() {
+    return state.rows.map(rowRef);
+  }
+
+  function excludeCurrentPage() {
+    if (!state.rows.length) return;
+    if (state.selectionMode === 'all_except') {
+      for (const ref of currentPageRefs()) state.excludedRows.set(rowKey(ref), ref);
+    } else {
+      for (const ref of currentPageRefs()) state.includedRows.delete(rowKey(ref));
+      if (state.includedRows.size === 0) {
+        showToast('至少保留 1 行；请改用筛选条件缩小范围。');
+        refreshSelection();
+        return;
+      }
+    }
+    refreshSelection();
+  }
+
+  function restoreCurrentPage() {
+    if (!state.rows.length) return;
+    if (state.selectionMode === 'all_except') {
+      for (const ref of currentPageRefs()) state.excludedRows.delete(rowKey(ref));
+    } else {
+      for (const ref of currentPageRefs()) {
+        if (state.includedRows.size >= 5000) break;
+        state.includedRows.set(rowKey(ref), ref);
+      }
+    }
+    refreshSelection();
+  }
+
+  function onlyCurrentPage() {
+    if (!state.rows.length) return;
+    if (state.candidateLines > state.rows.length) {
+      const ok = window.confirm(
+        `仅保留当前页 ${state.rows.length} 行，其余 ${state.candidateLines - state.rows.length} 行将被排除。继续？`
+      );
+      if (!ok) return;
+    }
+    state.selectionMode = 'only_selected';
+    state.excludedRows.clear();
+    state.includedRows = new Map(currentPageRefs().map((ref) => [rowKey(ref), ref]));
+    refreshSelection();
+  }
+
+  function restoreAllRows() {
+    resetRowSelection();
+    showSelectionNotice('');
+    refreshSelection();
   }
 
   async function generate() {
     if (!state.preview || dom.generateButton.disabled) return;
+    if (!state.includedLines) {
+      showError(dom.splitError, '最终保留行为 0，无法生成。');
+      return;
+    }
+    if (state.preview.group_count > 100 || state.includedLines > 50000) {
+      const ok = window.confirm(
+        `将生成 ${state.preview.group_count} 个分组 / 文件，共 ${state.includedLines} 行。继续生成？`
+      );
+      if (!ok) return;
+    }
     let spec;
     try {
       spec = buildSpecPayload();
@@ -987,6 +1371,7 @@
         body: JSON.stringify({
           ...spec,
           expectedIncludedJobIds: state.preview.included_job_ids,
+          expectedCandidateLineCount: state.expectedCandidateLines,
           presetId: state.presetId || undefined,
           presetName: state.presetName || undefined
         })
@@ -1000,7 +1385,7 @@
         state.preview = null;
         dom.previewCard.hidden = true;
         dom.generateButton.disabled = true;
-        showError(dom.splitError, '已完成文件已变化，请重新预览后再生成。');
+        showError(dom.splitError, '数据或筛选结果已变化，请重新预览后再生成。');
       } else {
         showError(dom.splitError, error.message || '生成失败。');
       }
@@ -1010,7 +1395,7 @@
       if (state.preview) renderPreview();
       else {
         dom.generateButton.disabled = true;
-        dom.generateButton.textContent = '生成拆分文件';
+        dom.generateButton.textContent = generateButtonLabel();
       }
       renderOutput();
     }
@@ -1044,7 +1429,7 @@
     });
 
     [dom.dateFrom, dom.dateTo, dom.debitMin, dom.debitMax, dom.creditMin, dom.creditMax].forEach((input) => {
-      input.addEventListener('input', invalidatePreview);
+      input.addEventListener('input', () => invalidatePreview({ resetSelection: true }));
     });
     dom.addGroupLevel.addEventListener('click', () => {
       if (state.levels.length >= 3) return;
@@ -1054,8 +1439,8 @@
       updateGroupHint();
       ensureDimensionAvailability(state.levels[state.levels.length - 1]).then(updateGroupOptions);
     });
-    dom.accountPrefixLength.addEventListener('input', invalidatePreview);
-    dom.outputMode.addEventListener('change', invalidatePreview);
+    dom.accountPrefixLength.addEventListener('input', () => invalidatePreview({ resetSelection: false }));
+    dom.outputMode.addEventListener('change', () => invalidatePreview({ resetSelection: false }));
     dom.recommendedColumns.addEventListener('click', () => setColumns(recommendedColumnIds()));
     dom.removeEmptyColumns.addEventListener('click', () => {
       if (!state.columnStats) return showToast('请先预览分组，再检测空白列。');
@@ -1066,6 +1451,25 @@
     dom.resetColumns.addEventListener('click', () => setColumns(recommendedColumnIds()));
     dom.previewButton.addEventListener('click', preview);
     dom.generateButton.addEventListener('click', generate);
+    dom.excludePage.addEventListener('click', excludeCurrentPage);
+    dom.restorePage.addEventListener('click', restoreCurrentPage);
+    dom.onlyPage.addEventListener('click', onlyCurrentPage);
+    dom.restoreAllRows.addEventListener('click', restoreAllRows);
+    dom.rowPagePrev.addEventListener('click', () => {
+      if (state.page > 1) loadPreview({ page: state.page - 1 });
+    });
+    dom.rowPageNext.addEventListener('click', () => {
+      if (state.page < state.totalPages) loadPreview({ page: state.page + 1 });
+    });
+    dom.rowPageSize.addEventListener('change', () => {
+      state.pageSize = Number(dom.rowPageSize.value) || 50;
+      loadPreview({ page: 1 });
+    });
+    dom.widePreview.addEventListener('click', () => {
+      state.wide = !state.wide;
+      dom.previewCard.classList.toggle('wide', state.wide);
+      dom.widePreview.textContent = state.wide ? '退出宽屏' : '宽屏预览';
+    });
     dom.download.addEventListener('click', () => showToast('正在下载拆分文件…'));
     dom.deleteOutput.addEventListener('click', deleteSplitOutput);
     dom.applyPreset.addEventListener('click', applyPreset);

@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Liuxian Lab 标准序时账导出预览" />
+  <title>标准序时账导出预览 · Liuxian Lab</title>
+  <link rel="stylesheet" href="/design-tokens.css?v=1.3.3" />
+  <link rel="stylesheet" href="/app/app-shell.css?v=1.3.3" />
+  <link rel="stylesheet" href="/app/tools/journal-entry-analysis/styles.css?v=1.3.3" />
+  <link rel="stylesheet" href="/app/tools/journal-entry-analysis/split.css?v=1.3.3" />
+</head>
+<body>
+  <div class="page-shell">
+    <header class="tool-header">
+      <a class="back-link" id="standardBack" href="index.html" aria-label="返回">←</a>
+      <div class="tool-brand">
+        <span class="tool-mark">SP</span>
+        <div><strong>标准序时账导出预览</strong><small>Liuxian Lab / Standard Journal Preview</small></div>
+      </div>
+      <div class="header-actions">
+        <span class="version-chip">v1.3.3</span>
+        <span class="private-badge"><i></i>私有处理</span>
+      </div>
+    </header>
+
+    <main class="tool-main je-main">
+      <section class="intro-section">
+        <p class="eyebrow">STANDARD JOURNAL PREVIEW</p>
+        <h1>先看数据，再导出。</h1>
+        <p>从已完成的分析结果中生成标准序时账。你可以查看真实数据、选择列、手工排除行；分析结果本身不会被修改。</p>
+        <details class="version-notes">
+          <summary>v1.3.3 更新说明</summary>
+          <ul>
+            <li>单文件与批量合并的标准序时账新增真实数据预览。</li>
+            <li>支持服务器分页、列选择、空白列检测与手工行排除。</li>
+            <li>行选择使用 job_id + internal_line_key 稳定标识，只保存被排除的行。</li>
+            <li>导出列使用中文业务表头，技术追溯字段默认关闭。</li>
+            <li>本页只影响标准序时账导出，不修改异常、业务分类与 Contra 分析结果。</li>
+          </ul>
+        </details>
+      </section>
+
+      <section class="workspace-card" id="scopeCard">
+        <div class="card-heading">
+          <div><span class="step-no">01</span><div><h2 id="scopeTitle">数据范围</h2><p id="scopeSubtitle">正在加载…</p></div></div>
+          <span class="profile-chip" id="scopeBadge">—</span>
+        </div>
+        <div class="error-box" id="scopeError" hidden></div>
+      </section>
+
+      <section class="workspace-card" id="columnCard">
+        <div class="card-heading">
+          <div><span class="step-no">02</span><div><h2>导出列设置</h2><p id="columnHint">选择标准序时账包含的列；勾选后预览表会立即更新。</p></div></div>
+          <span class="profile-chip" id="columnCount">—</span>
+        </div>
+        <div class="column-actions">
+          <button class="mini-button" id="recommendedColumns" type="button">推荐列</button>
+          <button class="mini-button" id="removeEmptyColumns" type="button">取消勾选全部空白列</button>
+          <button class="mini-button" id="selectAllColumns" type="button">全选</button>
+          <button class="mini-button" id="clearAllColumns" type="button">全部取消</button>
+          <button class="mini-button" id="resetColumns" type="button">恢复默认</button>
+        </div>
+        <details class="column-drawer" id="columnDrawer">
+          <summary>展开/收起字段选择</summary>
+          <div class="column-groups" id="columnGroups"></div>
+          <div class="column-order-block">
+            <h3>已选列顺序</h3>
+            <div class="column-order" id="columnOrder"></div>
+          </div>
+        </details>
+      </section>
+
+      <section class="workspace-card export-preview-card" id="previewCard">
+        <div class="card-heading">
+          <div><span class="step-no">03</span><div><h2>导出数据预览</h2><p id="previewSubtitle">正在加载…</p></div></div>
+          <div class="result-actions">
+            <span class="profile-chip" id="previewLimit">—</span>
+            <button class="ghost-button" id="widePreview" type="button">宽屏预览</button>
+          </div>
+        </div>
+        <div class="preview-sticky-toolbar">
+          <div class="row-status" id="rowStatus">—</div>
+          <div class="row-actions">
+            <button class="mini-button" id="excludePage" type="button">排除当前页</button>
+            <button class="mini-button" id="restorePage" type="button">恢复当前页</button>
+            <button class="mini-button" id="onlyPage" type="button">仅保留当前页</button>
+            <button class="mini-button" id="restoreAllRows" type="button">恢复全部排除</button>
+            <button class="primary-button" id="standardExportButton" type="button">导出标准序时账</button>
+          </div>
+        </div>
+        <div class="batch-notice" id="selectionNotice" hidden></div>
+        <div class="summary-metrics compact" id="standardMetrics"></div>
+        <div class="batch-notice" id="standardWarning" hidden></div>
+        <div class="row-table-wrap" id="rowTableWrap">
+          <div class="table-skeleton">正在加载导出预览…</div>
+        </div>
+        <div class="row-pagination" id="rowPagination">
+          <div class="pagination-pages">
+            <button class="mini-button" id="rowPagePrev" type="button">上一页</button>
+            <span id="rowPageInfo">第 1 / 1 页</span>
+            <button class="mini-button" id="rowPageNext" type="button">下一页</button>
+          </div>
+          <label class="field-control inline-control"><span>每页</span>
+            <select id="rowPageSize">
+              <option value="25">25</option>
+              <option value="50" selected>50</option>
+              <option value="100">100</option>
+              <option value="200">200</option>
+            </select>
+          </label>
+        </div>
+        <div class="error-box" id="previewError" hidden></div>
+      </section>
+    </main>
+    <footer class="tool-footer"><span>Liuxian Lab</span><span>Standard Journal Preview v1.3.3</span></footer>
+  </div>
+  <div class="toast" id="standardToast" role="status" aria-live="polite"></div>
+  <script src="/app/app-shell.js?v=1.3.3"></script>
+  <script src="/app/tools/journal-entry-analysis/standard-preview.js?v=1.3.3"></script>
+</body>
+</html>

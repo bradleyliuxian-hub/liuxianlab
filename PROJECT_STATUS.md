@@ -1,90 +1,67 @@
 # Project Status
 
-Updated: 2026-10-22
+Updated: 2026-10-23
 
 > 当前状态快照。事实源是仓库 + Git；不写 secret、不写完整 diff、不写聊天历史。
 
 ## Git State
 
-- 分支：`main`；HEAD：`f437782dce2ed87797cb5e3e9f02c76d834473a2`；与 `origin/main` 一致。
-- 工作区：clean（v1.3.2 Export Columns 已提交并推送；本次 resume 仅校正状态与索引文档）。
+- 分支：`main`；工作区：clean（v1.3.3 Export Preview Workspace 已提交；详见本文件末尾 Git 记录）。
 - 生产：未部署；未改生产数据库。
 
 ## Current Focus
 
-**序时账分析 v1.3.2：拆分导出列设置与标准序时账列优化已完成；生产部署未执行。**
+**序时账分析 v1.3.3：导出数据预览工作台已完成（拆分 / 单文件 / 批量合并）；生产部署仍未执行。**
 
-- 单文件：upload → inspect → mapping/preview → worker → result → voucher detail → export → history；支持 DEBIT_CREDIT / DIRECTION_AMOUNT / SIGNED_AMOUNT。
-- 批量：`/api/journal-entry-batches`；`journal_entry_batches` + `journal_entry_batch_items`；每个文件是普通 child job，继续使用单文件 API/Worker。
-- 共享运行时：`server/journal-entry/runtime.js` 由 `server.js` 创建一次并注入 single/batch routers；只有 **一个** 进程内 Queue，`JOURNAL_ENTRY_MAX_CONCURRENT` 为 single + batch 全局上限。
-- 批量上传：最多 20 个、单文件 25 MB、总计 100 MB；先全量校验 extension + magic，再创建，一个非法文件整批拒绝。
-- 批量开始：start-ready 只启动已配置且 preview 通过的 draft；未就绪项保持 draft；可重复调用，不重跑 queued/running/completed/failed；返回 started/skipped/notReady。
-- 批量摘要：只聚合 completed child 的 `summary_json`；Business Coverage / Review Rate 使用加权公式，不平均子任务百分比。
-- 批量输出：`POST /api/journal-entry-batches/:id/exports` 生成 `batch-summary.xlsx`、`merged-standardized-journal.xlsx`、`manifest.json`、`batch-report.zip`；只消费 completed child，不重跑分析；快照持久化，支持刷新后重新下载。
-- 输出 ZIP：逐文件报告使用 position 前缀安全文件名；manifest 不含财务明细；公式注入与 Zip Slip 防护已测试。
-- 批量 UI：`private/tools/journal-entry-analysis/batch.html`；逐文件配置复用单文件页 iframe；显示 ready/pending、批量进度/摘要/历史/逐文件结果与导出。
-- 筛选拆分：`split.html` + `/api/journal-entry-splits`；先筛选、再按 1–3 个有序维度组合分组（科目/客户/供应商/往来单位/月份/期间/主体/来源文件）；支持多 Sheet 或 ZIP；Preview 先于生成，分片/分组/行数上限、结构化 index/manifest、快照、刷新恢复、owner 隔离。
-- 拆分模板：内置模板 + `/api/journal-entry-split-presets` 个人 CRUD；应用后必须重新 Preview；不兼容字段明确提示；历史 output 保存完整 spec 与 preset 快照。
-- Canonical 可选字段：customer/supplier/counterparty code/name 已贯通 mapping → normalize → result → per-file export → batch merge → split export；不从摘要猜测。
-- 单文件结果页使用轻量 UI projection + 服务器分页/懒加载；浏览器不再下载完整 result.json；批量 child 与历史任务复用同一 Result Viewer。
-- 单文件页支持 `?job=<id>` 与 `embedded=1`；工具卡 v1.3.2；页面已加版本更新说明。
-- 契约/身份：internal_line_key 用于详情定位；external line_id 只作展示/追溯；Contra 使用 source/target internal key。
-- 数据迁移：`002` batch、`003` batch outputs、`004` split outputs、`005` split presets、`006` storage lifecycle（additive，无破坏 SQL；已在本地隔离 schema 验证；本机开发库已应用 002–006）。
-
-Flowchart-to-Excel 仍为 PAUSED / Coming Soon。
+- 单文件：upload → inspect → mapping/preview → worker → result → voucher detail → export/history。
+- 拆分：筛选 → 拆分方式 → 导出数据预览（真实表格 + 列选择 + 行排除）→ 分组预览 → Excel/ZIP。
+- 行身份：`job_id + internal_line_key`；默认 `all_except`，只保存被排除行；显式行上限 5,000。
+- 预览表格：服务器分页 25/50/100/200；浏览器不下载完整结果；列勾选即时反映到表格。
+- 排除行后实时重算保留行、凭证数、分组、分组借贷合计与空白列统计。
+- 修改筛选清空手工行选择并提示；修改拆分维度/输出方式保留行选择；模板不保存行身份。
+- 单文件与批量合并新增“标准序时账导出预览”，支持查看、选列、排除行、导出。
+- 生成快照保存 selected_columns / column_order / row_selection_mode / excluded_rows /
+  included_rows / candidate_line_count / final_line_count。
+- 全局 16 KB JSON 限制仅对预览/导出 POST 路由放行，路由内使用 2 MB 解析。
+- 计算语义未改：Reader / Mapping / Normalize / Business / Contra / Anomaly / 拆分组语义。
+- Flowchart-to-Excel 仍为 PAUSED / Coming Soon。
 
 ## Known Broken / Unresolved
 
 - 生产部署与迁移 **NOT RUN**；`002`–`006` 尚未应用到生产库。
+- 完整“分析报告”中的标准序时账 Sheet 仍使用原列集；按报告配置列/行暂只在新标准序时账导出工作台提供。
+- 300k 导出预览未重新压测；100k 服务端单次预览约 2.4–2.6 s。
+- 批量拆分预览已支持行排除，但浏览器 E2E 覆盖的是批量导航；批量跨文件行排除由 Python 测试覆盖。
 - 本机未启动常驻 8080；未做生产 PM2/Nginx 检查。
-- 完整凭证拆分模式（full voucher）未实现。
 - 生产环境 cleanup 未执行；本机仅执行 dry-run。
-- 批量页面仅做 headless E2E + 截图检查；人工交互式视觉复核 **NOT RUN**。
-- 真实生产数据规模未压测；100k/300k synthetic browser 已通过；300k 生产配置建议 16 GiB RAM。
-- 300k preview/start 仍为同步请求（约 65 s）；生产 Nginx 超时待确认。
-- 旧 Golden Fixture / V4 视觉 QA / Windows Excel 验收问题仍保持原状态。
 
 ## Last Verification
 
-- 2026-10-22 Export Columns：
-  - Split 导出列选择、列顺序、空白列检测、推荐列、预设保存恢复已实现。
-  - 多 Sheet / ZIP 统一 Column Schema；Snapshot 保存 selected_columns/column_order。
-  - 单文件标准序时账与批量合并序时账默认中文业务列优先，技术字段移至末尾。
-  - Python **263 pass**；npm **468 pass**；normal browser E2E **PASS**（包含列选择、空列、下载表头、预设恢复）。
-  - 本地真实浏览器手工 Single/Batch Split **PASS**；本地 console/pageerror/404 为 0。
+- 2026-10-23 Export Preview Workspace：
+  - Journal Entry Python **271 pass / 0 fail**；Excel Review Python **79 pass / 0 fail**。
+  - npm test **475 pass / 0 fail**；smoke **PASS**；compileall / git diff --check **PASS**。
+  - browser E2E **PASS**（1440、1366×768、1920×1080）：行排除/恢复、筛选重置、导出不含排除行、
+    标准序时账预览排除行后导出行数减一；console/pageerror/404 = 0。
+  - 100k synthetic：首屏 2.58 s、第 2 页 2.46 s、排除并重算 2.39 s；浏览器仅拿当前页。
+  - Excel 手工/程序检查：列与网页选择一致、排除行不存在、空列未导出、中文表头、金额/日期格式正确。
   - 生产仍未部署。
-- 2026-10-22 Phase 5B.1：
-  - Journal Entry Python **260 pass / 0 fail**
-  - Excel Review Python **79 pass / 0 fail**
-  - Journal Entry Node **61 pass / 0 fail**（routes 18 + batch 16 + queue 2 + splits 9 + presets 3 + cleanup 5 + ui-result 8）
-  - `npm test` **466 pass / 0 fail**
-  - browser E2E **PASS**（normal + batch child result viewer + 100k + 300k）
-  - 100k initial result-view payload **23,210 bytes**（旧 full result 169,724,487）；300k **23,225 bytes**（旧 510,730,683）
-  - 100k/300k dashboard 在 completed 后 **0.00 s** 可用；100k/300k heap 约 5.6 MB / 3.4–3.8 MB
-  - 100k/300k network hard assertion：**full result.json requests = 0**
-  - UI projection 100k **62,164,152 bytes**；300k **186,671,569 bytes**（details zlib）
-  - cleanup dry-run / smoke / compileall / git diff --check **PASS**
-  - migration：本阶段无新增；Phase 5B 001–006 rehearsal 仍为 PASS
-  - **结论：LARGE RESULT DELIVERY READY；Remaining P0 = None；生产 RAM/proxy/disk 待服务器端确认。**
-- Phase 3 基线：voucher detail internal_line_key、duplicate line_id、browser E2E 已通过。
-- Phase 2 基线：SIGNED_AMOUNT API/UI/Worker/export 已通过。
-- Phase 1 基线：部署脚本、迁移检查、Python 依赖、storage/worker/API smoke 已验证。
-
-## Phase 5B.1 Checkpoint
-
-大型结果交付已完成，详细架构、API、Before/After、正确性、容量与测试见
-`docs/agent/journal-entry-analysis/phase5b1-report.md`。
-
-本阶段未执行生产部署、生产迁移或生产 cleanup；本地 bench metadata 已清理。
+- 2026-10-22 Export Columns：263 Python / 468 npm / E2E PASS。
+- 2026-10-22 Phase 5B.1：大结果分页与懒加载基线保持。
 
 ## Pending Decision
 
-- Phase 1–5B 与 v1.3.2 已全部 commit / push（HEAD `f437782`）；是否进入生产部署窗口。
-- 部署前必须确认生产库执行 `002`–`006` migrations，并保持 PM2 单实例（进程内队列）。
-- 生产 RAM / proxy / disk 验证安排；300k preview/start 同步请求约 65 s，Nginx 超时需实测。
+- 是否进入生产部署窗口；部署前必须执行 `002`–`006` migrations，保持 PM2 单实例。
+- 300k 预览性能与 Nginx 超时需在生产配置下确认。
+- 是否把“完整分析报告”的标准序时账 Sheet 也接入列/行设置（当前为 P2）。
 
 ## Next Action
 
-- 若继续开发：P1 批量合并导出列选择器 → P2 单文件报告列选择器（均非阻塞）。
-- 若上线：先做部署 preflight，再在生产窗口应用 002–006 migrations，确认 PM2 fork/单实例、Nginx 100 MB 上传/600 s 输出超时、磁盘与 RAM 余量。
-- 部署后在真实登录浏览器复核批量工作台、拆分页与 v1.3.2 更新说明。
+- 若继续开发：P2 完整分析报告导出设置 → 批量管理页的合并预览入口视觉优化。
+- 若上线：先做部署 preflight，再在生产窗口应用 002–006 migrations，确认 PM2 fork/单实例、
+  Nginx 100 MB 上传 / 600 s 输出超时、磁盘与 RAM 余量。
+- 部署后在真实登录浏览器复核批量工作台、拆分预览、标准序时账预览与 v1.3.3 更新说明。
+
+## Git Record
+
+- 本次 release 提交：见 `git log -1`（v1.3.3 Export Preview Workspace）。
+- 上一 release：`f437782dce2ed87797cb5e3e9f02c76d834473a2`。

@@ -101,6 +101,31 @@ function createSplitRunner({ root, storageRoot }) {
     }
   }
 
+  async function rows(request) {
+    const dir = path.join(tempRoot, crypto.randomUUID());
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const requestFile = path.join(dir, 'request.json');
+    const outputFile = path.join(dir, 'rows.json');
+    fs.writeFileSync(requestFile, `${JSON.stringify(request)}\n`, { mode: 0o600 });
+    try {
+      const run = await runPython({
+        root,
+        args: [
+          '-m', 'services.journal_entry.split_export',
+          '--mode', 'preview_rows',
+          '--request', requestFile,
+          '--output', outputFile
+        ],
+        logFile: path.join(dir, 'split.log')
+      });
+      if (!run.ok) return { ok: false, error: run.error };
+      if (!fs.existsSync(outputFile)) return { ok: false, error: '导出预览未返回结果。' };
+      return { ok: true, payload: JSON.parse(fs.readFileSync(outputFile, 'utf8')) };
+    } finally {
+      try { fs.rmSync(dir, { recursive: true, force: true }); } catch (_) {}
+    }
+  }
+
   async function dimensions(request) {
     const dir = path.join(tempRoot, crypto.randomUUID());
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -147,7 +172,7 @@ function createSplitRunner({ root, storageRoot }) {
     return { ok: true, payload: JSON.parse(fs.readFileSync(resultFile, 'utf8')) };
   }
 
-  return { preview, dimensions, generate };
+  return { preview, rows, dimensions, generate };
 }
 
 module.exports = { createSplitRunner, resolvePythonBin };

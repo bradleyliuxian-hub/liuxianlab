@@ -21,6 +21,7 @@ const { createJournalEntryBatchRouter } = require('./server/journal-entry/batch-
 const { createJournalEntryRuntime } = require('./server/journal-entry/runtime');
 const { createSplitRouter } = require('./server/journal-entry/split-routes');
 const { createPresetRouter } = require('./server/journal-entry/split-preset-routes');
+const { createStandardExportRouter } = require('./server/journal-entry/standard-export-routes');
 const { createPurchaseReconciliationRouter } = require('./server/purchase-reconciliation/routes');
 const { createEquityRouter } = require('./server/equity-structure/routes');
 const { createFlowchartRouter } = require('./server/flowchart-excel/routes');
@@ -125,12 +126,21 @@ app.use(
       req.method === 'PUT'
       && /^\/api\/flowchart-excel\/[0-9a-f-]{36}\/review\/graph\/?$/i.test(req.path);
 
+    const isJournalEntryRowSelection =
+      req.method === 'POST'
+      && (
+        /^\/api\/journal-entry-splits\/(preview|preview-rows)\/?$/i.test(req.path)
+        || /^\/api\/journal-entry-splits\/?$/i.test(req.path)
+        || /^\/api\/journal-entry-standard-exports\/(preview|export)\/?$/i.test(req.path)
+      );
+
 
     if (
       isContractDraftSave
       || isEquityResultSave
       || isEquityPngExport
       || isFlowchartReviewGraphSave
+      || isJournalEntryRowSelection
     ) {
 
       return next();
@@ -390,6 +400,7 @@ app.use('/api/journal-entry-analyses', requireAuth, sameOriginForStateChange, cr
 app.use('/api/journal-entry-batches', requireAuth, sameOriginForStateChange, createJournalEntryBatchRouter({ root: ROOT, requireAuth, runtime: journalEntryRuntime }));
 app.use('/api/journal-entry-splits', requireAuth, sameOriginForStateChange, createSplitRouter({ root: ROOT, requireAuth }));
 app.use('/api/journal-entry-split-presets', requireAuth, sameOriginForStateChange, createPresetRouter({ requireAuth }));
+app.use('/api/journal-entry-standard-exports', requireAuth, sameOriginForStateChange, createStandardExportRouter({ root: ROOT, requireAuth }));
 
 /*
  * 采购与退货对抵：SAP 正负数据按业务键 + FIFO 对抵，Dashboard + 分页结果 + 下载。
