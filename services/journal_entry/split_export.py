@@ -13,7 +13,7 @@ import re
 import sys
 import zipfile
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -24,6 +24,11 @@ from openpyxl.styles import Font
 from openpyxl.utils import get_column_letter
 
 from .export import HEADER_FILL, _write_sheet, safe_excel_text
+from .summary_structure import (
+    SemanticType,
+    SummaryStructureRule,
+    extract_derived_fields,
+)
 
 SPLIT_SCHEMA_VERSION = 1
 
@@ -145,8 +150,11 @@ def _parse_date(value: Any) -> Optional[date]:
         return None
 
 
-def load_records(jobs: Sequence[Dict[str, Any]]) -> List[Record]:
+def load_records(
+    jobs: Sequence[Dict[str, Any]], collect_rules: bool = False
+):
     records: List[Record] = []
+    rules: Dict[Tuple[str, str], SummaryStructureRule] = {}
     for job in jobs:
         path = Path(str(job.get("result_path") or ""))
         if not path.exists():
@@ -160,6 +168,13 @@ def load_records(jobs: Sequence[Dict[str, Any]]) -> List[Record]:
         job_id = str(job.get("job_id") or "")
         filename = str(job.get("original_filename") or "")
         position = int(job.get("position") or 0)
+        summary_structure = payload.get("summary_structure") or {}
+        for item in summary_structure.get("rules") or []:
+            if not isinstance(item, dict):
+                continue
+            rule = SummaryStructureRule.from_dict(item)
+            if rule.account_code:
+                rules[(job_id, rule.account_code)] = rule
         for voucher in payload.get("vouchers") or []:
             if not isinstance(voucher, dict):
                 continue
@@ -179,6 +194,8 @@ def load_records(jobs: Sequence[Dict[str, Any]]) -> List[Record]:
                     entity=_text(line.get("entity") or voucher.get("entity")) or None,
                     line=line,
                 ))
+    if collect_rules:
+        return records, rules
     return records
 
 
@@ -639,19 +656,15 @@ def preview_split(request: Dict[str, Any]) -> Dict[str, Any]:
         "selected_columns": selected_columns,
         "column_order": selected_columns,
         "included_job_ids": [str(job.get("job_id")) for job in jobs],
-        "groups": [
-            {
-                "group_key": group["group_key"],
-                "display_name": group["display_name"],
-                "values": group["values"],
-                "raw_values": group["raw_values"],
-                "line_count": group["line_count"],
-                "voucher_count": group["voucher_count"],
-                "debit_total": format(group["debit_total"], ".2f"),
-                "credit_total": format(group["credit_total"], ".2f"),
-            }
-            for group in groups
-        ],
+        "groups": _group_payload(groups, request, limits),
+        "data_sheet_count": (
+            len(_multi_sheet_layout(groups, limits["max_rows_per_sheet"]))
+            if (request.get("output_mode") or "multi_sheet") == "multi_sheet"
+            else 0
+        ),
+        "aux_sheet_count": (
+            2 if (request.get("output_mode") or "multi_sheet") == "multi_sheet" else 0
+        ),
     }
 
 
@@ -687,10 +700,41 @@ def _page_numbers(request: Dict[str, Any]) -> Tuple[int, int]:
     return max(1, page), max(1, min(MAX_PAGE_SIZE, page_size))
 
 
-def _group_payload(groups: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    return [
-        {
+def _group_payload(
+    groups: Sequence[Dict[str, Any]],
+    request: Dict[str, Any],
+    limits: Dict[str, int],
+) -> List[Dict[str, Any]]:
+    dimensions = _normalize_dimensions(request.get("group_by"))
+    sheets_by_group: Dict[str, List[Dict[str, Any]]] = {}
+    if (request.get("output_mode") or "multi_sheet") == "multi_sheet":
+        for item in _multi_sheet_layout(groups, limits["max_rows_per_sheet"]):
+            sheets_by_group.setdefault(item["group"]["group_key"], []).append(item)
+    payload = []
+    for group in groups:
+        sheets = [
+            {
+                "sheet_name": item["sheet_name"],
+                "part": item["part"],
+                "part_count": item["part_count"],
+                "line_count": item["line_count"],
+                "voucher_count": item["voucher_count"],
+                "debit_total": format(item["debit_total"], ".2f"),
+                "credit_total": format(item["credit_total"], ".2f"),
+            }
+            for item in sheets_by_group.get(group["group_key"], [])
+        ]
+        entry = {
             "group_key": group["group_key"],
+            "group_ref": {
+                "dimensions": [
+                    {
+                        "dimension": dimension,
+                        "value": group["raw_values"][dimension],
+                    }
+                    for dimension in dimensions
+                ]
+            },
             "display_name": group["display_name"],
             "values": group["values"],
             "raw_values": group["raw_values"],
@@ -698,9 +742,279 @@ def _group_payload(groups: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
             "voucher_count": group["voucher_count"],
             "debit_total": format(group["debit_total"], ".2f"),
             "credit_total": format(group["credit_total"], ".2f"),
+            "sheets": sheets,
         }
-        for group in groups
+        if sheets:
+            entry["sheet_name"] = sheets[0]["sheet_name"]
+        if "account" in dimensions:
+            account_code, account_name = _account_index_values(group, request)
+            entry["account_code"] = account_code
+            entry["account_name"] = account_name
+        payload.append(entry)
+    return payload
+
+
+def _normalize_summary_overrides(raw: Any) -> Dict[str, Dict[str, Any]]:
+    if not isinstance(raw, dict):
+        return {}
+    result = {}
+    for account_code, value in raw.items():
+        if not isinstance(value, dict):
+            continue
+        code = str(account_code or "").strip()
+        if not code:
+            continue
+        fields = {}
+        for key, field_value in (value.get("fields") or {}).items():
+            if not isinstance(field_value, dict):
+                continue
+            field_key = str(key or "").strip()
+            if not field_key:
+                continue
+            fields[field_key] = field_value
+        result[code] = {
+            "disabled": bool(value.get("disabled")),
+            "confirmed": bool(value.get("confirmed")),
+            "fields": fields,
+        }
+    return result
+
+
+def _effective_summary_rule(
+    rule: SummaryStructureRule | None,
+    overrides: Dict[str, Dict[str, Any]],
+) -> SummaryStructureRule | None:
+    if rule is None or rule.status not in ("auto", "review"):
+        return None
+    override = overrides.get(rule.account_code) or {}
+    if override.get("disabled"):
+        return None
+    if rule.status == "review" and not override.get("confirmed"):
+        return None
+    override_fields = override.get("fields") or {}
+    fields = []
+    for field in rule.fields:
+        field_override = override_fields.get(field.key) or {}
+        if field_override.get("selected") is False:
+            continue
+        semantic_type = field.semantic_type
+        if field_override.get("semantic_type"):
+            try:
+                semantic_type = SemanticType(str(field_override["semantic_type"]))
+            except ValueError:
+                semantic_type = field.semantic_type
+        label = str(field_override.get("label") or field.label).strip()[:40] or field.label
+        fields.append(replace(field, label=label, semantic_type=semantic_type))
+    if not fields:
+        return None
+    return replace(rule, fields=fields, status="auto")
+
+
+def _group_summary_rule(
+    group: Dict[str, Any],
+    dimensions: Sequence[str],
+    rules: Dict[Tuple[str, str], SummaryStructureRule],
+    overrides: Dict[str, Dict[str, Any]],
+) -> SummaryStructureRule | None:
+    if "account" not in dimensions:
+        return None
+    account_code = _text((group.get("raw_values") or {}).get("account"))
+    if not account_code or account_code == "__blank__":
+        return None
+    job_ids = {record.job_id for record in group.get("rows") or []}
+    candidates = [
+        rules.get((job_id, account_code))
+        for job_id in sorted(job_ids)
     ]
+    candidates = [rule for rule in candidates if rule is not None]
+    if not candidates:
+        return None
+    signatures = {rule.signature() for rule in candidates}
+    if len(signatures) != 1:
+        return None
+    return _effective_summary_rule(candidates[0], overrides)
+
+
+
+def _group_source_rule(
+    group: Dict[str, Any],
+    dimensions: Sequence[str],
+    rules: Dict[Tuple[str, str], SummaryStructureRule],
+) -> SummaryStructureRule | None:
+    if "account" not in dimensions:
+        return None
+    account_code = _text((group.get("raw_values") or {}).get("account"))
+    if not account_code or account_code == "__blank__":
+        return None
+    job_ids = {record.job_id for record in group.get("rows") or []}
+    candidates = [
+        rules.get((job_id, account_code))
+        for job_id in sorted(job_ids)
+    ]
+    candidates = [rule for rule in candidates if rule is not None]
+    if not candidates:
+        return None
+    signatures = {rule.signature() for rule in candidates}
+    if len(signatures) != 1:
+        return None
+    return candidates[0]
+
+
+def _summary_structure_counts(
+    records: Sequence[Record],
+    rules: Dict[Tuple[str, str], SummaryStructureRule],
+) -> Dict[str, Any]:
+    values = list(rules.values())
+    covered = 0
+    for record in records:
+        code = _text(record.line.get("account_code"))
+        rule = rules.get((record.job_id, code))
+        if rule is not None and rule.status == "auto":
+            covered += 1
+    return {
+        "version": 1,
+        "account_count": len({(key[0], key[1]) for key in rules}),
+        "auto_rule_count": sum(1 for rule in values if rule.status == "auto"),
+        "review_rule_count": sum(1 for rule in values if rule.status == "review"),
+        "none_rule_count": sum(1 for rule in values if rule.status == "none"),
+        "covered_line_count": covered,
+        "total_line_count": len(records),
+    }
+
+def _derived_fields(rule: SummaryStructureRule | None) -> List[Dict[str, Any]]:
+    if rule is None:
+        return []
+    return [
+        {
+            "key": field.key,
+            "label": field.label,
+            "semantic_type": field.semantic_type.value,
+            "part_index": field.part_index,
+            "confidence": field.confidence,
+        }
+        for field in rule.fields
+    ]
+
+
+def _derived_field_map(rule: SummaryStructureRule | None) -> Dict[str, Any]:
+    if rule is None:
+        return {}
+    return {field.key: field for field in rule.fields}
+
+
+def _derived_value_for_json(value: Any) -> Any:
+    if isinstance(value, date):
+        return value.isoformat()
+    return value
+
+
+def _sheet_columns_with_derived(
+    columns: Sequence[str], rule: SummaryStructureRule | None
+) -> List[str]:
+    base = list(columns)
+    derived = [field.key for field in (rule.fields if rule else [])]
+    if not derived:
+        return base
+    if "description" in base:
+        index = base.index("description") + 1
+        return base[:index] + derived + base[index:]
+    return base + derived
+
+
+def _standard_headers_with_derived(
+    base_columns: Sequence[str], rule: SummaryStructureRule | None
+) -> List[str]:
+    headers = [COLUMN_BY_ID[column_id]["label"] for column_id in base_columns]
+    if rule is None:
+        return headers
+    derived = [field.label for field in rule.fields]
+    if "description" in base_columns:
+        index = list(base_columns).index("description") + 1
+        return headers[:index] + derived + headers[index:]
+    return headers + derived
+
+
+def _standard_row_with_derived(
+    record: Record,
+    base_columns: Sequence[str],
+    rule: SummaryStructureRule | None,
+) -> List[Any]:
+    base_values = _standard_row(record, base_columns)
+    if rule is None:
+        return base_values
+    extracted = extract_derived_fields(
+        _text(record.line.get("description")),
+        rule,
+    )
+    derived_values = []
+    for field in rule.fields:
+        value = extracted.get(field.key)
+        if field.semantic_type != SemanticType.DATE and isinstance(value, str):
+            value = safe_excel_text(value)
+        derived_values.append(value)
+    if "description" in base_columns:
+        index = list(base_columns).index("description") + 1
+        return base_values[:index] + derived_values + base_values[index:]
+    return base_values + derived_values
+
+
+def _style_sheet_with_derived(
+    sheet, base_columns: Sequence[str], rule: SummaryStructureRule | None
+) -> None:
+    _style_data_sheet(sheet, base_columns)
+    if rule is None:
+        return
+    offset = (
+        list(base_columns).index("description") + 1
+        if "description" in base_columns else len(base_columns)
+    )
+    for index, field in enumerate(rule.fields, start=1):
+        column_index = offset + index
+        letter = get_column_letter(column_index)
+        width = 24 if field.semantic_type != SemanticType.DATE else 14
+        sheet.column_dimensions[letter].width = width
+        if field.semantic_type == SemanticType.DATE:
+            for cell in sheet[letter][1:]:
+                cell.number_format = "yyyy-mm-dd"
+
+
+def _normalize_preview_group(
+    raw: Any, dimensions: Sequence[str]
+) -> Optional[Tuple[Tuple[str, str], ...]]:
+    if raw in (None, ""):
+        return None
+    if isinstance(raw, dict):
+        items = raw.get("dimensions")
+    else:
+        items = raw
+    if not isinstance(items, (list, tuple)) or len(items) != len(dimensions):
+        raise SplitExportError("预览 Sheet 标识无效。")
+    values = []
+    for expected, item in zip(dimensions, items):
+        if not isinstance(item, dict):
+            raise SplitExportError("预览 Sheet 标识无效。")
+        dimension = str(item.get("dimension") or "")
+        value = str(item.get("value") or "")
+        if dimension != expected:
+            raise SplitExportError("预览 Sheet 维度与当前拆分方式不一致。")
+        values.append((dimension, value))
+    return tuple(values)
+
+
+def _find_preview_group(
+    groups: Sequence[Dict[str, Any]],
+    dimensions: Sequence[str],
+    selected: Tuple[Tuple[str, str], ...],
+) -> Dict[str, Any]:
+    target = json.dumps(
+        [{"dimension": dimension, "value": value} for dimension, value in selected],
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    for group in groups:
+        if group["group_key"] == target:
+            return group
+    raise SplitExportError("预览 Sheet 不存在或已被筛选排除。")
 
 
 def preview_rows(request: Dict[str, Any]) -> Dict[str, Any]:
@@ -710,7 +1024,10 @@ def preview_rows(request: Dict[str, Any]) -> Dict[str, Any]:
     if request.get("row_mode") not in (None, "", "matched_only"):
         raise SplitExportError("FULL VOUCHER MODE NOT IMPLEMENTED")
     jobs = list(request.get("jobs") or [])
-    records = load_records(jobs)
+    records, summary_rules = load_records(jobs, collect_rules=True)
+    summary_overrides = _normalize_summary_overrides(
+        request.get("summary_overrides") or request.get("summaryOverrides")
+    )
     filtered = apply_filters(records, request.get("filters") or {})
     final, selection = resolve_row_selection(records, filtered, request)
     groups = group_records(final, dimensions, request.get("group_options") or {})
@@ -720,17 +1037,118 @@ def preview_rows(request: Dict[str, Any]) -> Dict[str, Any]:
     warnings = _preview_warnings(records, groups, dimensions, limits)
 
     page, page_size = _page_numbers(request)
-    total = len(filtered)
+    group_payload = _group_payload(groups, request, limits)
+    account_dimension = "account" in dimensions
+    for entry, group in zip(group_payload, groups):
+        source_rule = _group_source_rule(group, dimensions, summary_rules)
+        effective = _effective_summary_rule(source_rule, summary_overrides)
+        entry["summary_rule"] = {
+            "status": source_rule.status if source_rule else "none",
+            "applied": effective is not None,
+            "confidence": source_rule.overall_confidence if source_rule else 0.0,
+            "delimiter": source_rule.delimiter if source_rule else None,
+            "fields": _derived_fields(source_rule),
+            "applied_fields": _derived_fields(effective),
+        }
+    is_multi_sheet = (request.get("output_mode") or "multi_sheet") == "multi_sheet"
+    layout = (
+        _multi_sheet_layout(groups, limits["max_rows_per_sheet"])
+        if is_multi_sheet else []
+    )
+    selected_group = _normalize_preview_group(
+        request.get("preview_group") or request.get("previewGroup"),
+        dimensions,
+    )
+    active_sheet = None
+    if selected_group is None:
+        scope_records = filtered
+        scope_line_count = len(filtered)
+        scope_voucher_count = len({(record.job_id, record.voucher_key) for record in filtered})
+    else:
+        group = _find_preview_group(groups, dimensions, selected_group)
+        group_sheets = [
+            item for item in layout if item["group"] is group
+        ]
+        try:
+            preview_part = int(request.get("preview_part") or request.get("previewPart") or 1)
+        except (TypeError, ValueError):
+            raise SplitExportError("预览 Sheet 分片无效。")
+        if group_sheets and not 1 <= preview_part <= len(group_sheets):
+            raise SplitExportError("预览 Sheet 分片不存在。")
+        if group_sheets:
+            selected_sheet = group_sheets[preview_part - 1]
+            if len(group_sheets) == 1:
+                scope_records = [
+                    record for record in filtered
+                    if _group_identity(
+                        record,
+                        dimensions,
+                        request.get("group_options") or {},
+                    )[0] == selected_group
+                ]
+                included_scope = selected_sheet["line_count"]
+            else:
+                scope_records = selected_sheet["rows"]
+                included_scope = selected_sheet["line_count"]
+            active_sheet = {
+                "group_key": group["group_key"],
+                "group_ref": {
+                    "dimensions": [
+                        {"dimension": dimension, "value": group["raw_values"][dimension]}
+                        for dimension in dimensions
+                    ]
+                },
+                "sheet_name": selected_sheet["sheet_name"],
+                "part": selected_sheet["part"],
+                "part_count": selected_sheet["part_count"],
+                "line_count": selected_sheet["line_count"],
+                "voucher_count": selected_sheet["voucher_count"],
+                "debit_total": format(selected_sheet["debit_total"], ".2f"),
+                "credit_total": format(selected_sheet["credit_total"], ".2f"),
+            }
+        else:
+            scope_records = group["rows"]
+            active_sheet = {
+                "group_key": group["group_key"],
+                "group_ref": {
+                    "dimensions": [
+                        {"dimension": dimension, "value": group["raw_values"][dimension]}
+                        for dimension in dimensions
+                    ]
+                },
+                "sheet_name": group["display_name"],
+                "part": 1,
+                "part_count": 1,
+                "line_count": group["line_count"],
+                "voucher_count": group["voucher_count"],
+                "debit_total": format(group["debit_total"], ".2f"),
+                "credit_total": format(group["credit_total"], ".2f"),
+            }
+        scope_line_count = len(scope_records)
+        scope_included_line_count = included_scope
+        scope_voucher_count = len({
+            (record.job_id, record.voucher_key) for record in group["rows"]
+        })
+
+    if selected_group is None:
+        scope_included_line_count = len(final)
+    active_rule = None
+    if selected_group is not None and account_dimension:
+        active_group = _find_preview_group(groups, dimensions, selected_group)
+        active_rule = _group_summary_rule(
+            active_group, dimensions, summary_rules, summary_overrides
+        )
+    derived_columns = _derived_fields(active_rule)
+    total = scope_line_count
     total_pages = (total + page_size - 1) // page_size if total else 0
     start = (page - 1) * page_size
-    page_records = filtered[start:start + page_size]
+    page_records = scope_records[start:start + page_size]
 
     selection_keys = (
         {(item["job_id"], item["internal_line_key"]) for item in selection["excluded_rows"]}
         if selection["mode"] == "all_except"
         else {(item["job_id"], item["internal_line_key"]) for item in selection["included_rows"]}
     )
-
     rows = []
     for record in page_records:
         identity = row_identity(record)
@@ -739,22 +1157,29 @@ def preview_rows(request: Dict[str, Any]) -> Dict[str, Any]:
             if selection["mode"] == "all_except"
             else identity in selection_keys
         )
+        values = {
+            column_id: _display_value(record, column_id)
+            for column_id in COLUMN_BY_ID
+        }
+        if active_rule is not None:
+            extracted = extract_derived_fields(
+                _text(record.line.get("description")), active_rule
+            )
+            for field in active_rule.fields:
+                values[field.key] = _derived_value_for_json(extracted.get(field.key))
         rows.append({
             "job_id": record.job_id,
             "internal_line_key": identity[1],
             "voucher_key": record.voucher_key,
             "included": included,
-            "values": {
-                column_id: _display_value(record, column_id)
-                for column_id in COLUMN_BY_ID
-            },
+            "values": values,
         })
 
     return {
         "schema_version": SPLIT_SCHEMA_VERSION,
-        "candidate_line_count": total,
+        "candidate_line_count": len(filtered),
         "included_line_count": len(final),
-        "excluded_line_count": total - len(final),
+        "excluded_line_count": len(filtered) - len(final),
         "candidate_voucher_count": len({(record.job_id, record.voucher_key) for record in filtered}),
         "included_voucher_count": len({(record.job_id, record.voucher_key) for record in final}),
         "page": page,
@@ -769,10 +1194,34 @@ def preview_rows(request: Dict[str, Any]) -> Dict[str, Any]:
         "included_rows": selection["included_rows"],
         "group_summary": {
             "group_count": len(groups),
-            "groups": _group_payload(groups),
+            "groups": group_payload,
         },
         "group_count": len(groups),
-        "groups": _group_payload(groups),
+        "groups": group_payload,
+        "derived_columns": derived_columns,
+        "summary_rule": (
+            {
+                **next(
+                    (
+                        entry["summary_rule"]
+                        for entry in group_payload
+                        if selected_group is not None
+                        and entry["group_key"] == _find_preview_group(groups, dimensions, selected_group)["group_key"]
+                    ),
+                    {},
+                ),
+                "applied_fields": derived_columns,
+            }
+            if selected_group is not None and account_dimension else None
+        ),
+        "summary_structure": _summary_structure_counts(records, summary_rules),
+        "data_sheet_count": len(layout) if is_multi_sheet else 0,
+        "aux_sheet_count": 2 if is_multi_sheet else 0,
+        "scope_line_count": scope_line_count,
+        "scope_included_line_count": scope_included_line_count,
+        "scope_excluded_line_count": max(0, scope_line_count - scope_included_line_count),
+        "scope_voucher_count": scope_voucher_count,
+        "active_sheet": active_sheet,
         "limit_exceeded": len(groups) > limits["max_groups"],
         "limits": limits,
         "warnings": warnings,
@@ -861,6 +1310,47 @@ def _safe_sheet_name(display: Any, used: set) -> str:
         index += 1
     used.add(candidate.casefold())
     return candidate
+
+
+def _multi_sheet_layout(
+    groups: Sequence[Dict[str, Any]], max_rows: int
+) -> List[Dict[str, Any]]:
+    used = {"拆分说明", "分组索引"}
+    layout: List[Dict[str, Any]] = []
+    for group in groups:
+        source_rows = group["rows"]
+        parts = [
+            source_rows[index:index + max_rows]
+            for index in range(0, len(source_rows), max_rows)
+        ] or [[]]
+        part_count = len(parts)
+        for part_index, part in enumerate(parts, start=1):
+            name = (
+                group["display_name"]
+                if part_count == 1
+                else f"{group['display_name']}_{part_index}"
+            )
+            sheet_name = _safe_sheet_name(name, used)
+            layout.append({
+                "group": group,
+                "rows": part,
+                "part": part_index,
+                "part_count": part_count,
+                "sheet_name": sheet_name,
+                "line_count": len(part),
+                "voucher_count": len({
+                    (record.job_id, record.voucher_key) for record in part
+                }),
+                "debit_total": sum(
+                    (_decimal(record.line.get("debit")) for record in part),
+                    Decimal("0.00"),
+                ),
+                "credit_total": sum(
+                    (_decimal(record.line.get("credit")) for record in part),
+                    Decimal("0.00"),
+                ),
+            })
+    return layout
 
 
 def _safe_file_name(display: Any, fallback: str = "group") -> str:
@@ -1026,43 +1516,83 @@ def _write_description(workbook, request, preview, group=None):
     sheet.column_dimensions["B"].width = 90
 
 
-def _build_multi_sheet(path: Path, request: Dict[str, Any], preview: Dict[str, Any], groups: Sequence[Dict[str, Any]]) -> None:
+def _account_index_values(
+    group: Dict[str, Any], request: Dict[str, Any]
+) -> Tuple[str, str]:
+    raw = _text((group.get("raw_values") or {}).get("account"))
+    if raw == "__blank__":
+        return "未指定", "未指定科目"
+    prefix = (request.get("group_options") or {}).get("account_prefix_length")
+    if prefix not in (None, ""):
+        return raw, f"按前 {prefix} 位归并"
+    names: List[str] = []
+    for record in group.get("rows") or []:
+        name = _text(record.line.get("account_name"))
+        if name and name not in names:
+            names.append(name)
+    if not names:
+        name = ""
+    elif len(names) == 1:
+        name = names[0]
+    else:
+        name = "、".join(names[:2]) + (" 等" if len(names) > 2 else "")
+    return raw, name
+
+
+def _build_multi_sheet(path: Path, request: Dict[str, Any], preview: Dict[str, Any], groups: Sequence[Dict[str, Any]], summary_rules: Dict[Tuple[str, str], SummaryStructureRule] | None = None, summary_overrides: Dict[str, Dict[str, Any]] | None = None) -> None:
     workbook = Workbook()
     default = workbook.active
     workbook.remove(default)
     _write_description(workbook, request, preview)
     index = workbook.create_sheet("分组索引")
     dimensions = preview.get("dimensions") or []
-    dimension_headers = [GROUP_BY_LABELS.get(dimension, dimension) for dimension in dimensions]
+    dimension_headers = []
+    for dimension in dimensions:
+        if dimension == "account":
+            dimension_headers.extend(["科目编码", "科目名称"])
+        else:
+            dimension_headers.append(GROUP_BY_LABELS.get(dimension, dimension))
     index.append(dimension_headers + ["Sheet 名称", "部分", "行数", "凭证数", "借方合计", "贷方合计"])
     for cell in index[1]:
         cell.font = Font(bold=True)
         cell.fill = HEADER_FILL
-    used = {"拆分说明", "分组索引"}
     max_rows = _limits(request)["max_rows_per_sheet"]
-    for group in groups:
-        source_rows = group["rows"]
-        record_parts = [source_rows[i:i + max_rows] for i in range(0, len(source_rows), max_rows)] or [[]]
-        columns = preview["selected_columns"]
-        parts = [[_standard_row(record, columns) for record in part] for part in record_parts]
-        for part_index, part in enumerate(parts, start=1):
-            part_records = record_parts[part_index - 1]
-            name = group["display_name"] if len(parts) == 1 else f"{group['display_name']}_{part_index}"
-            sheet_name = _safe_sheet_name(name, used)
-            sheet = workbook.create_sheet(sheet_name)
-            _write_sheet(sheet, _standard_headers(columns), part)
-            _style_data_sheet(sheet, columns)
-            part_vouchers = len({(record.job_id, record.voucher_key) for record in part_records})
-            part_debit = sum((_decimal(record.line.get("debit")) for record in part_records), Decimal("0.00"))
-            part_credit = sum((_decimal(record.line.get("credit")) for record in part_records), Decimal("0.00"))
-            index.append(
-                [_safe_excel(group["values"].get(dimension, "")) for dimension in dimensions]
-                + [
-                    sheet_name, part_index, len(part), part_vouchers,
-                    part_debit.quantize(Decimal("0.01")),
-                    part_credit.quantize(Decimal("0.01")),
-                ]
-            )
+    columns = preview["selected_columns"]
+    summary_rules = summary_rules or {}
+    summary_overrides = summary_overrides or {}
+    for item in _multi_sheet_layout(groups, max_rows):
+        group = item["group"]
+        rule = _group_summary_rule(
+            group, preview.get("dimensions") or [], summary_rules, summary_overrides
+        )
+        sheet_columns = _sheet_columns_with_derived(columns, rule)
+        sheet = workbook.create_sheet(item["sheet_name"])
+        _write_sheet(
+            sheet,
+            _standard_headers_with_derived(columns, rule),
+            [_standard_row_with_derived(record, columns, rule) for record in item["rows"]],
+        )
+        _style_sheet_with_derived(sheet, columns, rule)
+        dimension_values = []
+        for dimension in dimensions:
+            if dimension == "account":
+                account_code, account_name = _account_index_values(group, request)
+                dimension_values.extend([
+                    _safe_excel(account_code),
+                    _safe_excel(account_name),
+                ])
+            else:
+                dimension_values.append(
+                    _safe_excel(group["values"].get(dimension, ""))
+                )
+        index.append(
+            dimension_values + [
+                item["sheet_name"], item["part"], item["line_count"],
+                item["voucher_count"],
+                item["debit_total"].quantize(Decimal("0.01")),
+                item["credit_total"].quantize(Decimal("0.01")),
+            ]
+        )
     index.freeze_panes = "A2"
     index.column_dimensions["A"].width = 34
     index.column_dimensions["B"].width = 34
@@ -1073,15 +1603,24 @@ def _build_multi_sheet(path: Path, request: Dict[str, Any], preview: Dict[str, A
         pass
 
 
-def _build_group_workbook(path: Path, request: Dict[str, Any], preview: Dict[str, Any], group: Dict[str, Any], rows: Sequence[Record], part: int, part_count: int) -> None:
+def _build_group_workbook(path: Path, request: Dict[str, Any], preview: Dict[str, Any], group: Dict[str, Any], rows: Sequence[Record], part: int, part_count: int, summary_rules: Dict[Tuple[str, str], SummaryStructureRule] | None = None, summary_overrides: Dict[str, Dict[str, Any]] | None = None) -> None:
     workbook = Workbook()
     default = workbook.active
     workbook.remove(default)
     _write_description(workbook, request, preview, group)
     sheet = workbook.create_sheet("序时账")
     columns = preview["selected_columns"]
-    _write_sheet(sheet, _standard_headers(columns), [_standard_row(record, columns) for record in rows])
-    _style_data_sheet(sheet, columns)
+    summary_rules = summary_rules or {}
+    summary_overrides = summary_overrides or {}
+    rule = _group_summary_rule(
+        group, preview.get("dimensions") or [], summary_rules, summary_overrides
+    )
+    _write_sheet(
+        sheet,
+        _standard_headers_with_derived(columns, rule),
+        [_standard_row_with_derived(record, columns, rule) for record in rows],
+    )
+    _style_sheet_with_derived(sheet, columns, rule)
     workbook.save(path)
     try:
         path.chmod(0o600)
@@ -1103,7 +1642,10 @@ def build_split_output(output_dir: Path, request: Dict[str, Any]) -> Dict[str, A
             f"预计生成 {preview['group_count']} 个分组，超过当前输出上限 {preview['limits']['max_groups']}。"
         )
     jobs = list(request.get("jobs") or [])
-    records = load_records(jobs)
+    records, summary_rules = load_records(jobs, collect_rules=True)
+    summary_overrides = _normalize_summary_overrides(
+        request.get("summary_overrides") or request.get("summaryOverrides")
+    )
     filtered = apply_filters(records, request.get("filters") or {})
     final, selection = resolve_row_selection(records, filtered, request)
     dimensions = _normalize_dimensions(request.get("group_by"))
@@ -1112,7 +1654,7 @@ def build_split_output(output_dir: Path, request: Dict[str, Any]) -> Dict[str, A
     manifest_groups = []
     if output_mode == "multi_sheet":
         output_path = output_dir / "split-export.xlsx"
-        _build_multi_sheet(output_path, request, preview, groups)
+        _build_multi_sheet(output_path, request, preview, groups, summary_rules, summary_overrides)
         for group in groups:
             manifest_groups.append({
                 "group_key": group["group_key"],
@@ -1122,11 +1664,16 @@ def build_split_output(output_dir: Path, request: Dict[str, Any]) -> Dict[str, A
                 "line_count": group["line_count"],
                 "voucher_count": group["voucher_count"],
                 "output_filename": output_path.name,
+                "derived_fields": _derived_fields(_group_summary_rule(
+                    group, dimensions, summary_rules, summary_overrides
+                )),
             })
         final_vouchers = len({(record.job_id, record.voucher_key) for record in final})
         manifest = {
             "schema_version": SPLIT_SCHEMA_VERSION,
             "selected_columns": preview["selected_columns"],
+            "summary_structure_version": 1,
+            "summary_rule_overrides": summary_overrides,
             "scope": request.get("scope"),
             "generated_at": request.get("generated_at"),
             "filters": request.get("filters") or {},
@@ -1174,7 +1721,7 @@ def build_split_output(output_dir: Path, request: Dict[str, Any]) -> Dict[str, A
             sequence += 1
             _build_group_workbook(
                 output_dir / filename, request, preview, group, part,
-                part_index, len(parts)
+                part_index, len(parts), summary_rules, summary_overrides
             )
             part_vouchers = len({(record.job_id, record.voucher_key) for record in part})
             manifest_groups.append({
@@ -1187,6 +1734,9 @@ def build_split_output(output_dir: Path, request: Dict[str, Any]) -> Dict[str, A
                 "output_filename": filename,
                 "part": part_index,
                 "part_count": len(parts),
+                "derived_fields": _derived_fields(_group_summary_rule(
+                    group, dimensions, summary_rules, summary_overrides
+                )),
             })
     final_vouchers = len({(record.job_id, record.voucher_key) for record in final})
     manifest = {
@@ -1209,6 +1759,8 @@ def build_split_output(output_dir: Path, request: Dict[str, Any]) -> Dict[str, A
         "matched_vouchers": final_vouchers,
         "group_count": len(groups),
         "selected_columns": preview["selected_columns"],
+        "summary_structure_version": 1,
+        "summary_rule_overrides": summary_overrides,
         "groups": manifest_groups,
     }
     with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED, allowZip64=True) as archive:

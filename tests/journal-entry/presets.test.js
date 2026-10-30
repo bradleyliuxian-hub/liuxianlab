@@ -173,3 +173,25 @@ test('presets do not persist row selection', async () => {
   assert.equal(response.body.preset.spec.excludedRows, undefined);
   assert.equal(response.body.preset.spec.includedRows, undefined);
 });
+
+test('presets persist summary rule overrides', async () => {
+  const overrides = {
+    '224103': {
+      confirmed: true,
+      disabled: false,
+      fields: {
+        'summary:auto:224103:part:1': {
+          selected: true,
+          label: '报销人',
+          semantic_type: 'person'
+        }
+      }
+    }
+  };
+  const response = await request('POST', '/api/journal-entry-split-presets', {
+    name: '摘要规则模板',
+    spec: { ...spec, summaryOverrides: overrides }
+  });
+  assert.equal(response.status, 201, JSON.stringify(response.body));
+  assert.deepEqual(response.body.preset.spec.summaryOverrides, overrides);
+});

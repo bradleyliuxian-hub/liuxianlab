@@ -28,6 +28,7 @@ from .errors import JournalEntryError
 from .export import build_export
 from .job_io import normalize_request, read_json
 from .status import Reporter
+from .summary_structure import infer_summary_structure
 from .ui_projection import build_ui_projection
 
 EXPORT_FILENAME = "journal-entry-analysis-report.xlsx"
@@ -42,8 +43,10 @@ def run(job_dir: Path, reporter: Reporter) -> dict:
     normalization = normalize_request(job_dir)
     reporter.update(
         25,
-        "已重建 %d 张凭证，正在分类…" % len(normalization.entries),
+        "已重建 %d 张凭证，正在识别摘要结构…" % len(normalization.entries),
     )
+    summary_structure = infer_summary_structure(normalization.entries)
+    reporter.update(32, "摘要结构识别完成，正在分类…")
 
     business_result = classify_entries(normalization.entries)
     reporter.update(45, "正在分析对方科目…")
@@ -76,6 +79,8 @@ def run(job_dir: Path, reporter: Reporter) -> dict:
         export_filename=EXPORT_FILENAME,
         generated_at=generated_at,
     )
+
+    payload["summary_structure"] = summary_structure
 
     result_path = job_dir / RESULT_FILENAME
     result_path.write_text(

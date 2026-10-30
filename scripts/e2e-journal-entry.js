@@ -749,6 +749,10 @@ async function switchAllTabs(page) {
 }
 
 async function setGroupLevels(page, levels) {
+  await page.evaluate(() => {
+    const details = document.querySelector('#advancedGroupDetails');
+    if (details) details.open = true;
+  });
   let current = await page.$$eval('#groupLevels select', (nodes) => nodes.length);
   while (current > levels.length) {
     await page.evaluate(() => {
@@ -774,6 +778,52 @@ async function setGroupLevels(page, levels) {
     }, { i: index, dim: dimension });
     await page.waitForFunction(({ i, dim }) => document.querySelectorAll('#groupLevels select')[i]?.value === dim, { timeout: 5000 }, { i: index, dim: dimension });
   }
+}
+
+function createSummaryFixture() {
+  const file = path.join(TEMP_ROOT, 'journal_summary_structure.xlsx');
+  if (fs.existsSync(file)) return file;
+  const code = [
+    'import sys',
+    'from openpyxl import Workbook',
+    'wb=Workbook(); ws=wb.active; ws.title="序时账"',
+    'ws.append(["日期","凭证号","科目编码","科目名称","客户编码","客户名称","供应商编码","供应商名称","往来单位名称","摘要","借方","贷方"])',
+    'rows=[',
+    ' ("2025-01-02","V001","224103","员工垫付","","","","","","费用报销_陈威涛",100,0),',
+    ' ("2025-01-03","V002","224103","员工垫付","","","","","","费用报销_丁家蕙",120,0),',
+    ' ("2025-01-04","V003","224103","员工垫付","","","","","","费用报销_陈威涛",80,0),',
+    ' ("2025-01-05","V004","100201","银行存款","","","","","","银行手续费_2025.01.07",50,0),',
+    ' ("2025-01-06","V005","100201","银行存款","","","","","","银行手续费_-",50,0),',
+    ' ("2025-01-07","V006","100201","银行存款","","","","","","银行手续费",50,0),',
+    ' ("2025-01-08","V007","660201","市内交通费","","","","","","市内交通费_效果研发二部（上海）",30,0),',
+    ' ("2025-01-09","V008","660201","市内交通费","","","","","","差旅费_上海办",40,0),',
+    ' ("2025-01-10","V009","888888","其他","","","","","","普通摘要",10,0),',
+    ']',
+    'for r in rows: ws.append(list(r))',
+    'wb.save(sys.argv[1])'
+  ].join('\n');
+  const python = process.env.JOURNAL_ENTRY_PYTHON_BIN || path.join(ROOT, '.venv', 'bin', 'python');
+  execFileSync(python, ['-c', code, file], { encoding: 'utf8' });
+  return file;
+}
+
+async function openGroupPreview(page) {
+  await page.click('[data-sheet-kind="index"]');
+  await page.waitForFunction(() => document.querySelector('#activeSheetName')?.textContent.trim() === '分组索引');
+}
+
+async function openFirstGroupSheet(page) {
+  await page.waitForFunction(() => document.querySelectorAll('#groupSheetList .je-sheet-item').length > 0);
+  const name = await page.$eval(
+    '#groupSheetList .je-sheet-item .je-sheet-item__name',
+    (node) => node.textContent.trim()
+  );
+  await page.evaluate(() => {
+    const first = document.querySelector('#groupSheetList .je-sheet-item');
+    if (first) first.click();
+  });
+  await page.waitForFunction((target) => document.querySelector('#activeSheetName')?.textContent.trim() === target, {}, name);
+  await page.waitForFunction(() => Boolean(document.querySelector('#rowTableWrap tbody tr input[type="checkbox"]')));
 }
 
 async function generateSplitOutput(page) {
@@ -938,6 +988,29 @@ function xlsxSheetData(file, sheetName) {
   ].join('\n');
   const python = process.env.JOURNAL_ENTRY_PYTHON_BIN || path.join(ROOT, '.venv', 'bin', 'python');
   return JSON.parse(execFileSync(python, ['-c', code, file, sheetName], { encoding: 'utf8' }));
+}
+
+
+function xlsxSheetKeys(file) {
+  const code = [
+    'import json,sys',
+    'from openpyxl import load_workbook',
+    'wb=load_workbook(sys.argv[1], read_only=True, data_only=True)',
+    'result={}',
+    'try:',
+    '    for s in wb.sheetnames:',
+    '        if s in ("拆分说明","分组索引","导出说明","标准分录"):',
+    '            continue',
+    '        rows=wb[s].iter_rows(values_only=True)',
+    '        header=next(rows,None)',
+    '        if not header or "内部行标识（系统追溯）" not in header: continue',
+    '        idx=header.index("内部行标识（系统追溯）")',
+    '        result[s]=[row[idx] for row in rows if idx < len(row) and row[idx] not in (None, "")]',
+    'finally: wb.close()',
+    'print(json.dumps(result, ensure_ascii=False))'
+  ].join('\n');
+  const python = process.env.JOURNAL_ENTRY_PYTHON_BIN || path.join(ROOT, '.venv', 'bin', 'python');
+  return JSON.parse(execFileSync(python, ['-c', code, file], { encoding: 'utf8' }));
 }
 
 function xlsxRowCounts(file) {
@@ -1366,6 +1439,8 @@ async function main() {
     await waitVisible(page, '#scopeCard');
     await page.waitForFunction(() => document.querySelector('#scopeBadge')?.textContent === 'BATCH');
     await page.waitForFunction(() => document.querySelectorAll('#rowTableWrap tbody tr').length > 0, { timeout: 30000 });
+    await page.click('#openColumnSettings');
+    await page.waitForSelector('#columnDialog[open]');
     for (const label of ['内部行标识（系统追溯）', '外部行 ID']) {
       await page.evaluate((target) => {
         const row = [...document.querySelectorAll('#columnGroups .column-row')]
@@ -1390,6 +1465,8 @@ async function main() {
       '#columnOrder .column-chip > span:first-child',
       (nodes) => nodes.map((node) => node.textContent.trim())
     );
+    await page.click('#closeColumnSettings');
+    await page.waitForFunction(() => !document.querySelector('#columnDialog').open);
     await page.waitForFunction(() => {
       const headers = [...document.querySelectorAll('#rowTableWrap thead th')]
         .map((node) => node.textContent.trim());
@@ -1574,14 +1651,71 @@ async function main() {
     await waitVisible(page, '#scopeCard');
     await page.waitForFunction(() => document.querySelector('#scopeTitle')?.textContent.includes('journal_audit_split'));
     assert.equal(await page.$eval('#groupLevels select[data-level-index="0"] option[value="customer"]', (node) => node.disabled), false);
+    assert.equal(await page.$eval('[data-group-preset="account"]', (node) => node.getAttribute('aria-pressed')), 'true');
+    await page.click('[data-group-preset="customer"]');
+    await page.waitForFunction(() => document.querySelector('#groupLevels select')?.value === 'customer');
+    assert.equal(await page.$eval('[data-group-preset="customer"]', (node) => node.getAttribute('aria-pressed')), 'true');
+    await page.click('[data-group-preset="combined"]');
+    await page.waitForFunction(() => document.querySelector('#advancedGroupDetails').open
+      && document.querySelectorAll('#groupLevels select').length >= 2);
+    assert.equal(await page.$eval('[data-group-preset="combined"]', (node) => node.getAttribute('aria-pressed')), 'true');
+    await page.click('[data-group-preset="account"]');
+    await page.waitForFunction(() => document.querySelector('#groupLevels select')?.value === 'account');
+    log('  split mode cards: PASS');
+    await page.evaluate(() => { document.querySelector('#advancedFilterDetails').open = true; });
+    await waitVisible(page, '#filterMonth');
+    await waitVisible(page, '#debitMin');
+    log('  advanced filters expand: PASS');
+    await page.click('#resetFilters');
+    await waitVisible(page, '#selectionNotice');
+    assert.match(await page.$eval('#selectionNotice', (node) => node.textContent), /手工行选择已重置/);
+    log('  reset filters: PASS');
+    await shot(page, 'split-workspace-top');
     log('  open split workspace: PASS');
+
+    assert.equal(await page.$eval('[data-account-selection-summary]', (node) => node.textContent.trim()), '全部科目');
+    await page.type('#filter-account-input', '1002');
+    await page.waitForFunction(() => {
+      const items = [...document.querySelectorAll('.split-suggestions:not([hidden]) .split-suggestion')];
+      return items.some((item) => item.textContent.includes('1002'));
+    });
+    await page.evaluate(() => {
+      const item = [...document.querySelectorAll('.split-suggestions .split-suggestion')]
+        .find((node) => node.textContent.includes('1002'));
+      if (item) item.click();
+    });
+    await page.waitForFunction(() => /已选 1 个科目/.test(document.querySelector('[data-account-selection-summary]')?.textContent || ''));
+    assert.equal(await page.$eval('[data-action="select-all-accounts"]', (node) => node.getAttribute('aria-pressed')), 'false');
+    await shot(page, 'split-account-select');
+    const specificAccountRequest = page.waitForRequest(
+      (request) => request.url().endsWith('/api/journal-entry-splits/preview-rows')
+        && request.method() === 'POST'
+    );
+    await page.click('#previewButton');
+    const specificAccountBody = JSON.parse((await specificAccountRequest).postData() || '{}');
+    assert.ok((specificAccountBody.filters.account_values || []).includes('1002'));
+    await waitVisible(page, '#previewCard');
+    assert.equal(await page.$eval('[data-metric="groupCount"] strong', (node) => node.textContent), '1');
+    assert.ok(Number(await page.$eval('[data-metric="candidateLines"] strong', (node) => node.textContent)) < 10);
+    log('  single account preview: PASS');
+    await page.click('[data-action="select-all-accounts"]');
+    await page.waitForFunction(() => document.querySelector('[data-account-selection-summary]')?.textContent.trim() === '全部科目');
+    assert.equal(await page.$eval('[data-action="select-all-accounts"]', (node) => node.getAttribute('aria-pressed')), 'true');
+    await waitVisible(page, '#selectionNotice');
+    assert.match(await page.$eval('#selectionNotice', (node) => node.textContent), /全部科目/);
+    log('  account select all + search: PASS');
 
     await setGroupLevels(page, ['account', 'month']);
     await page.select('#outputMode', 'multi_sheet');
+    const accountPreviewRequest = page.waitForRequest(
+      (request) => request.url().endsWith('/api/journal-entry-splits/preview-rows')
+        && request.method() === 'POST'
+    );
     await page.click('#previewButton');
+    const accountPreviewBody = JSON.parse((await accountPreviewRequest).postData() || '{}');
+    assert.equal(accountPreviewBody.filters.account_values, undefined);
     await waitVisible(page, '#previewCard');
     assert.equal(await page.$eval('[data-metric="groupCount"] strong', (node) => node.textContent), '7');
-    await waitVisible(page, '#columnCard');
     await page.waitForFunction(() => document.querySelectorAll('#columnGroups input[type="checkbox"]').length > 0);
     const defaultDetail = await page.$eval('#columnGroups input[type="checkbox"]', () => true);
     assert.equal(defaultDetail, true);
@@ -1591,6 +1725,8 @@ async function main() {
         .find((item) => item.textContent.includes('明细科目'));
       return row && !row.querySelector('input[type="checkbox"]').checked;
     });
+    await page.click('#openColumnSettings');
+    await page.waitForSelector('#columnDialog[open]');
     await page.evaluate(() => {
       const row = [...document.querySelectorAll('#columnGroups .column-row')]
         .find((item) => item.textContent.includes('内部行标识'));
@@ -1612,8 +1748,11 @@ async function main() {
     assert.ok(selectedHeaders.includes('内部行标识（系统追溯）'));
     assert.ok(!selectedHeaders.includes('明细科目'));
     await shot(page, 'split-column-settings');
+    await page.click('#closeColumnSettings');
+    await page.waitForFunction(() => !document.querySelector('#columnDialog').open);
     log('  column selector + empty-column removal: PASS');
 
+    await openFirstGroupSheet(page);
     await page.waitForFunction(() => document.querySelectorAll('#rowTableWrap tbody tr').length > 0);
     const rowHeaders = await page.$$eval('#rowTableWrap thead th', (nodes) => nodes.map((node) => node.textContent.trim()));
     const keyIndex = rowHeaders.indexOf('内部行标识（系统追溯）');
@@ -1640,9 +1779,15 @@ async function main() {
     await page.click('#previewButton');
     await waitVisible(page, '#previewCard');
     await page.waitForFunction(() => document.querySelector('[data-metric="excludedLines"] strong')?.textContent === '0');
-    await page.waitForFunction(() => document.querySelectorAll('#rowTableWrap tbody tr').length > 0);
+    await openFirstGroupSheet(page);
     log('  filter change resets row selection: PASS');
 
+    const filteredRowHeaders = await page.$$eval('#rowTableWrap thead th', (nodes) => nodes.map((node) => node.textContent.trim()));
+    const filteredKeyIndex = filteredRowHeaders.indexOf('内部行标识（系统追溯）');
+    const filteredFirstKey = await page.$eval(
+      `#rowTableWrap tbody tr:first-child td:nth-child(${filteredKeyIndex + 1})`,
+      (node) => node.textContent.trim()
+    );
     await page.click('#rowTableWrap tbody tr:first-child input[type="checkbox"]');
     await page.waitForFunction(() => document.querySelector('[data-metric="excludedLines"] strong')?.textContent === '1');
     const accountOutput = await generateSplitOutput(page);
@@ -1654,8 +1799,170 @@ async function main() {
     assert.ok(dataHeaders(accountHeaders, selectedHeaders).length >= 1, 'selected columns not reflected in multi-sheet header');
     const exportedKeys = xlsxInternalKeys(path.join(DOWNLOAD_DIR, accountSplit.name));
     assert.equal(exportedKeys.length, 9, 'excluded row still present in workbook');
-    assert.ok(!exportedKeys.includes(firstKey), 'excluded row key present in workbook');
+    assert.ok(!exportedKeys.includes(filteredFirstKey), 'excluded row key present in workbook');
     log(`  account multi-sheet: PASS (${accountSplit.size} bytes; selected columns and rows match)`);
+
+    await page.click('#restoreAllRows');
+    await page.waitForFunction(() => document.querySelector('[data-metric="excludedLines"] strong')?.textContent === '0');
+    await page.click('[data-group-preset="account"]');
+    await page.waitForFunction(() => document.querySelectorAll('#groupLevels select').length === 1
+      && document.querySelector('#groupLevels select')?.value === 'account');
+    assert.equal(await page.$eval('#accountPrefixLength', (node) => node.value), '');
+    assert.equal(await page.$eval('#outputMode', (node) => node.value), 'multi_sheet');
+    await page.click('#previewButton');
+    await waitVisible(page, '#previewCard');
+    const accountGroupCount = Number(await page.$eval(
+      '[data-metric="groupCount"] strong',
+      (node) => node.textContent
+    ));
+    assert.equal(await page.$eval('#activeSheetName', (node) => node.textContent.trim()), '分组索引');
+    await shot(page, 'split-workbook-index');
+    const webSheetNames = await page.$$eval(
+      '#groupSheetList .je-sheet-item__name',
+      (nodes) => nodes.map((node) => node.textContent.trim())
+    );
+    assert.equal(webSheetNames.length, accountGroupCount);
+    assert.match(await page.$eval('#sheetCountLabel', (node) => node.textContent), /数据.*辅助/);
+    const indexHeaders = await page.$$eval(
+      '#rowTableWrap .je-aux-table th',
+      (nodes) => nodes.map((node) => node.textContent.trim())
+    );
+    assert.deepEqual(indexHeaders.slice(0, 2), ['科目编码', '科目名称']);
+    await page.click('[data-sheet-kind="instructions"]');
+    await page.waitForFunction(() => document.querySelector('#activeSheetName')?.textContent.trim() === '拆分说明');
+    assert.match(await page.$eval('#rowTableWrap', (node) => node.textContent), /最终分录/);
+    await page.click('[data-sheet-kind="index"]');
+    await page.waitForFunction(() => document.querySelector('#activeSheetName')?.textContent.trim() === '分组索引');
+    await page.click('#rowTableWrap .je-sheet-link');
+    await page.waitForFunction((name) => document.querySelector('#activeSheetName')?.textContent.trim() === name, {}, webSheetNames[0]);
+    await page.waitForFunction(() => Boolean(document.querySelector('#rowTableWrap tbody tr input[type="checkbox"]')));
+    await page.click('#widePreview');
+    await page.waitForFunction(() => document.querySelector('#previewCard').classList.contains('wide'));
+    await waitVisible(page, '#sheetNavigation');
+    await page.click('#widePreview');
+    await page.waitForFunction(() => !document.querySelector('#previewCard').classList.contains('wide'));
+    log('  workbook instructions + index preview: PASS');
+    const searchableSheet = webSheetNames.find((name) => /^\d/.test(name)) || webSheetNames[0];
+    const searchTerm = searchableSheet.split('_')[0].slice(0, 6);
+    await setInputValue(page, '#sheetSearch', searchTerm);
+    await page.waitForFunction(() => document.querySelectorAll('#groupSheetList .je-sheet-item').length === 1);
+    await setInputValue(page, '#sheetSearch', '');
+    await page.waitForFunction((count) => document.querySelectorAll('#groupSheetList .je-sheet-item').length === count, {}, webSheetNames.length);
+    log('  workbook sheet navigator + search: PASS');
+
+    await openFirstGroupSheet(page);
+    await shot(page, 'split-workbook-group');
+    const accountSelectedLabels = await page.$$eval(
+      '#rowTableWrap thead th',
+      (nodes) => nodes.map((node) => node.textContent.trim())
+    );
+    const accountKeyIndex = accountSelectedLabels.indexOf('内部行标识（系统追溯）');
+    assert.ok(accountKeyIndex > 0);
+    const accountFirstKey = await page.$eval(
+      `#rowTableWrap tbody tr:first-child td:nth-child(${accountKeyIndex + 1})`,
+      (node) => node.textContent.trim()
+    );
+    const activeFirstSheet = await page.$eval('#activeSheetName', (node) => node.textContent.trim());
+    const exclusionRefresh = page.waitForResponse(
+      (response) => response.url().endsWith('/api/journal-entry-splits/preview-rows')
+        && response.request().method() === 'POST'
+    );
+    await page.click('#rowTableWrap tbody tr:first-child input[type="checkbox"]');
+    await exclusionRefresh;
+    await page.waitForFunction(() => document.querySelector('[data-metric="excludedLines"] strong')?.textContent === '1');
+    const accountIncluded = Number(await page.$eval(
+      '[data-metric="matchedLines"] strong',
+      (node) => node.textContent
+    ));
+    const secondSheetName = await page.evaluate((first) => {
+      const names = [...document.querySelectorAll('#groupSheetList .je-sheet-item__name')]
+        .map((node) => node.textContent.trim());
+      return names.find((name) => name !== first) || names[0];
+    }, activeFirstSheet);
+    await page.evaluate((name) => {
+      const item = [...document.querySelectorAll('#groupSheetList .je-sheet-item')]
+        .find((node) => node.querySelector('.je-sheet-item__name')?.textContent.trim() === name);
+      if (item) item.click();
+    }, secondSheetName);
+    await page.waitForFunction((name) => document.querySelector('#activeSheetName')?.textContent.trim() === name, {}, secondSheetName);
+    assert.equal(await page.$eval('[data-metric="excludedLines"] strong', (node) => node.textContent), '1');
+    await page.evaluate((name) => {
+      const item = [...document.querySelectorAll('#groupSheetList .je-sheet-item')]
+        .find((node) => node.querySelector('.je-sheet-item__name')?.textContent.trim() === name);
+      if (item) item.click();
+    }, activeFirstSheet);
+    await page.waitForFunction((name) => document.querySelector('#activeSheetName')?.textContent.trim() === name, {}, activeFirstSheet);
+    await page.waitForFunction(() => Boolean(document.querySelector('#rowTableWrap tbody tr:first-child input[type="checkbox"]')));
+    const sheetSelectionState = await page.evaluate(() => {
+      const rows = [...document.querySelectorAll('#rowTableWrap tbody tr')];
+      return {
+        active: document.querySelector('#activeSheetName')?.textContent.trim(),
+        total: rows.length,
+        unchecked: rows.filter((tr) => !tr.querySelector('input[type="checkbox"]').checked).length,
+        keys: rows.map((tr) => tr.textContent)
+      };
+    });
+    assert.equal(sheetSelectionState.unchecked, 1, 'excluded row was not preserved across sheets');
+    log('  row exclusion persists across sheets: PASS');
+    const pureAccountOutput = await generateSplitOutput(page);
+    assert.equal(pureAccountOutput.output.outputMode, 'multi_sheet');
+    await waitVisible(page, '#splitDownload');
+    const pureAccountFile = await downloadOutput(page, cdp, '#splitDownload', '.xlsx');
+    const pureAccountPath = path.join(DOWNLOAD_DIR, pureAccountFile.name);
+    const pureAccountHeaders = xlsxHeaders(pureAccountPath);
+    const workbookSheets = Object.values(pureAccountHeaders)[0] || {};
+    const accountDataSheets = Object.keys(workbookSheets)
+      .filter((name) => !['拆分说明', '分组索引'].includes(name));
+    assert.equal(accountDataSheets.length, accountGroupCount, 'data sheet count != account groups');
+    assert.deepEqual(accountDataSheets, webSheetNames, 'web sheet names != Excel sheet names');
+    for (const sheet of accountDataSheets) {
+      assert.deepEqual(workbookSheets[sheet], selectedHeaders, `headers mismatch: ${sheet}`);
+    }
+    const accountIndex = xlsxSheetData(pureAccountPath, '分组索引');
+    assert.deepEqual(
+      accountIndex.headers.slice(0, 5),
+      ['科目编码', '科目名称', 'Sheet 名称', '部分', '行数']
+    );
+    assert.equal(accountIndex.rows.length, accountGroupCount, 'index rows != account groups');
+    const accountSheetIndex = accountIndex.headers.indexOf('Sheet 名称');
+    const accountLineIndex = accountIndex.headers.indexOf('行数');
+    assert.deepEqual(
+      accountIndex.rows.map((row) => row[accountSheetIndex]).sort(),
+      accountDataSheets.slice().sort()
+    );
+    assert.equal(
+      accountIndex.rows.reduce((sum, row) => sum + Number(row[accountLineIndex] || 0), 0),
+      accountIncluded,
+      'index line total != included rows'
+    );
+    const pureAccountKeys = xlsxInternalKeys(pureAccountPath);
+    assert.equal(pureAccountKeys.length, accountIncluded);
+    assert.ok(!pureAccountKeys.includes(accountFirstKey), 'excluded row present in account sheets');
+    const excelSheetKeys = xlsxSheetKeys(pureAccountPath);
+    for (const sheetName of webSheetNames) {
+      await page.evaluate((name) => {
+        const item = [...document.querySelectorAll('#groupSheetList .je-sheet-item')]
+          .find((node) => node.querySelector('.je-sheet-item__name')?.textContent.trim() === name);
+        if (item) item.click();
+      }, sheetName);
+      await page.waitForFunction((name) => document.querySelector('#activeSheetName')?.textContent.trim() === name, {}, sheetName);
+      await page.waitForFunction(() => Boolean(document.querySelector('#rowTableWrap tbody tr input[type="checkbox"]')));
+      const previewKeys = await page.evaluate(() => {
+        const headers = [...document.querySelectorAll('#rowTableWrap thead th')]
+          .map((node) => node.textContent.trim());
+        const keyIndex = headers.indexOf('内部行标识（系统追溯）');
+        if (keyIndex < 0) throw new Error('preview internal key column missing');
+        return [...document.querySelectorAll('#rowTableWrap tbody tr')]
+          .filter((tr) => tr.querySelector('input[type="checkbox"]').checked)
+          .map((tr) => tr.children[keyIndex]?.textContent.trim());
+      });
+      assert.deepEqual(
+        previewKeys.slice().sort(),
+        (excelSheetKeys[sheetName] || []).slice().sort(),
+        `preview rows != Excel rows: ${sheetName}`
+      );
+    }
+    log(`  one full account code per sheet: PASS (${accountGroupCount} sheets, ${accountIncluded} rows; per-sheet row sets match)`);
 
     await setGroupLevels(page, ['customer', 'month']);
     await page.select('#outputMode', 'zip');
@@ -1663,7 +1970,8 @@ async function main() {
     await setInputValue(page, '#dateTo', '2025-02-28');
     await page.click('#previewButton');
     await waitVisible(page, '#previewCard');
-    const customerPreview = await page.$eval('#splitGroupTable', (node) => node.innerText);
+    await openGroupPreview(page);
+    const customerPreview = await page.$eval('#rowTableWrap', (node) => node.innerText);
     assert.ok(customerPreview.includes('客户A'));
     assert.ok(customerPreview.includes('客户B'));
     assert.ok(customerPreview.includes('未指定客户'));
@@ -1698,6 +2006,7 @@ async function main() {
     assert.match(reloadedMeta, /包含/);
     log('  split output refresh recovery: PASS');
 
+    await page.evaluate(() => { const d = document.querySelector('#advancedGroupDetails'); if (d) d.open = true; });
     await page.waitForFunction(() => document.querySelectorAll('#presetSelect option').length > 1);
     const presetValue = await page.evaluate((name) => {
       const option = [...document.querySelectorAll('#presetSelect option')]
@@ -1728,7 +2037,8 @@ async function main() {
     await setGroupLevels(page, ['supplier']);
     await page.click('#previewButton');
     await waitVisible(page, '#previewCard');
-    const supplierPreview = await page.$eval('#splitGroupTable', (node) => node.innerText);
+    await openGroupPreview(page);
+    const supplierPreview = await page.$eval('#rowTableWrap', (node) => node.innerText);
     assert.ok(supplierPreview.includes('供应商A'));
     assert.ok(supplierPreview.includes('供应商B'));
     assert.ok(supplierPreview.includes('未指定供应商'));
@@ -1737,7 +2047,8 @@ async function main() {
     await setGroupLevels(page, ['month']);
     await page.click('#previewButton');
     await waitVisible(page, '#previewCard');
-    const monthPreview = await page.$eval('#splitGroupTable', (node) => node.innerText);
+    await openGroupPreview(page);
+    const monthPreview = await page.$eval('#rowTableWrap', (node) => node.innerText);
     assert.ok(monthPreview.includes('2025-01'));
     assert.ok(monthPreview.includes('2025-02'));
     assert.ok(monthPreview.includes('2025-03'));
@@ -1757,6 +2068,7 @@ async function main() {
 
     await page.goto(`${serverInfo.base}/app/tools/journal-entry-analysis/split.html?scopeType=job&scopeId=${debitJobId}`, { waitUntil: 'networkidle0' });
     await page.waitForFunction(() => document.querySelector('#scopeTitle')?.textContent.includes('journal_basic'));
+    await page.evaluate(() => { const d = document.querySelector('#advancedGroupDetails'); if (d) d.open = true; });
     await page.waitForFunction(() => document.querySelectorAll('#presetSelect option').length > 1);
     const incompatibleValue = await page.evaluate((name) => {
       const option = [...document.querySelectorAll('#presetSelect option')]
@@ -1777,6 +2089,141 @@ async function main() {
     await waitVisible(page, '#scopeError');
     assert.match(await page.$eval('#scopeError', (node) => node.textContent), /数据范围无效/);
     log('  invalid split scope is a product error, not static 404: PASS');
+
+    log('SUMMARY STRUCTURE INFERENCE');
+    await page.goto(toolUrl, { waitUntil: 'networkidle0' });
+    const summaryFile = createSummaryFixture();
+    await uploadFixture(page, summaryFile);
+    await redetect(page);
+    await configureMapping(page, 'debit_credit', {
+      date: 1, voucher_id: 2, account_code: 3, account_name: 4,
+      customer_code: 5, customer_name: 6, supplier_code: 7, supplier_name: 8,
+      counterparty_name: 9, description: 10, debit: 11, credit: 12
+    });
+    await preview(page);
+    await startAndWaitForResult(page);
+    await waitVisible(page, '#splitLink');
+    assert.equal(await page.$eval('.result-tab.active', (node) => node.dataset.tab), 'summary');
+    const analysisSummaryText = await page.$eval('#resultTableWrap', (node) => node.innerText);
+    assert.match(analysisSummaryText, /224103/);
+    assert.match(analysisSummaryText, /费用项目/);
+    assert.match(analysisSummaryText, /员工姓名/);
+    assert.match(analysisSummaryText, /自动/);
+    await shot(page, 'summary-analysis-tab');
+    log('  analysis summary structuring tab: PASS');
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: 'networkidle0' }),
+      page.click('#splitLink')
+    ]);
+    await page.waitForFunction(() => location.pathname.endsWith('/split.html'));
+    await waitVisible(page, '#scopeCard');
+    await page.click('[data-group-preset="account"]');
+    await page.select('#outputMode', 'multi_sheet');
+    await page.click('#previewButton');
+    await waitVisible(page, '#previewCard');
+    await waitVisible(page, '#summaryInference');
+    const inferenceText = await page.$eval('#summaryInference', (node) => node.textContent);
+    assert.match(inferenceText, /AUTO 3/);
+    assert.match(inferenceText, /NONE 1/);
+    assert.match(inferenceText, /覆盖 88\.9%/);
+    const hasAutoBadge = await page.evaluate(() => [...document.querySelectorAll('#groupSheetList .je-summary-rule-status')]
+      .some((node) => /自动/.test(node.textContent)));
+    const hasNoneBadge = await page.evaluate(() => [...document.querySelectorAll('#groupSheetList .je-summary-rule-status')]
+      .some((node) => /不提取/.test(node.textContent)));
+    assert.ok(hasAutoBadge && hasNoneBadge, 'sheet summary status badges missing');
+    await page.evaluate(() => {
+      const item = [...document.querySelectorAll('#groupSheetList .je-sheet-item')]
+        .find((node) => node.textContent.includes('224103'));
+      if (item) item.click();
+    });
+    await page.waitForFunction(() => document.querySelector('#activeSheetName')?.textContent.includes('224103'));
+    await page.waitForFunction(() => Boolean(document.querySelector('#rowTableWrap tbody tr input[type="checkbox"]')));
+    const derivedHeaders = await page.$$eval('#rowTableWrap thead th', (nodes) => nodes.map((node) => node.textContent.trim()));
+    assert.ok(derivedHeaders.includes('费用项目'));
+    assert.ok(derivedHeaders.includes('员工姓名'));
+    const derivedRow = await page.evaluate(() => {
+      const headers = [...document.querySelectorAll('#rowTableWrap thead th')].map((node) => node.textContent.trim());
+      const row = document.querySelector('#rowTableWrap tbody tr');
+      return Object.fromEntries(headers.map((header, index) => [header, row.children[index]?.textContent.trim()]));
+    });
+    assert.equal(derivedRow['费用项目'], '费用报销');
+    assert.equal(derivedRow['员工姓名'], '陈威涛');
+    await shot(page, 'summary-inference-preview');
+    log('  summary inference + derived preview: PASS');
+
+    await page.click('#openColumnSettings');
+    await page.waitForSelector('#columnDialog[open]');
+    await waitVisible(page, '#derivedColumnsPanel');
+    await page.evaluate(() => {
+      const row = [...document.querySelectorAll('#derivedColumnsPanel .je-derived-row')]
+        .find((item) => item.querySelector('input[type="text"]')?.value === '员工姓名');
+      if (!row) throw new Error('derived field row missing');
+      const input = row.querySelector('input[type="text"]');
+      input.value = '报销人';
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await page.waitForFunction(() => [...document.querySelectorAll('#rowTableWrap thead th')]
+      .some((node) => node.textContent.trim() === '报销人'));
+    await page.click('#closeColumnSettings');
+    await page.waitForFunction(() => !document.querySelector('#columnDialog').open);
+    log('  derived field user override: PASS');
+
+    const summaryPresetName = 'E2E 摘要规则模板';
+    await page.evaluate(() => { document.querySelector('#advancedGroupDetails').open = true; });
+    await page.click('#savePreset');
+    await waitVisible(page, '#presetSaveModal');
+    await page.type('#presetName', summaryPresetName);
+    const summaryPresetResponse = page.waitForResponse(
+      (response) => response.url().endsWith('/api/journal-entry-split-presets')
+        && response.request().method() === 'POST'
+    );
+    await page.click('#confirmPresetSave');
+    assert.equal((await summaryPresetResponse).status(), 201, 'summary preset save');
+    await page.waitForFunction(() => document.querySelector('#presetSaveModal').hidden);
+    await page.reload({ waitUntil: 'networkidle0' });
+    await waitVisible(page, '#scopeCard');
+    await page.waitForFunction(() => document.querySelectorAll('#presetSelect option').length > 1);
+    await page.evaluate(() => { document.querySelector('#advancedGroupDetails').open = true; });
+    const summaryPresetValue = await page.evaluate((name) => {
+      const option = [...document.querySelectorAll('#presetSelect option')]
+        .find((item) => item.textContent === name);
+      return option ? option.value : null;
+    }, summaryPresetName);
+    assert.ok(summaryPresetValue, 'summary preset missing');
+    await page.select('#presetSelect', summaryPresetValue);
+    await page.click('#applyPreset');
+    await page.waitForFunction(() => document.querySelectorAll('#groupLevels select').length === 1
+      && document.querySelector('#groupLevels select')?.value === 'account');
+    await page.click('#previewButton');
+    await waitVisible(page, '#previewCard');
+    await page.evaluate(() => {
+      const item = [...document.querySelectorAll('#groupSheetList .je-sheet-item')]
+        .find((node) => node.textContent.includes('224103'));
+      if (item) item.click();
+    });
+    await page.waitForFunction(() => document.querySelector('#activeSheetName')?.textContent.includes('224103'));
+    await page.waitForFunction(() => [...document.querySelectorAll('#rowTableWrap thead th')]
+      .some((node) => node.textContent.trim() === '报销人'));
+    log('  summary override preset persistence: PASS');
+
+    const summaryOutput = await generateSplitOutput(page);
+    assert.equal(summaryOutput.output.outputMode, 'multi_sheet');
+    await waitVisible(page, '#splitDownload');
+    const summaryExcel = await downloadOutput(page, cdp, '#splitDownload', '.xlsx');
+    const summaryPath = path.join(DOWNLOAD_DIR, summaryExcel.name);
+    const summaryHeaders = xlsxHeaders(summaryPath);
+    const summarySheets = Object.values(summaryHeaders)[0] || {};
+    const accountSheet = Object.keys(summarySheets).find((name) => name.includes('224103'));
+    assert.ok(accountSheet, '224103 sheet missing');
+    assert.ok(summarySheets[accountSheet].includes('费用项目'));
+    assert.ok(summarySheets[accountSheet].includes('报销人'));
+    assert.ok(!summarySheets[accountSheet].includes('员工姓名'));
+    const accountData = xlsxSheetData(summaryPath, accountSheet);
+    const summaryHeaderIndex = accountData.headers.indexOf('费用项目');
+    const employeeHeaderIndex = accountData.headers.indexOf('报销人');
+    assert.ok(accountData.rows.every((row) => row[summaryHeaderIndex] === '费用报销'));
+    assert.ok(accountData.rows.some((row) => row[employeeHeaderIndex] === '陈威涛'));
+    log(`  summary derived export matches web: PASS (${accountData.rows.length} rows)`);
 
     log('STANDARD EXPORT PREVIEW');
     await page.goto(
@@ -1806,6 +2253,8 @@ async function main() {
     await waitVisible(page, '#reportModeNotice');
     await page.waitForFunction(() => document.querySelectorAll('#rowTableWrap tbody tr').length > 0, { timeout: 30000 });
     assert.match(await page.$eval('#standardExportButton', (node) => node.textContent), /完整分析报告/);
+    await page.click('#openColumnSettings');
+    await page.waitForSelector('#columnDialog[open]');
     for (const label of ['内部行标识（系统追溯）', '外部行 ID']) {
       await page.evaluate((target) => {
         const row = [...document.querySelectorAll('#columnGroups .column-row')]
@@ -1824,6 +2273,8 @@ async function main() {
       '#columnOrder .column-chip > span:first-child',
       (nodes) => nodes.map((node) => node.textContent.trim())
     );
+    await page.click('#closeColumnSettings');
+    await page.waitForFunction(() => !document.querySelector('#columnDialog').open);
     const reportTarget = await page.evaluate(() => {
       const headers = [...document.querySelectorAll('#rowTableWrap thead th')]
         .map((node) => node.textContent.trim());

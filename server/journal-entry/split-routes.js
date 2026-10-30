@@ -20,6 +20,10 @@ const MAX_ROWS_PER_SHEET = 1048000;
 const MAX_EXPLICIT_ROWS = 5000;
 const PREVIEW_PAGE_SIZES = [25, 50, 100, 200];
 const ROW_SELECTION_MODES = ['all_except', 'only_selected'];
+const SEMANTIC_TYPES = new Set([
+  'item', 'date', 'person', 'department', 'organization',
+  'counterparty', 'reference', 'placeholder', 'unknown'
+]);
 const GROUP_BY = new Set([
   'account', 'customer', 'supplier', 'counterparty',
   'month', 'period', 'entity', 'source_file'
@@ -160,6 +164,83 @@ function cleanRowSelection(body) {
   return { rowSelectionMode: mode, excludedRows, includedRows };
 }
 
+function cleanSummaryOverrides(value) {
+  if (value === undefined || value === null || value === '') return {};
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    throw new ValidationError('摘要规则覆盖格式不正确。');
+  }
+  const accounts = Object.entries(value);
+  if (accounts.length > 500) throw new ValidationError('摘要规则覆盖科目过多。');
+  const result = {};
+  for (const [rawCode, accountValue] of accounts) {
+    const code = String(rawCode || '').trim();
+    if (!code || code.length > 50) throw new ValidationError('摘要规则科目编码无效。');
+    if (!accountValue || typeof accountValue !== 'object' || Array.isArray(accountValue)) {
+      throw new ValidationError('摘要规则科目配置无效。');
+    }
+    const fields = {};
+    const fieldEntries = Object.entries(accountValue.fields || {});
+    if (fieldEntries.length > 50) throw new ValidationError('摘要派生字段过多。');
+    for (const [rawKey, fieldValue] of fieldEntries) {
+      const key = String(rawKey || '').trim();
+      if (!key || key.length > 200) throw new ValidationError('摘要派生字段标识无效。');
+      if (!fieldValue || typeof fieldValue !== 'object' || Array.isArray(fieldValue)) {
+        throw new ValidationError('摘要派生字段配置无效。');
+      }
+      const cleaned = {};
+      if (fieldValue.selected !== undefined) cleaned.selected = Boolean(fieldValue.selected);
+      if (fieldValue.label !== undefined) {
+        cleaned.label = String(fieldValue.label).trim().slice(0, 40);
+        if (!cleaned.label) throw new ValidationError('摘要派生字段名称不能为空。');
+      }
+      if (fieldValue.semantic_type !== undefined) {
+        const semantic = String(fieldValue.semantic_type);
+        if (!SEMANTIC_TYPES.has(semantic)) throw new ValidationError('摘要派生字段类型无效。');
+        cleaned.semantic_type = semantic;
+      }
+      fields[key] = cleaned;
+    }
+    result[code] = {
+      disabled: Boolean(accountValue.disabled),
+      confirmed: Boolean(accountValue.confirmed),
+      fields
+    };
+  }
+  return result;
+}
+
+function cleanPreviewGroup(value) {
+  if (value === undefined || value === null || value === '') return null;
+  const items = Array.isArray(value)
+    ? value
+    : (value && Array.isArray(value.dimensions) ? value.dimensions : null);
+  if (!items || items.length < 1 || items.length > 3) {
+    throw new ValidationError('预览 Sheet 标识无效。');
+  }
+  return {
+    dimensions: items.map((item) => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) {
+        throw new ValidationError('预览 Sheet 标识无效。');
+      }
+      const dimension = String(item.dimension || '').trim();
+      const rawValue = String(item.value ?? '').trim();
+      if (!dimension || rawValue.length > 200) {
+        throw new ValidationError('预览 Sheet 标识无效。');
+      }
+      return { dimension, value: rawValue };
+    })
+  };
+}
+
+function cleanPreviewPart(value) {
+  if (value === undefined || value === null || value === '') return null;
+  const part = Number(value);
+  if (!Number.isInteger(part) || part < 1 || part > 100000) {
+    throw new ValidationError('预览 Sheet 分片无效。');
+  }
+  return part;
+}
+
 function cleanPaging(body) {
   let page = Number(body.page);
   if (!Number.isInteger(page) || page < 1) page = 1;
@@ -254,7 +335,10 @@ function normalizePresetSpec(body) {
     groupOptions: cleanGroupOptions(spec.groupOptions || spec.group_options),
     rowMode,
     outputMode,
-    columns
+    columns,
+    summaryOverrides: cleanSummaryOverrides(
+      spec.summaryOverrides !== undefined ? spec.summaryOverrides : spec.summary_overrides
+    )
   };
 }
 
@@ -294,7 +378,10 @@ function normalizeSpec(body) {
     groupOptions: cleanGroupOptions(body.groupOptions || body.group_options),
     limits: cleanLimits(body.limits, outputMode),
     columns,
-    ...cleanRowSelection(body)
+    ...cleanRowSelection(body),
+    summaryOverrides: cleanSummaryOverrides(
+      body.summaryOverrides !== undefined ? body.summaryOverrides : body.summary_overrides
+    )
   };
 }
 
@@ -410,7 +497,8 @@ function createSplitRouter({ root, requireAuth, runner, repository: splitRepo = 
       columns: spec.columns,
       row_selection_mode: spec.rowSelectionMode,
       excluded_rows: spec.excludedRows,
-      included_rows: spec.includedRows
+      included_rows: spec.includedRows,
+      summary_overrides: spec.summaryOverrides
     };
   }
 
@@ -517,7 +605,9 @@ function createSplitRouter({ root, requireAuth, runner, repository: splitRepo = 
       const request = {
         ...requestFor(scopeData, spec),
         page: paging.page,
-        page_size: paging.pageSize
+        page_size: paging.pageSize,
+        preview_group: cleanPreviewGroup(req.body.previewGroup ?? req.body.preview_group),
+        preview_part: cleanPreviewPart(req.body.previewPart ?? req.body.preview_part)
       };
       const result = await splitRunner.rows(request);
       if (!result.ok) return res.status(422).json({ error: result.error || '导出预览失败。' });
@@ -602,6 +692,8 @@ function createSplitRouter({ root, requireAuth, runner, repository: splitRepo = 
           included_rows: preview.payload.included_rows,
           candidate_line_count: preview.payload.candidate_lines,
           final_line_count: preview.payload.matched_lines,
+          summary_structure_version: 1,
+          summary_rule_overrides: spec.summaryOverrides,
           matched_lines: preview.payload.matched_lines,
           matched_vouchers: preview.payload.matched_vouchers,
           group_count: preview.payload.group_count,
@@ -650,7 +742,11 @@ function createSplitRouter({ root, requireAuth, runner, repository: splitRepo = 
                 candidate_line_count: result.payload.manifest?.candidate_line_count
                   ?? snapshot.candidate_line_count,
                 final_line_count: result.payload.manifest?.final_line_count
-                  ?? snapshot.final_line_count
+                  ?? snapshot.final_line_count,
+                summary_derived_fields: (result.payload.manifest?.groups || []).map((group) => ({
+                  group_key: group.group_key,
+                  derived_fields: group.derived_fields || []
+                }))
               };
               await splitRepo.markCompleted(outputId, {
                 filePath,
@@ -752,6 +848,9 @@ module.exports = {
   ValidationError,
   cleanFilters,
   cleanRowSelection,
+  cleanPreviewGroup,
+  cleanPreviewPart,
+  cleanSummaryOverrides,
   MAX_GROUPS_MULTI_SHEET,
   MAX_GROUPS_ZIP,
   MAX_ROWS_PER_SHEET,

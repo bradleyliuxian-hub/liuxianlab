@@ -29,7 +29,7 @@
   };
 
   const TAB_LABEL = {
-    vouchers: '凭证汇总', business: '业务分类',
+    summary: '摘要结构化', vouchers: '凭证汇总', business: '业务分类',
     contra: '对方科目', anomaly: '异常凭证'
   };
 
@@ -254,7 +254,7 @@
     state.rows = [];
     state.total = 0;
     state.totalPages = 0;
-    state.tab = 'vouchers';
+    state.tab = 'summary';
     state.page = 0;
     state.filters = {};
     state.detailCache = new Map();
@@ -747,7 +747,7 @@
       state.summary = summary;
       window.__jeDashboardReadyAt = null;
       window.__jePageReadyAt = null;
-      state.tab = 'vouchers';
+      state.tab = 'summary';
       state.page = 0;
       state.filters = {};
       state.detailCache = new Map();
@@ -853,6 +853,9 @@
   function renderFilters() {
     clear(dom.resultFilters);
     const tab = state.tab;
+    if (tab === 'summary') {
+      return;
+    }
     if (tab === 'vouchers') {
       state.filters.vouchers = state.filters.vouchers || '';
       dom.resultFilters.append(makeFilter('平衡状态', [
@@ -911,6 +914,16 @@
 
   async function loadPage() {
     if (!state.job || !state.summary) return;
+    if (state.tab === 'summary') {
+      if (state.pageAbort) state.pageAbort.abort();
+      state.pageAbort = null;
+      state.pageLoading = false;
+      state.pageError = '';
+      state.rows = [];
+      renderSummaryStructurePage();
+      window.__jePageReadyAt = performance.now();
+      return;
+    }
     const seq = ++state.requestSeq;
     if (state.pageAbort) state.pageAbort.abort();
     const controller = new AbortController();
@@ -976,6 +989,98 @@
     const classification = voucher.business_classification;
     if (!classification) return el('span', 'cell-muted', '未分类');
     return el('span', '', `${classification.business_code} · ${classification.business_label}`);
+  }
+
+  function summaryStatusBadge(status) {
+    if (status === 'auto') return badge('自动', 'green');
+    if (status === 'review') return badge('待确认', 'amber');
+    return badge('不提取', 'blue');
+  }
+
+  function renderSummaryStructurePage() {
+    const structure = state.summary?.summary_structure;
+    clear(dom.resultTableWrap);
+    clear(dom.resultPager);
+    if (!structure || !Array.isArray(structure.rules)) {
+      dom.resultTableWrap.append(el('div', 'empty-state', '该任务没有摘要结构识别结果（旧任务可重新分析生成）。'));
+      return;
+    }
+    const total = Number(structure.total_line_count || 0);
+    const covered = Number(structure.covered_line_count || 0);
+    const rate = total ? `${(covered / total * 100).toFixed(1)}%` : '0.0%';
+    const overview = el('div', 'je-summary-overview');
+    [
+      ['分析科目', structure.account_count ?? 0],
+      ['自动识别', structure.auto_rule_count ?? 0],
+      ['待确认', structure.review_rule_count ?? 0],
+      ['无需提取', structure.none_rule_count ?? 0],
+      ['自动覆盖行', covered],
+      ['自动覆盖率', rate]
+    ].forEach(([label, value]) => {
+      const item = el('div', 'je-summary-overview__item');
+      item.append(el('span', '', label), el('strong', '', String(value)));
+      overview.append(item);
+    });
+    dom.resultTableWrap.append(overview);
+
+    const table = el('table', 'je-summary-table');
+    const thead = el('thead');
+    const head = el('tr');
+    ['科目', '识别结构', '自动字段', '状态', '置信度', '原因'].forEach((label) => head.append(el('th', '', label)));
+    thead.append(head);
+    table.append(thead);
+    const tbody = el('tbody');
+    (structure.rules || []).forEach((rule) => {
+      const row = el('tr', 'clickable');
+      row.append(td(`${rule.account_code || '—'} ${rule.account_name || ''}`.trim(), 'cell-strong cell-wrap'));
+      row.append(td(rule.parser_type || 'none', 'cell-nowrap'));
+      const fieldsCell = el('td');
+      const fieldList = el('div', 'je-summary-field-list');
+      (rule.fields || []).forEach((field) => {
+        fieldList.append(el('span', 'je-summary-field-chip', field.label || field.semantic_type || '字段'));
+      });
+      if (!fieldList.children.length) fieldList.append(el('span', 'je-muted', '—'));
+      fieldsCell.append(fieldList);
+      row.append(fieldsCell);
+      row.append(td(summaryStatusBadge(rule.status)));
+      row.append(td(`${Math.round((Number(rule.overall_confidence) || 0) * 1000) / 10}%`, 'cell-num'));
+      const reasonLabels = {
+        insufficient_samples: '样本不足',
+        no_delimiter: '未发现稳定分隔符',
+        unstable_delimiter: '分隔符不稳定',
+        single_part: '单一摘要结构',
+        insufficient_fields: '有效字段不足',
+        no_tokens: '无有效分段'
+      };
+      const reasons = (rule.warnings || []).map((warning) => reasonLabels[warning] || warning);
+      row.append(td(reasons.join('；') || (rule.delimiter ? `分隔符 ${rule.delimiter}` : '—'), 'cell-wrap'));
+      const detail = el('tr', 'summary-rule-detail');
+      detail.hidden = true;
+      const detailCell = el('td');
+      detailCell.colSpan = 6;
+      const detailBox = el('div', 'je-summary-rule-detail');
+      const meta = el('div', 'je-summary-field-list');
+      [
+        `结构 ${rule.structural_confidence ?? '—'}`,
+        `语义 ${rule.semantic_confidence ?? '—'}`,
+        `总体 ${rule.overall_confidence ?? '—'}`,
+        `样本 ${rule.matched_count ?? 0} / ${rule.sample_count ?? 0}`,
+        `分隔符 ${rule.delimiter || '—'}`
+      ].forEach((text) => meta.append(el('span', 'je-summary-field-chip', text)));
+      detailBox.append(meta);
+      (rule.fields || []).forEach((field) => {
+        detailBox.append(el('div', 'je-summary-field-detail',
+          `${field.label || field.semantic_type} · ${field.semantic_type} · part ${Number(field.part_index) + 1} · ${Math.round((Number(field.confidence) || 0) * 1000) / 10}%`));
+      });
+      detailCell.append(detailBox);
+      detail.append(detailCell);
+      row.addEventListener('click', () => { detail.hidden = !detail.hidden; });
+      tbody.append(row, detail);
+    });
+    table.append(tbody);
+    dom.resultTableWrap.append(table);
+    const info = el('span', '', `共 ${structure.rules.length} 个科目 · 双击行查看规则明细`);
+    dom.resultPager.append(info);
   }
 
   function renderTable() {

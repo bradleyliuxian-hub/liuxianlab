@@ -45,7 +45,11 @@
     previewButton: $('#previewButton'), generateButton: $('#generateSplitButton'),
     splitError: $('#splitError'), previewCard: $('#previewCard'), previewSubtitle: $('#previewSubtitle'),
     previewLimit: $('#previewLimit'), splitMetrics: $('#splitMetrics'),
-    splitWarning: $('#splitWarning'), splitGroupTable: $('#splitGroupTable'),
+    sheetSearch: $('#sheetSearch'), sheetNavigation: $('#sheetNavigation'),
+    groupSheetList: $('#groupSheetList'), sheetCountLabel: $('#sheetCountLabel'),
+    activeSheetName: $('#activeSheetName'), activeSheetMeta: $('#activeSheetMeta'),
+    activeSheetToolbar: $('#activeSheetToolbar'), moreRowActions: $('#moreRowActions'),
+    summaryInference: $('#summaryInference'), derivedColumnsPanel: $('#derivedColumnsPanel'),
     outputCard: $('#outputCard'), outputMeta: $('#outputMeta'), download: $('#splitDownload'),
     deleteOutput: $('#deleteSplitOutput'),
     toast: $('#splitToast'), dateFrom: $('#dateFrom'), dateTo: $('#dateTo'),
@@ -55,7 +59,11 @@
     rowPageSize: $('#rowPageSize'), selectionNotice: $('#selectionNotice'),
     excludePage: $('#excludePage'), restorePage: $('#restorePage'), onlyPage: $('#onlyPage'),
     restoreAllRows: $('#restoreAllRows'), widePreview: $('#widePreview'),
-    previewCard: $('#previewCard'), generateButton: $('#generateSplitButton')
+    previewCard: $('#previewCard'), generateButton: $('#generateSplitButton'),
+    splitModeGrid: $('#splitModeGrid'), advancedGroupDetails: $('#advancedGroupDetails'),
+    resetFilters: $('#resetFilters'), openColumnSettings: $('#openColumnSettings'),
+    closeColumnSettings: $('#closeColumnSettings'), columnDialog: $('#columnDialog'),
+    finalSummary: $('#finalSummary'), exportActionHint: $('#exportActionHint')
   };
 
   const GROUP_OPTIONS = [
@@ -100,6 +108,22 @@
     refreshTimer: null,
     requestToken: 0,
     expectedCandidateLines: null,
+    groups: [],
+    activeKind: 'index',
+    activeGroupRef: null,
+    activePart: 1,
+    sheetSearch: '',
+    dataSheetCount: 0,
+    auxSheetCount: 2,
+    summaryStructure: null,
+    summaryOverrides: {},
+    derivedColumns: [],
+    activeSummaryRule: null,
+    activeSheet: null,
+    scopeLineCount: 0,
+    scopeIncludedLineCount: 0,
+    scopeExcludedLineCount: 0,
+    scopeVoucherCount: 0,
     wide: false,
     presets: [],
     builtinPresets: [],
@@ -188,6 +212,20 @@
     state.preview = null;
     state.columnStats = null;
     state.rows = [];
+    state.groups = [];
+    state.activeKind = 'index';
+    state.activeGroupRef = null;
+    state.activePart = 1;
+    state.activeSheet = null;
+    state.scopeLineCount = 0;
+    state.scopeIncludedLineCount = 0;
+    state.scopeExcludedLineCount = 0;
+    state.scopeVoucherCount = 0;
+    state.dataSheetCount = 0;
+    state.auxSheetCount = 2;
+    state.summaryStructure = null;
+    state.derivedColumns = [];
+    state.activeSummaryRule = null;
     state.page = 1;
     state.totalPages = 0;
     state.candidateLines = 0;
@@ -195,9 +233,10 @@
     state.excludedLines = 0;
     state.expectedCandidateLines = null;
     renderColumns();
+    renderFinalSummary();
     dom.previewCard.hidden = true;
     dom.generateButton.disabled = true;
-    dom.generateButton.textContent = '生成拆分文件';
+    dom.generateButton.textContent = generateButtonLabel();
     showError(dom.splitError, '');
   }
 
@@ -220,16 +259,58 @@
     const box = el('div', 'multi-box');
     const input = el('input');
     input.id = inputId;
-    input.type = 'text';
-    input.placeholder = `搜索${LABELS[key]}…`;
+    input.type = key === 'account' ? 'search' : 'text';
+    input.placeholder = key === 'account'
+      ? '搜索科目编码或名称…'
+      : `搜索${LABELS[key]}…`;
     input.autocomplete = 'off';
     const suggestions = el('div', 'split-suggestions');
     suggestions.hidden = true;
+    suggestions.setAttribute('role', 'listbox');
+    suggestions.setAttribute('aria-multiselectable', 'true');
     const selectedContainer = el('span');
     selectedContainer.style.display = 'contents';
     box.append(selectedContainer, input);
-    container.append(box, suggestions);
     state.selected[key] = new Map();
+
+    const isAccount = key === 'account';
+    let allButton = null;
+    let summary = null;
+    if (isAccount) {
+      container.classList.add('je-account-select');
+      const toolbar = el('div', 'je-account-select__toolbar');
+      allButton = el('button', 'je-account-select__all', '全选科目');
+      allButton.type = 'button';
+      allButton.dataset.action = 'select-all-accounts';
+      allButton.setAttribute('aria-pressed', 'true');
+      summary = el('span', 'je-account-select__summary', '全部科目');
+      summary.dataset.accountSelectionSummary = '';
+      summary.setAttribute('aria-live', 'polite');
+      toolbar.append(allButton, summary);
+      container.append(toolbar);
+      const hint = el('p', 'je-account-select__hint',
+        '全选表示当前数据范围内的全部科目；日期、主体、客户等其他筛选条件仍然生效。');
+      container.append(box, suggestions);
+      (container.parentElement || container).append(hint);
+      allButton.addEventListener('click', () => {
+        state.selected.account.clear();
+        renderChips();
+        invalidatePreview({ resetSelection: true });
+        showSelectionNotice('已选择全部科目；科目筛选已清除，手工行选择已重置。');
+        input.value = '';
+        suggestions.hidden = true;
+      });
+    } else {
+      container.append(box, suggestions);
+    }
+
+    function updateAccountSummary() {
+      if (!isAccount || !allButton || !summary) return;
+      const count = state.selected.account.size;
+      const allSelected = count === 0;
+      summary.textContent = allSelected ? '全部科目' : `已选 ${count} 个科目`;
+      allButton.setAttribute('aria-pressed', allSelected ? 'true' : 'false');
+    }
 
     function renderChips() {
       clear(selectedContainer);
@@ -248,6 +329,7 @@
         chip.append(remove);
         selectedContainer.append(chip);
       });
+      updateAccountSummary();
     }
 
     async function search() {
@@ -265,6 +347,8 @@
             const button = el('button', 'split-suggestion');
             button.type = 'button';
             button.dataset.value = option.value;
+            button.setAttribute('role', 'option');
+            button.setAttribute('aria-selected', 'false');
             button.append(el('span', '', option.label || option.value));
             button.append(el('small', '', `${option.count}`));
             button.addEventListener('click', () => {
@@ -294,6 +378,7 @@
     input.addEventListener('keydown', (event) => {
       if (event.key === 'Escape') suggestions.hidden = true;
     });
+    renderChips();
     return { renderChips };
   }
 
@@ -343,7 +428,7 @@
     state.columns = [...new Set(columns)].filter((id) => state.columnDefs.some((item) => item.id === id));
     state.columnsDirty = dirty;
     renderColumns();
-    if (state.preview) {
+    if (state.preview && state.activeKind === 'group') {
       renderRowTable();
       renderPagination();
     }
@@ -442,8 +527,9 @@
         || state.generating
         || state.rowsLoading;
       dom.generateButton.textContent = generateButtonLabel();
-      renderRowTable();
+      if (state.activeKind === 'group') renderRowTable();
     }
+    renderDerivedPanel();
     dom.previewButton.disabled = !state.columns.length || state.unavailableGroups.length > 0;
   }
 
@@ -484,7 +570,8 @@
         : [],
       includedRows: state.selectionMode === 'only_selected'
         ? [...state.includedRows.values()]
-        : []
+        : [],
+      summaryOverrides: state.summaryOverrides
     };
   }
 
@@ -570,6 +657,40 @@
     return true;
   }
 
+  function syncModeCards() {
+    if (!dom.splitModeGrid) return;
+    const single = state.levels.length === 1
+      ? state.levels[0]
+      : null;
+    const active = ['account', 'month', 'customer', 'supplier'].includes(single)
+      ? single
+      : 'combined';
+    dom.splitModeGrid.querySelectorAll('[data-group-preset]').forEach((button) => {
+      const isActive = button.dataset.groupPreset === active;
+      button.classList.toggle('is-active', isActive);
+      button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+    });
+  }
+
+  async function selectModePreset(preset) {
+    if (preset === 'combined') {
+      state.levels = state.levels.length > 1 ? state.levels.slice(0, 3) : ['account', 'month'];
+      dom.advancedGroupDetails.open = true;
+    } else {
+      state.levels = [preset];
+      dom.advancedGroupDetails.open = false;
+      if (preset === 'account') {
+        dom.accountPrefixLength.value = '';
+        dom.outputMode.value = 'multi_sheet';
+      }
+    }
+    renderGroupLevels();
+    syncModeCards();
+    updateGroupHint();
+    await Promise.all(state.levels.map((dimension) => ensureDimensionAvailability(dimension)));
+    updateGroupOptions();
+  }
+
   function renderGroupLevels() {
     clear(dom.groupLevels);
     state.levels.forEach((dimension, index) => {
@@ -626,6 +747,7 @@
       dom.groupLevels.append(row);
     });
     dom.addGroupLevel.disabled = state.levels.length >= 3;
+    syncModeCards();
   }
 
   function updateGroupOptions() {
@@ -642,7 +764,10 @@
       dom.groupHint.textContent = `当前数据未映射${names}字段，无法按所选维度拆分。请返回字段映射后重新分析，或调整拆分层级。`;
       dom.previewButton.disabled = true;
     } else if (state.levels.includes('account')) {
-      dom.groupHint.textContent = '科目拆分按编码优先；填写前 N 位可合并明细科目。留空表示完整科目。';
+      const prefix = dom.accountPrefixLength.value;
+      dom.groupHint.textContent = prefix
+        ? `当前按科目编码前 ${prefix} 位归并分组。`
+        : '当前按完整科目编码拆分：每个完整科目编码对应一个数据 Sheet。填写前 N 位才会合并明细科目。';
       dom.previewButton.disabled = false;
     } else {
       const blanks = state.levels.filter((dimension) => {
@@ -744,11 +869,13 @@
     applyFilterSpec(spec.filters || {});
     state.levels = groupBy.filter(Boolean).slice(0, 3);
     if (!state.levels.length) state.levels = ['account'];
+    dom.advancedGroupDetails.open = state.levels.length > 1;
     dom.accountPrefixLength.value = spec.groupOptions?.account_prefix_length || '';
     dom.outputMode.value = spec.outputMode || 'multi_sheet';
     dom.rowMode.value = 'matched_only';
     state.presetId = preset.id;
     state.presetName = preset.name;
+    state.summaryOverrides = spec.summaryOverrides || {};
     state.columnStats = null;
     if (Array.isArray(spec.columns) && spec.columns.length) {
       state.columns = spec.columns.slice();
@@ -802,7 +929,8 @@
         groupOptions: spec.groupOptions,
         rowMode: spec.rowMode,
         outputMode: spec.outputMode,
-        columns: state.columns.slice()
+        columns: state.columns.slice(),
+        summaryOverrides: state.summaryOverrides
       }
     };
     dom.confirmPresetSave.disabled = true;
@@ -901,6 +1029,24 @@
     return String(value);
   }
 
+  function displayColumnSpecs() {
+    const base = state.columns.map((id) => {
+      const definition = state.columnDefs.find((item) => item.id === id) || {};
+      return { id, label: columnLabel(id), kind: definition.kind || 'text', derived: false };
+    });
+    const derived = state.derivedColumns.map((field) => ({
+      id: field.key,
+      label: field.label,
+      kind: field.semantic_type === 'date' ? 'date' : 'text',
+      derived: true,
+      confidence: field.confidence
+    }));
+    if (!derived.length) return base;
+    const index = base.findIndex((item) => item.id === 'description');
+    if (index < 0) return base.concat(derived);
+    return base.slice(0, index + 1).concat(derived, base.slice(index + 1));
+  }
+
   function renderRowTable() {
     if (!dom.rowTableWrap) return;
     clear(dom.rowTableWrap);
@@ -909,15 +1055,19 @@
       return;
     }
     if (!state.rows.length) {
-      dom.rowTableWrap.append(el('div', 'table-skeleton', '当前筛选结果没有数据。'));
+      dom.rowTableWrap.append(el('div', 'table-skeleton',
+        state.rowsLoading ? '正在加载当前 Sheet…' : '当前 Sheet 没有分录。'));
       return;
     }
+    const specs = displayColumnSpecs();
     const table = el('table', 'row-preview-table');
     const thead = el('thead');
     const head = el('tr');
     head.append(el('th', 'select-cell', '保留'));
-    state.columns.forEach((id) => {
-      head.append(el('th', '', columnLabel(id)));
+    specs.forEach((spec) => {
+      const th = el('th', '', spec.label);
+      if (spec.derived) th.classList.add('je-derived-column-header');
+      head.append(th);
     });
     thead.append(head);
     table.append(thead);
@@ -933,19 +1083,18 @@
       checkbox.addEventListener('change', () => toggleRow(index, checkbox.checked));
       selectCell.append(checkbox);
       tr.append(selectCell);
-      state.columns.forEach((id) => {
-        const definition = state.columnDefs.find((item) => item.id === id) || {};
-        const cell = el('td', '', displayCell(row.values?.[id]));
-        if (definition.kind === 'amount') cell.classList.add('amount-cell', 'num');
-        else if (definition.kind === 'date') cell.classList.add('date-cell');
-        else if (id === 'voucher_id') cell.classList.add('voucher-cell');
-        else if (id === 'description') cell.classList.add('desc-cell');
-        else if (definition.kind === 'key') cell.classList.add('key-cell');
+      specs.forEach((spec) => {
+        const cell = el('td', '', displayCell(row.values?.[spec.id]));
+        if (spec.kind === 'amount') cell.classList.add('amount-cell', 'num');
+        else if (spec.kind === 'date') cell.classList.add('date-cell');
+        else if (spec.id === 'voucher_id') cell.classList.add('voucher-cell');
+        else if (spec.id === 'description') cell.classList.add('desc-cell');
+        else if (spec.kind === 'key') cell.classList.add('key-cell');
         if (!row.included) {
           const tag = el('span', 'excluded-tag', '已排除');
           cell.append(tag);
         }
-        cell.title = displayCell(row.values?.[id]);
+        cell.title = displayCell(row.values?.[spec.id]);
         tr.append(cell);
       });
       tbody.append(tr);
@@ -956,10 +1105,10 @@
 
   function renderPagination() {
     if (!dom.rowPagination) return;
-    const pages = state.totalPages || (state.candidateLines ? 1 : 0);
+    const pages = state.totalPages || (state.scopeLineCount ? 1 : 0);
     dom.rowPageInfo.textContent = pages
-      ? `第 ${state.page} / ${pages} 页 · 共 ${state.candidateLines} 行`
-      : '没有可预览的行';
+      ? `第 ${state.page} / ${pages} 页 · 本 Sheet 共 ${state.scopeLineCount} 行`
+      : '本 Sheet 没有分录';
     dom.rowPagePrev.disabled = state.page <= 1 || state.rowsLoading;
     dom.rowPageNext.disabled = !pages || state.page >= pages || state.rowsLoading;
     dom.rowPageSize.value = String(state.pageSize);
@@ -997,17 +1146,366 @@
   function generateButtonLabel() {
     if (state.generating) return '正在生成…';
     if (dom.outputMode.value === 'zip') {
-      const count = state.preview?.group_count ?? 0;
-      return `生成 ZIP（${count} 个文件）`;
+      const count = state.preview?.group_count;
+      return count ? `生成 ZIP（${count} 个文件）` : '生成 ZIP 文件';
     }
     return '生成多 Sheet Excel';
+  }
+
+  function renderFinalSummary() {
+    if (!dom.finalSummary) return;
+    if (!state.preview) {
+      dom.finalSummary.replaceChildren(
+        el('span', 'je-summary-placeholder', '加载导出预览后显示最终导出摘要。')
+      );
+      if (dom.exportActionHint) dom.exportActionHint.textContent = '先加载导出预览，再确认生成。';
+      return;
+    }
+    const outputLabel = dom.outputMode.value === 'zip' ? '多个 Excel，ZIP' : '一个 Excel，多 Sheet';
+    const cells = [
+      ['候选分录', state.candidateLines],
+      ['最终保留', state.includedLines],
+      ['最终列数', state.columns.length],
+      ['凭证数', state.includedVouchers],
+      ['分组数', state.preview.group_count ?? 0],
+      ['输出方式', outputLabel]
+    ];
+    dom.finalSummary.replaceChildren(...cells.map(([label, value]) => {
+      const box = el('div', '');
+      box.append(el('span', '', label));
+      box.append(el('strong', '', String(value)));
+      return box;
+    }));
+    if (dom.exportActionHint) {
+      dom.exportActionHint.textContent = state.includedLines
+        ? `即将导出 ${state.includedLines} 行 / ${state.columns.length} 列，${outputLabel}。`
+        : '最终保留行为 0，请调整筛选或恢复行。';
+    }
+  }
+
+  function sameGroupRef(a, b) {
+    return JSON.stringify(a || null) === JSON.stringify(b || null);
+  }
+
+  function groupSheetEntries() {
+    const entries = [];
+    state.groups.forEach((group) => {
+      const sheets = Array.isArray(group.sheets) && group.sheets.length
+        ? group.sheets
+        : [{
+            sheet_name: group.sheet_name || group.display_name || 'Sheet',
+            part: 1,
+            part_count: 1,
+            line_count: group.line_count,
+            voucher_count: group.voucher_count,
+            debit_total: group.debit_total,
+            credit_total: group.credit_total
+          }];
+      sheets.forEach((sheet) => entries.push({ group, sheet }));
+    });
+    return entries;
+  }
+
+  function sheetMatches(group, sheet, query) {
+    if (!query) return true;
+    const haystack = [
+      group.account_code,
+      group.account_name,
+      group.display_name,
+      sheet.sheet_name,
+      ...Object.values(group.values || {})
+    ].filter(Boolean).join(' ').toLowerCase();
+    return haystack.includes(query);
+  }
+
+  function renderWorkbookNavigation() {
+    if (!dom.groupSheetList) return;
+    const query = state.sheetSearch.trim().toLowerCase();
+    const entries = groupSheetEntries();
+    const visible = entries.filter(({ group, sheet }) => sheetMatches(group, sheet, query));
+    dom.sheetCountLabel.textContent = state.dataSheetCount
+      ? `${state.dataSheetCount} 数据 + ${state.auxSheetCount} 辅助`
+      : `${state.groups.length} 组`;
+    dom.sheetNavigation.querySelectorAll('[data-sheet-kind]').forEach((button) => {
+      button.classList.toggle('is-active', state.activeKind === button.dataset.sheetKind);
+    });
+    clear(dom.groupSheetList);
+    if (!visible.length) {
+      dom.groupSheetList.append(el('div', 'preset-empty', '没有匹配的 Sheet。'));
+      return;
+    }
+    visible.forEach(({ group, sheet }) => {
+      const button = el('button', 'je-sheet-item');
+      button.type = 'button';
+      const active = state.activeKind === 'group'
+        && sameGroupRef(state.activeGroupRef, group.group_ref)
+        && state.activePart === sheet.part;
+      if (active) button.classList.add('is-active');
+      const main = el('span', 'je-sheet-item__main');
+      main.append(el('span', 'je-sheet-item__name', sheet.sheet_name));
+      const meta = el('span', 'je-sheet-item__meta',
+        `${sheet.line_count} 行 · ${sheet.voucher_count} 凭证`);
+      const ruleInfo = group.summary_rule;
+      if (ruleInfo) {
+        const status = el('span',
+          `je-summary-rule-status je-summary-rule-status--${ruleInfo.status}`,
+          ruleInfo.status === 'auto'
+            ? `自动 · ${(ruleInfo.applied_fields || []).length}列`
+            : ruleInfo.status === 'review' ? '待确认' : '不提取');
+        meta.append(document.createTextNode(' · '), status);
+      }
+      main.append(meta);
+      button.append(main);
+      button.addEventListener('click', () => openGroupSheet(group.group_ref, sheet.part));
+      dom.groupSheetList.append(button);
+    });
+  }
+
+  function renderInstructions() {
+    const preview = state.preview;
+    const dimensions = preview.dimensions || preview.groupBy || [];
+    const filters = preview.filters || {};
+    const prefix = dom.accountPrefixLength.value;
+    const rows = [
+      ['数据范围', state.scope?.name || state.scopeId],
+      ['筛选条件', JSON.stringify(filters)],
+      ['拆分维度', dimensions.map((dimension) => GROUP_LABELS[dimension] || dimension).join(' + ')],
+      ['科目级次', prefix ? `按编码前 ${prefix} 位归并` : '完整科目编码'],
+      ['输出方式', dom.outputMode.value === 'zip' ? '多个 Excel，ZIP' : '一个 Excel，多 Sheet'],
+      ['最终分录', `${state.includedLines} 行`],
+      ['最终凭证', `${state.includedVouchers} 张`],
+      ['数据 Sheet', String(state.dataSheetCount || state.groups.length)],
+      ['辅助 Sheet', String(state.auxSheetCount)],
+      ['导出列', `${state.columns.length} 列`]
+    ];
+    const wrapper = el('div', 'je-instructions');
+    const list = el('dl');
+    rows.forEach(([label, value]) => {
+      list.append(el('dt', '', label));
+      list.append(el('dd', '', value));
+    });
+    wrapper.append(list);
+    return wrapper;
+  }
+
+  function renderSheetIndex() {
+    const dimensions = state.preview.dimensions || state.preview.groupBy || [];
+    const entries = groupSheetEntries();
+    const table = el('table', 'je-aux-table');
+    const thead = el('thead');
+    const head = el('tr');
+    dimensions.forEach((dimension) => {
+      if (dimension === 'account') {
+        head.append(el('th', '', '科目编码'), el('th', '', '科目名称'));
+      } else {
+        head.append(el('th', '', GROUP_LABELS[dimension] || dimension));
+      }
+    });
+    ['Sheet 名称', '部分', '行数', '凭证数', '借方合计', '贷方合计'].forEach((label) => {
+      head.append(el('th', '', label));
+    });
+    thead.append(head);
+    table.append(thead);
+    const tbody = el('tbody');
+    if (!entries.length) {
+      const row = el('tr');
+      const cell = el('td', 'empty', '当前筛选结果没有分组。');
+      cell.colSpan = Math.max(6, dimensions.length + 5);
+      row.append(cell);
+      tbody.append(row);
+    } else {
+      entries.forEach(({ group, sheet }) => {
+        const row = el('tr');
+        dimensions.forEach((dimension) => {
+          if (dimension === 'account') {
+            row.append(el('td', '', group.account_code || '未指定'));
+            row.append(el('td', '', group.account_name || '未指定科目'));
+          } else {
+            row.append(el('td', '', group.values?.[dimension] ?? '—'));
+          }
+        });
+        const linkCell = el('td');
+        const link = el('button', 'je-sheet-link', sheet.sheet_name);
+        link.type = 'button';
+        link.addEventListener('click', () => openGroupSheet(group.group_ref, sheet.part));
+        linkCell.append(link);
+        row.append(linkCell);
+        row.append(el('td', 'num', sheet.part));
+        row.append(el('td', 'num', sheet.line_count));
+        row.append(el('td', 'num', sheet.voucher_count));
+        row.append(el('td', 'num', formatAmount(sheet.debit_total)));
+        row.append(el('td', 'num', formatAmount(sheet.credit_total)));
+        tbody.append(row);
+      });
+    }
+    table.append(tbody);
+    return table;
+  }
+
+  function setAuxToolbarVisible(visible) {
+    [dom.excludePage, dom.restorePage, dom.restoreAllRows, dom.moreRowActions]
+      .forEach((node) => { if (node) node.hidden = !visible; });
+    if (dom.rowPagination) dom.rowPagination.hidden = !visible;
+  }
+
+  function renderActiveSheet() {
+    if (!state.preview) return;
+    const isGroup = state.activeKind === 'group';
+    setAuxToolbarVisible(isGroup);
+    if (state.activeKind === 'instructions') {
+      dom.activeSheetName.textContent = '拆分说明';
+      dom.activeSheetMeta.textContent = '辅助 Sheet · 按最终导出快照展示';
+      clear(dom.rowTableWrap);
+      dom.rowTableWrap.append(renderInstructions());
+      return;
+    }
+    if (state.activeKind === 'index') {
+      dom.activeSheetName.textContent = '分组索引';
+      dom.activeSheetMeta.textContent = `${state.groups.length} 个分组 · ${state.dataSheetCount || groupSheetEntries().length} 个数据 Sheet`;
+      clear(dom.rowTableWrap);
+      dom.rowTableWrap.append(renderSheetIndex());
+      return;
+    }
+    const active = state.activeSheet || {};
+    dom.activeSheetName.textContent = active.sheet_name || '当前 Sheet';
+    const excludedNote = state.scopeExcludedLineCount
+      ? ` · 当前显示 ${state.scopeLineCount} 行（${state.scopeExcludedLineCount} 行已排除）`
+      : '';
+    const ruleNote = state.activeSummaryRule
+      ? ` · 摘要识别 ${state.activeSummaryRule.status === 'auto' ? '自动' : state.activeSummaryRule.status === 'review' ? '待确认' : '不提取'} ${Math.round((state.activeSummaryRule.confidence || 0) * 1000) / 10}%`
+      : '';
+    dom.activeSheetMeta.textContent = `${state.scopeIncludedLineCount} 行 · ${state.scopeVoucherCount} 张凭证 · 借 ${formatAmount(active.debit_total)} · 贷 ${formatAmount(active.credit_total)}${active.part_count > 1 ? ` · 第 ${active.part}/${active.part_count} 部分` : ''}${excludedNote}${ruleNote}`;
+    renderRowTable();
+    renderPagination();
+  }
+
+  function activeAccountCode() {
+    const dims = state.activeGroupRef?.dimensions || [];
+    const account = dims.find((item) => item.dimension === 'account');
+    return account ? String(account.value || '') : '';
+  }
+
+  function summaryOverride(code) {
+    if (!code) return null;
+    if (!state.summaryOverrides[code]) {
+      state.summaryOverrides[code] = { disabled: false, confirmed: false, fields: {} };
+    }
+    return state.summaryOverrides[code];
+  }
+
+  function updateDerivedOverride(key, patch) {
+    const code = activeAccountCode();
+    const override = summaryOverride(code);
+    if (!override) return;
+    override.fields[key] = { ...(override.fields[key] || {}), ...patch };
+    if (override.confirmed === false && state.activeSummaryRule?.status === 'review') {
+      override.confirmed = true;
+    }
+    refreshSelection();
+  }
+
+  async function applySummaryOverride(patch) {
+    const code = activeAccountCode();
+    const override = summaryOverride(code);
+    if (!override) return;
+    Object.assign(override, patch);
+    await refreshSelection();
+  }
+
+  function renderSummaryInference() {
+    if (!dom.summaryInference) return;
+    const summary = state.summaryStructure;
+    if (!summary) {
+      dom.summaryInference.hidden = true;
+      return;
+    }
+    const total = Number(summary.total_line_count || 0);
+    const covered = Number(summary.covered_line_count || 0);
+    const rate = total ? (covered / total * 100).toFixed(1) : '0.0';
+    dom.summaryInference.hidden = false;
+    dom.summaryInference.replaceChildren();
+    dom.summaryInference.append(
+      el('strong', '', '摘要自动识别'),
+      el('span', 'je-summary-inference__pill je-summary-inference__pill--auto', `AUTO ${summary.auto_rule_count || 0}`),
+      el('span', 'je-summary-inference__pill je-summary-inference__pill--review', `REVIEW ${summary.review_rule_count || 0}`),
+      el('span', 'je-summary-inference__pill je-summary-inference__pill--none', `NONE ${summary.none_rule_count || 0}`),
+      el('span', '', `覆盖 ${rate}%（${covered} / ${total} 行）`)
+    );
+    const button = el('button', 'je-button je-button-secondary', '查看识别结果');
+    button.type = 'button';
+    button.addEventListener('click', () => {
+      if (typeof dom.columnDialog.showModal === 'function') dom.columnDialog.showModal();
+      else dom.columnDialog.setAttribute('open', '');
+      renderColumns();
+      dom.derivedColumnsPanel?.scrollIntoView({ block: 'nearest' });
+    });
+    dom.summaryInference.append(button);
+  }
+
+  function renderDerivedPanel() {
+    if (!dom.derivedColumnsPanel) return;
+    const rule = state.activeSummaryRule;
+    if (state.activeKind !== 'group' || !rule || !rule.fields?.length) {
+      dom.derivedColumnsPanel.hidden = true;
+      dom.derivedColumnsPanel.replaceChildren();
+      return;
+    }
+    const applied = new Set((rule.applied_fields || []).map((field) => field.key));
+    dom.derivedColumnsPanel.hidden = false;
+    dom.derivedColumnsPanel.replaceChildren();
+    const head = el('div', 'je-derived-panel__head');
+    head.append(el('strong', '', '自动提取字段'));
+    const status = el('span', `je-summary-rule-status je-summary-rule-status--${rule.status}`,
+      rule.status === 'auto' ? 'AUTO' : rule.status === 'review' ? '待确认' : '不提取');
+    head.append(status, el('span', '', `${Math.round((rule.confidence || 0) * 1000) / 10}%`));
+    dom.derivedColumnsPanel.append(head);
+    if (rule.status === 'review' && !rule.applied) {
+      const hint = el('p', 'je-muted', '该规则仍需确认；确认后才会进入最终 Excel。');
+      dom.derivedColumnsPanel.append(hint);
+    }
+    rule.fields.forEach((field) => {
+      const row = el('div', 'je-derived-row');
+      const checkbox = el('input');
+      checkbox.type = 'checkbox';
+      checkbox.checked = applied.has(field.key);
+      checkbox.addEventListener('change', () => updateDerivedOverride(field.key, { selected: checkbox.checked }));
+      const label = el('input');
+      label.type = 'text';
+      label.value = field.label || '';
+      label.maxLength = 40;
+      label.addEventListener('change', () => updateDerivedOverride(field.key, { label: label.value.trim() || field.label }));
+      const type = el('select');
+      ['item', 'date', 'person', 'department', 'organization', 'counterparty', 'reference', 'unknown'].forEach((value) => {
+        const option = el('option', '', value);
+        option.value = value;
+        type.append(option);
+      });
+      type.value = field.semantic_type;
+      type.addEventListener('change', () => updateDerivedOverride(field.key, { semantic_type: type.value }));
+      row.append(checkbox, label, type);
+      dom.derivedColumnsPanel.append(row);
+    });
+    const actions = el('div', 'je-derived-panel__actions');
+    if (rule.status === 'review' && !rule.applied) {
+      const confirm = el('button', 'mini-button', '确认 REVIEW 规则');
+      confirm.type = 'button';
+      confirm.addEventListener('click', () => applySummaryOverride({ confirmed: true }));
+      actions.append(confirm);
+    }
+    const disable = el('button', 'mini-button', '关闭本科目自动提取');
+    disable.type = 'button';
+    disable.addEventListener('click', () => applySummaryOverride({ disabled: true }));
+    actions.append(disable);
+    dom.derivedColumnsPanel.append(actions);
   }
 
   function renderPreview() {
     const preview = state.preview;
     if (!preview) return;
     dom.previewCard.hidden = false;
-    dom.previewSubtitle.textContent = `${state.candidateLines} 条候选中保留 ${state.includedLines} 条 · ${state.includedVouchers} 张凭证 · ${preview.group_count} 个组合分组`;
+    dom.previewSubtitle.textContent = state.dataSheetCount
+      ? `${state.dataSheetCount} 个数据 Sheet · ${state.auxSheetCount} 个辅助 Sheet · ${state.includedLines} 条最终分录 · ${state.includedVouchers} 张凭证`
+      : `${state.includedLines} 条最终分录 · ${state.includedVouchers} 张凭证 · ${preview.group_count} 个分组`;
     dom.previewLimit.textContent = preview.limit_exceeded
       ? `超过上限 ${preview.limits.max_groups}`
       : state.includedLines
@@ -1016,16 +1514,28 @@
     clear(dom.splitMetrics);
     dom.splitMetrics.append(
       metric('候选行', state.candidateLines, '', 'candidateLines'),
-      metric('保留行', state.includedLines, '', 'matchedLines'),
+      metric('最终分录', state.includedLines, '', 'matchedLines'),
       metric('排除行', state.excludedLines, '', 'excludedLines'),
-      metric('保留凭证', state.includedVouchers, '', 'matchedVouchers'),
-      metric('分组', preview.group_count, '', 'groupCount'),
-      metric('来源文件', preview.completed_files || 1, '', 'completedFiles')
+      metric('凭证', state.includedVouchers, '', 'matchedVouchers'),
+      metric('数据 Sheet', state.dataSheetCount || preview.group_count, '', 'groupCount'),
+      metric('辅助 Sheet', state.auxSheetCount, '', 'auxSheets')
     );
+    const notes = [];
+    if (preview.limit_exceeded) {
+      dom.previewSubtitle.textContent = `当前将生成 ${preview.group_count} 个分组，超过单工作簿 ${preview.limits.max_groups} 个分组限制。请缩小筛选范围，或改用 ZIP 输出。`;
+    } else {
+      if (preview.warnings?.includes('blank_group_included')) notes.push('存在空维度值，已归入“未指定”分组');
+      if (preview.excluded && (preview.excluded.draft || preview.excluded.active || preview.excluded.failed)) {
+        notes.push(`批量中 ${preview.excluded.draft + preview.excluded.active + preview.excluded.failed} 个文件未参与`);
+      }
+      if (state.excludedLines) notes.push(`已手工排除 ${state.excludedLines} 行`);
+      if (notes.length) dom.previewSubtitle.textContent += ` · ${notes.join(' · ')}`;
+    }
+    renderSummaryInference();
     renderSelectionSummary();
-    dirWarnings(preview);
-    renderRowTable();
-    renderPagination();
+    renderFinalSummary();
+    renderWorkbookNavigation();
+    renderActiveSheet();
     renderColumns();
     dom.generateButton.disabled = state.generating
       || state.rowsLoading
@@ -1033,55 +1543,6 @@
       || !state.columns.length
       || preview.limit_exceeded;
     dom.generateButton.textContent = generateButtonLabel();
-  }
-
-  function dirWarnings(preview) {
-    const warnings = [];
-    if (preview.limit_exceeded) {
-      warnings.push(`预计生成 ${preview.group_count} 个分组，超过当前输出上限 ${preview.limits.max_groups}。请增加筛选条件或选择更高层级分组。`);
-    }
-    if (preview.excluded && (preview.excluded.draft || preview.excluded.active || preview.excluded.failed)) {
-      warnings.push(`批量中 ${preview.excluded.draft + preview.excluded.active + preview.excluded.failed} 个文件未参与（未完成 ${preview.excluded.draft} / 进行中 ${preview.excluded.active} / 失败 ${preview.excluded.failed}）。`);
-    }
-    if (preview.warnings?.includes('blank_group_included')) {
-      warnings.push('存在空维度值，已归入“未指定”分组。');
-    }
-    if (state.excludedLines) {
-      warnings.push(`已手工排除 ${state.excludedLines} 行；这些行不会进入任何 Excel 或 ZIP。`);
-    }
-    dom.splitWarning.hidden = warnings.length === 0;
-    dom.splitWarning.textContent = warnings.join(' ');
-    clear(dom.splitGroupTable);
-    const table = el('table', 'split-table');
-    const thead = el('thead');
-    const head = el('tr');
-    const dimensions = preview.dimensions || preview.groupBy || [];
-    dimensions.forEach((dimension) => head.append(el('th', '', GROUP_LABELS[dimension] || dimension)));
-    ['行数', '凭证数', '借方合计', '贷方合计'].forEach((label) => head.append(el('th', '', label)));
-    thead.append(head);
-    const tbody = el('tbody');
-    if (!preview.groups.length) {
-      const row = el('tr');
-      const cell = el('td', 'empty', '没有匹配数据。');
-      cell.colSpan = Math.max(5, dimensions.length + 4);
-      row.append(cell);
-      tbody.append(row);
-    } else {
-      preview.groups.forEach((group) => {
-        const row = el('tr');
-        dimensions.forEach((dimension) => {
-          const value = group.values?.[dimension] ?? group.display_name ?? '—';
-          row.append(el('td', 'split-group-name', value));
-        });
-        row.append(el('td', 'num', group.line_count));
-        row.append(el('td', 'num', group.voucher_count));
-        row.append(el('td', 'num', formatAmount(group.debit_total)));
-        row.append(el('td', 'num', formatAmount(group.credit_total)));
-        tbody.append(row);
-      });
-    }
-    table.append(thead, tbody);
-    dom.splitGroupTable.append(table);
   }
 
   function renderOutput() {
@@ -1143,7 +1604,7 @@
     }
   }
 
-  function applyPreviewPayload(payload) {
+  function applyCommonPayload(payload) {
     state.preview = payload;
     state.columnStats = payload.column_stats || payload.columnStats || null;
     if (!state.columnsDirty && Array.isArray(payload.columns || payload.selected_columns)) {
@@ -1155,9 +1616,10 @@
     state.excludedLines = Number(payload.excluded_line_count || 0);
     state.candidateVouchers = Number(payload.candidate_voucher_count || 0);
     state.includedVouchers = Number(payload.included_voucher_count || 0);
-    state.page = Number(payload.page || 1);
-    state.totalPages = Number(payload.total_pages || 0);
-    state.rows = Array.isArray(payload.rows) ? payload.rows : [];
+    state.groups = Array.isArray(payload.groups) ? payload.groups : state.groups;
+    if (payload.summary_structure) state.summaryStructure = payload.summary_structure;
+    state.dataSheetCount = Number(payload.data_sheet_count || 0);
+    state.auxSheetCount = Number(payload.aux_sheet_count || 0);
     state.selectionMode = payload.row_selection_mode || 'all_except';
     state.excludedRows = new Map(
       (payload.excluded_rows || []).map((ref) => [rowKey(ref), ref])
@@ -1166,6 +1628,34 @@
       (payload.included_rows || []).map((ref) => [rowKey(ref), ref])
     );
     state.expectedCandidateLines = state.candidateLines;
+    showSelectionNotice('');
+  }
+
+  function applyGlobalPayload(payload) {
+    applyCommonPayload(payload);
+    state.activeKind = 'index';
+    state.activeGroupRef = null;
+    state.activePart = 1;
+    state.activeSheet = null;
+    state.rows = [];
+    state.page = 1;
+    state.totalPages = 0;
+    state.scopeLineCount = 0;
+    state.scopeVoucherCount = 0;
+  }
+
+  function applyScopePayload(payload) {
+    applyCommonPayload(payload);
+    state.rows = Array.isArray(payload.rows) ? payload.rows : [];
+    state.page = Number(payload.page || 1);
+    state.totalPages = Number(payload.total_pages || 0);
+    state.scopeLineCount = Number(payload.scope_line_count || 0);
+    state.scopeIncludedLineCount = Number(payload.scope_included_line_count || 0);
+    state.scopeExcludedLineCount = Number(payload.scope_excluded_line_count || 0);
+    state.scopeVoucherCount = Number(payload.scope_voucher_count || 0);
+    state.activeSheet = payload.active_sheet || state.activeSheet;
+    state.derivedColumns = Array.isArray(payload.derived_columns) ? payload.derived_columns : [];
+    state.activeSummaryRule = payload.summary_rule || null;
   }
 
   async function loadPreview({ page = 1, scroll = false } = {}) {
@@ -1192,7 +1682,7 @@
         body: JSON.stringify({ ...spec, page, pageSize: state.pageSize })
       });
       if (token !== state.requestToken) return;
-      applyPreviewPayload(payload);
+      applyGlobalPayload(payload);
       if (scroll) dom.previewCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
     } catch (error) {
       if (token !== state.requestToken) return;
@@ -1214,8 +1704,8 @@
     await loadPreview({ page: 1, scroll: true });
   }
 
-  async function refreshSelection() {
-    if (!state.preview) return;
+  async function requestScope(page, { scroll = false } = {}) {
+    if (!state.preview || state.activeKind !== 'group' || !state.activeGroupRef) return;
     let spec;
     try {
       spec = buildSpecPayload();
@@ -1231,20 +1721,69 @@
         method: 'POST',
         body: JSON.stringify({
           ...spec,
-          page: state.page,
+          previewGroup: state.activeGroupRef,
+          previewPart: state.activePart,
+          page,
           pageSize: state.pageSize
         })
       });
       if (token !== state.requestToken) return;
-      applyPreviewPayload(payload);
+      applyScopePayload(payload);
+      if (scroll) dom.rowTableWrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
     } catch (error) {
       if (token !== state.requestToken) return;
+      if (error.status === 422) {
+        await loadPreview({ page: 1 });
+        showSelectionNotice('当前 Sheet 已没有可导出的分录，已回到工作簿概览。');
+        return;
+      }
       showError(dom.splitError, previewErrorMessage(error));
     } finally {
       if (token === state.requestToken) {
         state.rowsLoading = false;
         renderPreview();
       }
+    }
+  }
+
+  async function openGroupSheet(groupRef, part = 1) {
+    const entry = groupSheetEntries().find(({ group, sheet }) => (
+      sameGroupRef(group.group_ref, groupRef) && sheet.part === part
+    ));
+    state.activeKind = 'group';
+    state.activeGroupRef = groupRef;
+    state.activePart = part;
+    state.page = 1;
+    state.rows = [];
+    state.rowsLoading = true;
+    if (entry) {
+      state.activeSheet = {
+        sheet_name: entry.sheet.sheet_name,
+        part: entry.sheet.part,
+        part_count: entry.sheet.part_count,
+        line_count: entry.sheet.line_count,
+        voucher_count: entry.sheet.voucher_count,
+        debit_total: entry.sheet.debit_total,
+        credit_total: entry.sheet.credit_total
+      };
+      state.scopeLineCount = entry.sheet.line_count;
+      state.scopeIncludedLineCount = entry.sheet.line_count;
+      state.scopeExcludedLineCount = 0;
+      state.scopeVoucherCount = entry.sheet.voucher_count;
+    }
+    renderPreview();
+    await requestScope(1, { scroll: true });
+  }
+
+  async function refreshSelection() {
+    if (!state.preview) return;
+    if (state.activeKind !== 'group') return;
+    await requestScope(state.page);
+  }
+
+  async function loadActivePage(page) {
+    if (state.activeKind === 'group') {
+      await requestScope(page, { scroll: true });
     }
   }
 
@@ -1323,12 +1862,11 @@
 
   function onlyCurrentPage() {
     if (!state.rows.length) return;
-    if (state.candidateLines > state.rows.length) {
-      const ok = window.confirm(
-        `仅保留当前页 ${state.rows.length} 行，其余 ${state.candidateLines - state.rows.length} 行将被排除。继续？`
-      );
-      if (!ok) return;
-    }
+    const ok = window.confirm(
+      `此操作将使最终导出仅保留当前 Sheet 当前页的 ${state.rows.length} 行。\n` +
+      '其他 Sheet 和本 Sheet 其他页的分录也将被排除。继续？'
+    );
+    if (!ok) return;
     state.selectionMode = 'only_selected';
     state.excludedRows.clear();
     state.includedRows = new Map(currentPageRefs().map((ref) => [rowKey(ref), ref]));
@@ -1449,6 +1987,44 @@
     dom.selectAllColumns.addEventListener('click', () => setColumns(state.defaultColumnOrder));
     dom.clearAllColumns.addEventListener('click', () => setColumns([]));
     dom.resetColumns.addEventListener('click', () => setColumns(recommendedColumnIds()));
+    dom.splitModeGrid.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-group-preset]');
+      if (button) selectModePreset(button.dataset.groupPreset);
+    });
+    dom.resetFilters.addEventListener('click', () => {
+      resetRowSelection();
+      resetFilterSelections();
+      state.page = 1;
+      showSelectionNotice('筛选条件已清除，手工行选择已重置。');
+      invalidatePreview();
+    });
+    dom.openColumnSettings.addEventListener('click', () => {
+      if (typeof dom.columnDialog.showModal === 'function') dom.columnDialog.showModal();
+      else dom.columnDialog.setAttribute('open', '');
+      renderColumns();
+    });
+    dom.closeColumnSettings.addEventListener('click', () => {
+      if (typeof dom.columnDialog.close === 'function') dom.columnDialog.close();
+      else dom.columnDialog.removeAttribute('open');
+    });
+    dom.columnDialog.addEventListener('click', (event) => {
+      if (event.target === dom.columnDialog) dom.closeColumnSettings.click();
+    });
+    dom.sheetSearch.addEventListener('input', () => {
+      state.sheetSearch = dom.sheetSearch.value || '';
+      renderWorkbookNavigation();
+    });
+    dom.sheetNavigation.querySelectorAll('[data-sheet-kind]').forEach((button) => {
+      button.addEventListener('click', () => {
+        if (!state.preview) return;
+        state.activeKind = button.dataset.sheetKind;
+        state.activeGroupRef = null;
+        state.activePart = 1;
+        state.rows = [];
+        state.page = 1;
+        renderPreview();
+      });
+    });
     dom.previewButton.addEventListener('click', preview);
     dom.generateButton.addEventListener('click', generate);
     dom.excludePage.addEventListener('click', excludeCurrentPage);
@@ -1456,14 +2032,14 @@
     dom.onlyPage.addEventListener('click', onlyCurrentPage);
     dom.restoreAllRows.addEventListener('click', restoreAllRows);
     dom.rowPagePrev.addEventListener('click', () => {
-      if (state.page > 1) loadPreview({ page: state.page - 1 });
+      if (state.page > 1) loadActivePage(state.page - 1);
     });
     dom.rowPageNext.addEventListener('click', () => {
-      if (state.page < state.totalPages) loadPreview({ page: state.page + 1 });
+      if (state.page < state.totalPages) loadActivePage(state.page + 1);
     });
     dom.rowPageSize.addEventListener('change', () => {
       state.pageSize = Number(dom.rowPageSize.value) || 50;
-      loadPreview({ page: 1 });
+      loadActivePage(1);
     });
     dom.widePreview.addEventListener('click', () => {
       state.wide = !state.wide;
@@ -1502,6 +2078,7 @@
     const loaded = await loadScope();
     if (!loaded) return;
     renderGroupLevels();
+    syncModeCards();
     await Promise.all([
       loadGroupAvailability(),
       loadLatest(),

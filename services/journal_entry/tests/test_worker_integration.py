@@ -131,6 +131,8 @@ class WorkerIntegrationTests(unittest.TestCase):
         self.assertEqual(payload["contra_summary"]["analyzed_voucher_count"], 3)
         self.assertEqual(payload["anomaly_summary"]["voucher_count"], 3)
         self.assertEqual(len(payload["vouchers"]), 3)
+        self.assertIn("summary_structure", payload)
+        self.assertEqual(payload["summary_structure"]["version"], 1)
 
         export_path = self.job_dir / "journal-entry-analysis-report.xlsx"
         self.assertTrue(export_path.exists())
@@ -154,6 +156,7 @@ class WorkerIntegrationTests(unittest.TestCase):
         ui_summary = json.loads((ui_dir / "summary.json").read_text(encoding="utf-8"))
         self.assertEqual(ui_summary["voucher_summary"], payload["voucher_summary"])
         self.assertEqual(ui_summary["anomaly_summary"], payload["anomaly_summary"])
+        self.assertEqual(ui_summary["summary_structure"], payload["summary_structure"])
         ui_rows = [
             json.loads(line)
             for line in (ui_dir / "vouchers.ndjson").read_text(encoding="utf-8").splitlines()

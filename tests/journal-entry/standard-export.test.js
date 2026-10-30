@@ -279,3 +279,16 @@ test('custom full report export is job-only and owner scoped', async () => {
   }));
   assert.equal(mismatch.status, 409);
 });
+
+test('missing job and batch return 404 for preview', async () => {
+  const missingJob = await post('/api/journal-entry-standard-exports/preview', spec({
+    scopeId: '99999999-9999-4999-8999-999999999999'
+  }));
+  assert.equal(missingJob.status, 404);
+
+  const missingBatch = await post('/api/journal-entry-standard-exports/preview', spec({
+    scopeType: 'batch',
+    scopeId: '99999999-9999-4999-8999-999999999999'
+  }));
+  assert.equal(missingBatch.status, 404);
+});

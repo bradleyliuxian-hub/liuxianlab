@@ -35,6 +35,7 @@ SUMMARY_KEYS = (
     "business_classification_summary",
     "contra_summary",
     "anomaly_summary",
+    "summary_structure",
     "warnings",
 )
 

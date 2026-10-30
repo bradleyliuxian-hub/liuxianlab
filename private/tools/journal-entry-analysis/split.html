@@ -5,10 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="description" content="Liuxian Lab 序时账筛选与拆分导出" />
   <title>筛选与拆分导出 · Liuxian Lab</title>
-  <link rel="stylesheet" href="/design-tokens.css?v=1.3.4" />
-  <link rel="stylesheet" href="/app/app-shell.css?v=1.3.4" />
-  <link rel="stylesheet" href="/app/tools/journal-entry-analysis/styles.css?v=1.3.4" />
-  <link rel="stylesheet" href="/app/tools/journal-entry-analysis/split.css?v=1.3.4" />
+  <link rel="stylesheet" href="/design-tokens.css?v=1.3.9" />
+  <link rel="stylesheet" href="/app/app-shell.css?v=1.3.9" />
+  <link rel="stylesheet" href="/app/tools/journal-entry-analysis/styles.css?v=1.3.9" />
+  <link rel="stylesheet" href="/app/tools/journal-entry-analysis/split.css?v=1.3.9" />
 </head>
 <body>
   <div class="page-shell">
@@ -19,185 +19,303 @@
         <div><strong>筛选与拆分导出</strong><small>Liuxian Lab / Ledger Filter &amp; Split</small></div>
       </div>
       <div class="header-actions">
-        <span class="version-chip">v1.3.4</span>
+        <span class="version-chip">v1.3.9</span>
         <span class="private-badge"><i></i>私有处理</span>
       </div>
     </header>
 
-    <main class="tool-main je-main">
-      <section class="intro-section">
-        <p class="eyebrow">LEDGER FILTER &amp; SPLIT</p>
-        <h1>先筛选，再拆分。</h1>
-        <p>所有数据来自已完成的标准化结果，不会重新打开原始 Excel 或重新执行分析。先筛选、再拆分，然后在真实数据预览中确认保留行与导出列，最后生成一个多 Sheet Excel 或多个 Excel 的 ZIP。</p>
-        <details class="version-notes">
-          <summary>v1.3.4 更新说明</summary>
-          <ul>
-            <li>完整分析报告支持配置标准序时账 Sheet 的列与行；其他分析 Sheet 不变。</li>
-            <li>新增“导出数据预览工作台”：在网页中直接查看即将导出的真实行和列，而不是只看汇总数字。</li>
-            <li>预览表格使用服务器分页（25/50/100/200 行），浏览器不会下载完整 100k / 300k 结果。</li>
-            <li>新增手工行选择：默认全部保留，可排除当前页、恢复当前页、恢复全部排除，或仅保留当前页。</li>
-            <li>行选择使用 job_id + internal_line_key 稳定标识；只保存被排除的行，100k 行只需排除少量记录。</li>
-            <li>排除行后即时刷新保留行数、凭证数、分组数、分组借贷合计与空白列统计。</li>
-            <li>修改筛选条件会清空手工行选择并明确提示，避免隐藏的旧选择影响新数据集。</li>
-            <li>列设置改为预览工作台上的抽屉式面板；勾选/取消列会立即反映在预览表格中。</li>
-            <li>新增宽屏预览、横向滚动、冻结选择列、日期/金额格式与空值统一显示。</li>
-            <li>生成前显示最终导出摘要；超过 100 个分组或 50,000 行时进行二次确认。</li>
-            <li>Excel 多 Sheet 与 ZIP 使用最终保留行和所选列；拆分索引同步重算行数、凭证数与借贷合计。</li>
-            <li>新增单文件 / 批量合并“标准序时账导出预览”，支持查看数据、选择列和排除行。</li>
-            <li>拆分模板只保存筛选、拆分与列设置，不保存具体行选择。</li>
-          </ul>
+    <main class="tool-main je-main je-export-workspace">
+      <header class="je-workspace-header">
+        <div>
+          <p class="je-eyebrow">JOURNAL ENTRY ANALYSIS</p>
+          <h1>筛选与拆分导出</h1>
+          <p>选择需要的拆分方案与筛选条件，在真实数据预览中确认保留行，再生成 Excel 或 ZIP。</p>
+          <details class="version-notes">
+            <summary>v1.3.9 更新说明</summary>
+            <ul>
+              <li>摘要结构化已成为分析阶段的一等步骤；本页负责下游的筛选、工作簿预览与导出。</li>
+              <li>新增摘要结构自动识别：按科目推断分隔符与业务语义，自动生成费用项目、员工姓名、交易日期等派生字段。</li>
+              <li>工作簿预览会显示每个科目的识别状态、派生字段与置信度，并可重命名、调整类型或关闭自动提取。</li>
+              <li>导出 Excel 按科目写入各自的派生字段，网页预览与 Excel 使用同一份推断规则。</li>
+              <li>导出预览升级为工作簿预览：按最终 Excel 的 Sheet 结构展示，左侧 Sheet 导航支持搜索和切换。</li>
+              <li>每个科目 Sheet 单独分页，只加载当前 Sheet 当前页；行排除跨 Sheet 保持。</li>
+              <li>分组索引、拆分说明可在网页中直接查看；Sheet 名称由后端与实际 Excel 共用同一命名逻辑。</li>
+              <li>科目筛选新增“全选科目”：一键清除科目限制，其他筛选条件继续生效。</li>
+              <li>“按科目”默认按完整科目编码拆分，每个完整科目编码生成一个数据 Sheet；填写科目前 N 位才启用归并。</li>
+              <li>分组索引新增独立的科目编码、科目名称列，并与实际 Sheet 名称保持一致。</li>
+              <li>页面重组为四个主区域：拆分方案、筛选数据、导出预览、生成与下载。</li>
+              <li>常用拆分方案改为按钮卡片；组合拆分和预设模板收进“更多方案”。</li>
+              <li>默认只展示日期、科目、客户、供应商筛选，其余条件按需展开。</li>
+              <li>导出预览成为页面主工作区，统计、列设置、行排除和分页集中在同一区域。</li>
+              <li>列设置改为抽屉式对话框；取消列会立即更新预览表格。</li>
+              <li>生成区集中显示输出方式、最终行数/凭证数/列数和生成按钮。</li>
+              <li>保留服务器分页、空白列检测、Preset、跨 Job 身份和权限隔离。</li>
+            </ul>
+          </details>
+        </div>
+        <div class="je-scope-badge" id="scopeCard">
+          <span class="je-scope-label" id="scopeBadge">—</span>
+          <strong id="scopeTitle">正在加载数据范围…</strong>
+          <span id="scopeSubtitle">—</span>
+          <div class="error-box" id="scopeError" hidden></div>
+        </div>
+      </header>
+
+      <section class="je-panel" id="groupCard" aria-labelledby="split-mode-title">
+        <div class="je-section-heading">
+          <span class="je-step">01</span>
+          <div>
+            <h2 id="split-mode-title">拆分方案</h2>
+            <p>选择最接近目标的方案。切换方案只改变分组方式，不会修改筛选条件或手工行选择。</p>
+          </div>
+        </div>
+
+        <div class="je-mode-grid" id="splitModeGrid">
+          <button type="button" class="je-mode-card is-active" data-group-preset="account" aria-pressed="true">
+            <span class="je-mode-icon" aria-hidden="true">科</span>
+            <span class="je-mode-title">按科目</span>
+            <span class="je-mode-description">每个科目一个 Sheet</span>
+          </button>
+          <button type="button" class="je-mode-card" data-group-preset="month" aria-pressed="false">
+            <span class="je-mode-icon" aria-hidden="true">月</span>
+            <span class="je-mode-title">按月份</span>
+            <span class="je-mode-description">按日历月份归集</span>
+          </button>
+          <button type="button" class="je-mode-card" data-group-preset="customer" aria-pressed="false">
+            <span class="je-mode-icon" aria-hidden="true">客</span>
+            <span class="je-mode-title">按客户</span>
+            <span class="je-mode-description">按客户归集分录</span>
+          </button>
+          <button type="button" class="je-mode-card" data-group-preset="supplier" aria-pressed="false">
+            <span class="je-mode-icon" aria-hidden="true">供</span>
+            <span class="je-mode-title">按供应商</span>
+            <span class="je-mode-description">按供应商归集分录</span>
+          </button>
+          <button type="button" class="je-mode-card" data-group-preset="combined" aria-pressed="false">
+            <span class="je-mode-icon" aria-hidden="true">组</span>
+            <span class="je-mode-title">组合拆分</span>
+            <span class="je-mode-description">例如科目 + 月份</span>
+          </button>
+        </div>
+
+        <details class="je-more-options" id="advancedGroupDetails">
+          <summary>更多方案与高级分组</summary>
+          <div id="advancedGroupOptions">
+            <div class="split-preset-bar">
+              <label class="field-control"><span>拆分模板</span><select id="presetSelect"></select></label>
+              <button class="ghost-button" id="applyPreset" type="button">应用模板</button>
+              <button class="ghost-button" id="savePreset" type="button">保存当前方案</button>
+              <button class="ghost-button" id="managePresets" type="button">管理模板</button>
+            </div>
+            <div class="split-level-head">
+              <span>拆分层级（最多 3 个）</span>
+              <button class="mini-button" id="addGroupLevel" type="button">＋ 添加层级</button>
+            </div>
+            <div class="split-levels" id="groupLevels"></div>
+            <label class="field-control" id="accountPrefixControl" hidden>
+              <span>科目编码前 N 位（留空为完整科目）</span>
+              <input type="number" min="1" max="20" step="1" id="accountPrefixLength" placeholder="例如 4" />
+            </label>
+            <p class="split-hint" id="groupHint"></p>
+          </div>
         </details>
       </section>
 
-      <section class="workspace-card" id="scopeCard">
-        <div class="card-heading">
-          <div><span class="step-no">01</span><div><h2 id="scopeTitle">数据范围</h2><p id="scopeSubtitle">正在加载…</p></div></div>
-          <span class="profile-chip" id="scopeBadge">—</span>
+      <section class="je-panel" id="filterCard" aria-labelledby="filters-title">
+        <div class="je-section-heading">
+          <span class="je-step">02</span>
+          <div>
+            <h2 id="filters-title">筛选数据</h2>
+            <p>不同字段之间为 AND，同一字段内多选为 OR。不需要的条件可以留空。</p>
+          </div>
         </div>
-        <div class="error-box" id="scopeError" hidden></div>
+
+        <div class="je-filter-grid">
+          <div class="je-field"><label for="dateFrom">开始日期</label><input type="date" id="dateFrom" /></div>
+          <div class="je-field"><label for="dateTo">结束日期</label><input type="date" id="dateTo" /></div>
+          <div class="je-field"><label>科目</label><div class="multi-select" id="filterAccount"></div></div>
+          <div class="je-field"><label>客户</label><div class="multi-select" id="filterCustomer"></div></div>
+          <div class="je-field"><label>供应商</label><div class="multi-select" id="filterSupplier"></div></div>
+        </div>
+
+        <details class="je-more-options" id="advancedFilterDetails">
+          <summary>更多筛选条件</summary>
+          <div class="je-filter-grid" id="advancedFilterOptions">
+            <div class="je-field"><label>来源文件</label><div class="multi-select" id="filterSource"></div></div>
+            <div class="je-field"><label>主体</label><div class="multi-select" id="filterEntity"></div></div>
+            <div class="je-field"><label>月份（YYYY-MM）</label><div class="multi-select" id="filterMonth"></div></div>
+            <div class="je-field"><label>会计期间</label><div class="multi-select" id="filterPeriod"></div></div>
+            <div class="je-field"><label>往来单位</label><div class="multi-select" id="filterCounterparty"></div></div>
+            <div class="je-field"><label>借方最小</label><input type="number" step="0.01" id="debitMin" /></div>
+            <div class="je-field"><label>借方最大</label><input type="number" step="0.01" id="debitMax" /></div>
+            <div class="je-field"><label>贷方最小</label><input type="number" step="0.01" id="creditMin" /></div>
+            <div class="je-field"><label>贷方最大</label><input type="number" step="0.01" id="creditMax" /></div>
+          </div>
+        </details>
+
+        <div class="batch-notice" id="selectionNotice" hidden></div>
+        <div class="error-box" id="splitError" hidden></div>
+        <div class="je-filter-actions">
+          <button class="je-button je-button-secondary" id="resetFilters" type="button">清除筛选</button>
+          <button class="je-button je-button-primary" id="previewButton" type="button">加载导出预览</button>
+        </div>
       </section>
 
-      <section class="workspace-card" id="filterCard">
-        <div class="card-heading">
-          <div><span class="step-no">02</span><div><h2>筛选条件</h2><p>不同条件之间为 AND；同一条件内多选为 OR。</p></div></div>
+      <section class="je-panel je-preview-panel je-workbook-preview" id="previewCard" hidden aria-labelledby="preview-title">
+        <div class="je-section-heading">
+          <span class="je-step">03</span>
+          <div>
+            <h2 id="preview-title">工作簿预览</h2>
+            <p id="previewSubtitle">将按照最终 Excel 的 Sheet 结构预览。</p>
+          </div>
+          <div class="je-heading-actions">
+            <span class="profile-chip" id="previewLimit">—</span>
+            <button class="ghost-button" id="widePreview" type="button">宽屏预览</button>
+          </div>
         </div>
-        <div class="split-filter-grid">
-          <div class="split-filter"><label>来源文件</label><div class="multi-select" id="filterSource"></div></div>
-          <div class="split-filter"><label>主体</label><div class="multi-select" id="filterEntity"></div></div>
-          <div class="split-filter"><label>月份（YYYY-MM）</label><div class="multi-select" id="filterMonth"></div></div>
-          <div class="split-filter"><label>会计期间</label><div class="multi-select" id="filterPeriod"></div></div>
-          <div class="split-filter"><label>日期从</label><input type="date" id="dateFrom" /></div>
-          <div class="split-filter"><label>日期到</label><input type="date" id="dateTo" /></div>
-          <div class="split-filter"><label>科目</label><div class="multi-select" id="filterAccount"></div></div>
-          <div class="split-filter"><label>客户</label><div class="multi-select" id="filterCustomer"></div></div>
-          <div class="split-filter"><label>供应商</label><div class="multi-select" id="filterSupplier"></div></div>
-          <div class="split-filter"><label>往来单位</label><div class="multi-select" id="filterCounterparty"></div></div>
-          <div class="split-filter"><label>借方最小</label><input type="number" step="0.01" id="debitMin" /></div>
-          <div class="split-filter"><label>借方最大</label><input type="number" step="0.01" id="debitMax" /></div>
-          <div class="split-filter"><label>贷方最小</label><input type="number" step="0.01" id="creditMin" /></div>
-          <div class="split-filter"><label>贷方最大</label><input type="number" step="0.01" id="creditMax" /></div>
+
+        <div class="summary-metrics compact" id="splitMetrics"></div>
+        <div class="je-summary-inference" id="summaryInference" hidden></div>
+
+        <div class="je-workbook-layout">
+          <aside class="je-sheet-sidebar">
+            <div class="je-sheet-sidebar__header">
+              <strong>Sheet</strong>
+              <span class="je-sheet-count" id="sheetCountLabel">—</span>
+            </div>
+            <input type="search" id="sheetSearch" class="je-sheet-search" placeholder="搜索 Sheet / 科目编码或名称…" autocomplete="off" />
+            <nav id="sheetNavigation" class="je-sheet-list" aria-label="工作簿 Sheet">
+              <button type="button" class="je-sheet-item je-sheet-item--helper" data-sheet-kind="instructions">
+                <span class="je-sheet-item__main"><span class="je-sheet-item__name">拆分说明</span></span>
+              </button>
+              <button type="button" class="je-sheet-item je-sheet-item--helper" data-sheet-kind="index">
+                <span class="je-sheet-item__main"><span class="je-sheet-item__name">分组索引</span></span>
+              </button>
+              <div class="je-sheet-divider" aria-hidden="true"></div>
+              <div id="groupSheetList"></div>
+            </nav>
+          </aside>
+
+          <section class="je-sheet-preview">
+            <header class="je-sheet-preview__header">
+              <div>
+                <p class="je-sheet-preview__eyebrow">当前 Sheet</p>
+                <h3 id="activeSheetName">—</h3>
+                <p id="activeSheetMeta" class="je-sheet-preview__meta">—</p>
+              </div>
+              <div class="je-sheet-preview__actions">
+                <button class="je-button je-button-secondary" id="openColumnSettings" type="button">导出列设置</button>
+              </div>
+            </header>
+
+            <div class="je-sheet-toolbar" id="activeSheetToolbar">
+              <button class="mini-button" id="removeEmptyColumns" type="button">取消勾选全部空白列</button>
+              <button class="mini-button" id="excludePage" type="button">排除本页</button>
+              <button class="mini-button" id="restorePage" type="button">恢复本页</button>
+              <button class="mini-button" id="restoreAllRows" type="button">恢复全部排除</button>
+              <details class="je-more-options je-more-row-actions" id="moreRowActions">
+                <summary>更多行操作</summary>
+                <button class="mini-button" id="onlyPage" type="button">仅保留本页</button>
+              </details>
+              <div class="row-status" id="rowStatus">—</div>
+            </div>
+
+            <div class="je-sheet-preview__content">
+              <div class="row-table-wrap" id="rowTableWrap">
+                <div class="table-skeleton">正在加载导出预览…</div>
+              </div>
+            </div>
+
+            <div class="row-pagination" id="rowPagination">
+              <div class="pagination-pages">
+                <button class="mini-button" id="rowPagePrev" type="button">上一页</button>
+                <span id="rowPageInfo">第 1 / 1 页</span>
+                <button class="mini-button" id="rowPageNext" type="button">下一页</button>
+              </div>
+              <label class="field-control inline-control"><span>每页</span>
+                <select id="rowPageSize">
+                  <option value="25">25</option>
+                  <option value="50" selected>50</option>
+                  <option value="100">100</option>
+                  <option value="200">200</option>
+                </select>
+              </label>
+            </div>
+          </section>
         </div>
       </section>
 
-      <section class="workspace-card" id="groupCard">
-        <div class="card-heading">
-          <div><span class="step-no">03</span><div><h2>拆分方式</h2><p>最多选择 3 个有顺序的拆分维度；层级顺序决定输出组织。</p></div></div>
+      <section class="je-panel" id="outputPanel" aria-labelledby="output-title">
+        <div class="je-section-heading">
+          <span class="je-step">04</span>
+          <div>
+            <h2 id="output-title">生成与下载</h2>
+            <p>确认最终行数、列数和输出方式后生成文件。</p>
+          </div>
         </div>
-        <div class="split-preset-bar">
-          <label class="field-control"><span>拆分模板</span><select id="presetSelect"></select></label>
-          <button class="ghost-button" id="applyPreset" type="button">应用模板</button>
-          <button class="ghost-button" id="savePreset" type="button">保存当前方案</button>
-          <button class="ghost-button" id="managePresets" type="button">管理模板</button>
-        </div>
-        <div class="split-level-head"><span>拆分层级（最多 3 个）</span><button class="mini-button" id="addGroupLevel" type="button">＋ 添加层级</button></div>
-        <div class="split-levels" id="groupLevels"></div>
-        <div class="split-group-grid">
-          <label class="field-control" id="accountPrefixControl" hidden><span>科目编码前 N 位（留空为完整科目）</span>
-            <input type="number" min="1" max="20" step="1" id="accountPrefixLength" placeholder="例如 4" />
-          </label>
-          <label class="field-control"><span>输出方式</span>
+        <div class="je-final-summary" id="finalSummary">加载导出预览后显示最终导出摘要。</div>
+        <div class="je-output-options">
+          <label class="je-field"><span>输出方式</span>
             <select id="outputMode">
               <option value="multi_sheet">一个 Excel，多 Sheet</option>
               <option value="zip">多个 Excel，ZIP</option>
             </select>
           </label>
-          <label class="field-control"><span>输出范围</span>
+          <label class="je-field"><span>输出范围</span>
             <select id="rowMode">
               <option value="matched_only">仅导出匹配筛选条件的分录</option>
               <option value="full_voucher" disabled>完整凭证（暂未实现）</option>
             </select>
           </label>
         </div>
-        <p class="split-hint" id="groupHint"></p>
-        <div class="split-actions">
-          <button class="primary-button" id="previewButton" type="button">加载导出预览</button>
+        <div class="je-export-actionbar">
+          <span class="je-muted" id="exportActionHint">先加载导出预览，再确认生成。</span>
+          <button class="je-button je-button-primary" id="generateSplitButton" type="button" disabled>生成导出文件</button>
         </div>
-        <div class="error-box" id="splitError" hidden></div>
-      </section>
-
-      <section class="workspace-card" id="columnCard">
-        <div class="card-heading">
-          <div><span class="step-no">04</span><div><h2>导出列设置</h2><p id="columnHint">选择最终序时账包含的列；系统追溯字段默认关闭。勾选后预览表会立即更新。</p></div></div>
-          <span class="profile-chip" id="columnCount">—</span>
-        </div>
-        <div class="column-actions">
-          <button class="mini-button" id="recommendedColumns" type="button">推荐列</button>
-          <button class="mini-button" id="removeEmptyColumns" type="button">取消勾选全部空白列</button>
-          <button class="mini-button" id="selectAllColumns" type="button">全选</button>
-          <button class="mini-button" id="clearAllColumns" type="button">全部取消</button>
-          <button class="mini-button" id="resetColumns" type="button">恢复默认</button>
-        </div>
-        <details class="column-drawer" id="columnDrawer">
-          <summary>展开/收起字段选择</summary>
-          <div class="column-groups" id="columnGroups"></div>
-          <div class="column-order-block">
-            <h3>已选列顺序</h3>
-            <div class="column-order" id="columnOrder"></div>
-          </div>
-        </details>
-      </section>
-
-      <section class="workspace-card export-preview-card" id="previewCard" hidden>
-        <div class="card-heading">
-          <div><span class="step-no">05</span><div><h2>导出数据预览</h2><p id="previewSubtitle">当前条件下真正准备进入导出的数据。</p></div></div>
-          <div class="result-actions">
-            <span class="profile-chip" id="previewLimit">—</span>
-            <button class="ghost-button" id="widePreview" type="button">宽屏预览</button>
-          </div>
-        </div>
-
-        <div class="preview-sticky-toolbar" id="previewToolbar">
-          <div class="row-status" id="rowStatus">—</div>
-          <div class="row-actions">
-            <button class="mini-button" id="excludePage" type="button">排除当前页</button>
-            <button class="mini-button" id="restorePage" type="button">恢复当前页</button>
-            <button class="mini-button" id="onlyPage" type="button">仅保留当前页</button>
-            <button class="mini-button" id="restoreAllRows" type="button">恢复全部排除</button>
-            <button class="primary-button" id="generateSplitButton" type="button" disabled>生成拆分文件</button>
-          </div>
-        </div>
-        <div class="batch-notice" id="selectionNotice" hidden></div>
-        <div class="row-table-wrap" id="rowTableWrap">
-          <div class="table-skeleton">正在加载导出预览…</div>
-        </div>
-        <div class="row-pagination" id="rowPagination">
-          <div class="pagination-pages">
-            <button class="mini-button" id="rowPagePrev" type="button">上一页</button>
-            <span id="rowPageInfo">第 1 / 1 页</span>
-            <button class="mini-button" id="rowPageNext" type="button">下一页</button>
-          </div>
-          <label class="field-control inline-control"><span>每页</span>
-            <select id="rowPageSize">
-              <option value="25">25</option>
-              <option value="50" selected>50</option>
-              <option value="100">100</option>
-              <option value="200">200</option>
-            </select>
-          </label>
-        </div>
-
-        <div class="preview-group-summary">
-          <h3>最终分组预览</h3>
-          <div class="summary-metrics compact" id="splitMetrics"></div>
-          <div class="batch-notice" id="splitWarning" hidden></div>
-          <div class="split-table-wrap" id="splitGroupTable"></div>
-        </div>
-      </section>
-
-      <section class="workspace-card" id="outputCard" hidden>
-        <div class="card-heading">
-          <div><span class="step-no">06</span><div><h2>下载拆分文件</h2><p id="outputMeta">—</p></div></div>
-          <div class="result-actions">
-            <a class="primary-button" id="splitDownload" href="#" hidden>下载拆分文件 <span>↓</span></a>
-            <button class="ghost-button" id="deleteSplitOutput" type="button" hidden>删除该输出</button>
+        <div class="workspace-card output-result" id="outputCard" hidden>
+          <div class="card-heading">
+            <div><h2>下载拆分文件</h2><p id="outputMeta">—</p></div>
+            <div class="result-actions">
+              <a class="primary-button" id="splitDownload" href="#" hidden>下载拆分文件 <span>↓</span></a>
+              <button class="ghost-button" id="deleteSplitOutput" type="button" hidden>删除该输出</button>
+            </div>
           </div>
         </div>
       </section>
+
       <p class="retention-note">分析文件、批次输出与拆分结果按系统保留策略自动清理；请及时下载需要留存的报告。</p>
     </main>
 
-    <footer class="tool-footer"><span>Liuxian Lab</span><span>Ledger Filter &amp; Split v1.3.4</span></footer>
+    <footer class="tool-footer"><span>Liuxian Lab</span><span>Ledger Filter &amp; Split v1.3.9</span></footer>
   </div>
+
+  <dialog class="je-column-dialog" id="columnDialog">
+    <div id="columnCard">
+      <div class="je-dialog-heading">
+        <div>
+          <h2>导出列设置</h2>
+          <p id="columnHint">取消不需要的列，或调整顺序。勾选后预览表会立即更新。</p>
+        </div>
+        <div class="je-dialog-actions">
+          <span class="profile-chip" id="columnCount">—</span>
+          <button class="icon-button" id="closeColumnSettings" type="button" aria-label="关闭列设置">×</button>
+        </div>
+      </div>
+      <div class="column-actions">
+        <button class="mini-button" id="recommendedColumns" type="button">推荐列</button>
+        <button class="mini-button" id="selectAllColumns" type="button">全选</button>
+        <button class="mini-button" id="clearAllColumns" type="button">全部取消</button>
+        <button class="mini-button" id="resetColumns" type="button">恢复默认</button>
+      </div>
+      <div class="je-derived-panel" id="derivedColumnsPanel" hidden></div>
+      <div class="column-groups" id="columnGroups"></div>
+      <div class="column-order-block">
+        <h3>已选列顺序</h3>
+        <div class="column-order" id="columnOrder"></div>
+      </div>
+    </div>
+  </dialog>
+
   <div class="config-backdrop" id="presetBackdrop" hidden></div>
   <section class="config-modal split-preset-modal" id="presetSaveModal" hidden role="dialog" aria-modal="true" aria-label="保存拆分模板">
     <div class="config-head"><div><p class="eyebrow">SAVE PRESET</p><h2>保存当前拆分方案</h2><small>模板只保存筛选、拆分、输出方式，不保存数据范围。</small></div><button class="icon-button" id="closePresetSave" type="button" aria-label="关闭">×</button></div>
@@ -212,7 +330,7 @@
     <div class="preset-modal-body"><div class="preset-list" id="presetList"></div></div>
   </section>
   <div class="toast" id="splitToast" role="status" aria-live="polite"></div>
-  <script src="/app/app-shell.js?v=1.3.4"></script>
-  <script src="/app/tools/journal-entry-analysis/split.js?v=1.3.4"></script>
+  <script src="/app/app-shell.js?v=1.3.9"></script>
+  <script src="/app/tools/journal-entry-analysis/split.js?v=1.3.9"></script>
 </body>
 </html>

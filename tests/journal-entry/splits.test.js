@@ -172,6 +172,7 @@ function installStubs() {
       };
     },
     async rows(request) {
+      state.lastRowsRequest = request;
       const selected = request.row_selection_mode === 'only_selected'
         ? (request.included_rows || []).length
         : 10 - (request.excluded_rows || []).length;
@@ -227,7 +228,10 @@ function installStubs() {
           group_count: 1,
           matched_lines: 10,
           matched_vouchers: 5,
-          manifest: { schema_version: 1 }
+          manifest: {
+            schema_version: 1,
+            groups: [{ group_key: 'g1', derived_fields: [{ key: 'x', label: '事项' }] }]
+          }
         }
       };
     }
@@ -508,6 +512,13 @@ test('generate persists row selection snapshot and rejects candidate mismatch', 
     ...spec(),
     rowSelectionMode: 'all_except',
     excludedRows: [{ job_id: JOB_ID, internal_line_key: '3:sheet:2' }],
+    summaryOverrides: {
+      '224103': {
+        fields: {
+          'summary:auto:224103:part:1': { selected: false }
+        }
+      }
+    },
     expectedIncludedJobIds: rows.body.included_job_ids,
     expectedCandidateLineCount: 10
   });
@@ -519,10 +530,89 @@ test('generate persists row selection snapshot and rejects candidate mismatch', 
   ]);
   assert.equal(output.snapshot.candidate_line_count, 10);
   assert.equal(output.snapshot.final_line_count, 10);
+  assert.equal(output.snapshot.summary_structure_version, 1);
+  assert.deepEqual(output.snapshot.summary_rule_overrides, {
+    '224103': {
+      disabled: false,
+      confirmed: false,
+      fields: {
+        'summary:auto:224103:part:1': { selected: false }
+      }
+    }
+  });
+  assert.deepEqual(output.snapshot.summary_derived_fields, [{
+    group_key: 'g1',
+    derived_fields: [{ key: 'x', label: '事项' }]
+  }]);
 
   const mismatch = await post('/api/journal-entry-splits', {
     ...spec(),
     expectedCandidateLineCount: 9
   });
   assert.equal(mismatch.status, 409);
+});
+
+
+test('preview-rows forwards validated group scope and part', async () => {
+  const response = await post('/api/journal-entry-splits/preview-rows', {
+    ...spec(),
+    previewGroup: {
+      dimensions: [{ dimension: 'customer', value: 'C001' }]
+    },
+    previewPart: 2
+  });
+  assert.equal(response.status, 200, JSON.stringify(response.body));
+  assert.deepEqual(state.lastRowsRequest.preview_group, {
+    dimensions: [{ dimension: 'customer', value: 'C001' }]
+  });
+  assert.equal(state.lastRowsRequest.preview_part, 2);
+
+  const invalid = await post('/api/journal-entry-splits/preview-rows', {
+    ...spec(),
+    previewGroup: { dimensions: [] }
+  });
+  assert.equal(invalid.status, 422);
+
+  const invalidPart = await post('/api/journal-entry-splits/preview-rows', {
+    ...spec(),
+    previewGroup: {
+      dimensions: [{ dimension: 'customer', value: 'C001' }]
+    },
+    previewPart: 0
+  });
+  assert.equal(invalidPart.status, 422);
+});
+
+test('summary overrides are validated and forwarded', async () => {
+  const override = {
+    '224103': {
+      confirmed: true,
+      disabled: false,
+      fields: {
+        'summary:auto:224103:part:1': {
+          selected: true,
+          label: '报销人',
+          semantic_type: 'person'
+        }
+      }
+    }
+  };
+  const response = await post('/api/journal-entry-splits/preview-rows', {
+    ...spec(),
+    summaryOverrides: override
+  });
+  assert.equal(response.status, 200, JSON.stringify(response.body));
+  assert.deepEqual(state.lastRowsRequest.summary_overrides, override);
+
+  const invalid = await post('/api/journal-entry-splits/preview-rows', {
+    ...spec(),
+    summaryOverrides: {
+      '224103': {
+        fields: {
+          'summary:auto:224103:part:1': { semantic_type: 'not-a-type' }
+        }
+      }
+    }
+  });
+  assert.equal(invalid.status, 422);
 });

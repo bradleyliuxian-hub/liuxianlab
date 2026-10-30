@@ -23,7 +23,9 @@
     standardMetrics: $('#standardMetrics'), standardWarning: $('#standardWarning'),
     standardExportButton: $('#standardExportButton'), previewError: $('#previewError'),
     toast: $('#standardToast'), reportNotice: $('#reportModeNotice'),
-    pageHeading: $('#pageHeading'), pageIntro: $('#pageIntro')
+    pageHeading: $('#pageHeading'), pageIntro: $('#pageIntro'),
+    openColumnSettings: $('#openColumnSettings'), closeColumnSettings: $('#closeColumnSettings'),
+    columnDialog: $('#columnDialog')
   };
 
   const state = {
@@ -623,6 +625,18 @@
     dom.restorePage.addEventListener('click', restoreCurrentPage);
     dom.onlyPage.addEventListener('click', onlyCurrentPage);
     dom.restoreAllRows.addEventListener('click', restoreAllRows);
+    dom.openColumnSettings.addEventListener('click', () => {
+      if (typeof dom.columnDialog.showModal === 'function') dom.columnDialog.showModal();
+      else dom.columnDialog.setAttribute('open', '');
+      renderColumns();
+    });
+    dom.closeColumnSettings.addEventListener('click', () => {
+      if (typeof dom.columnDialog.close === 'function') dom.columnDialog.close();
+      else dom.columnDialog.removeAttribute('open');
+    });
+    dom.columnDialog.addEventListener('click', (event) => {
+      if (event.target === dom.columnDialog) dom.closeColumnSettings.click();
+    });
     dom.standardExportButton.addEventListener('click', exportStandard);
     dom.rowPagePrev.addEventListener('click', () => {
       if (state.page > 1) loadPreview({ page: state.page - 1 });

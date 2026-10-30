@@ -339,8 +339,8 @@ class SplitOutputTests(unittest.TestCase):
             self.assertTrue(all(len(name) <= 31 for name in workbook.sheetnames))
             self.assertEqual(len(set(workbook.sheetnames)), len(workbook.sheetnames))
             headers = [cell.value for cell in next(workbook["分组索引"].iter_rows(max_row=1))]
-            self.assertEqual(headers[0], "科目")
-            self.assertEqual(headers[1:4], ["Sheet 名称", "部分", "行数"])
+            self.assertEqual(headers[0:2], ["科目编码", "科目名称"])
+            self.assertEqual(headers[2:5], ["Sheet 名称", "部分", "行数"])
             group_sheet = next(name for name in workbook.sheetnames if name not in ("拆分说明", "分组索引"))
             standard_headers = [cell.value for cell in next(workbook[group_sheet].iter_rows(max_row=1))]
             self.assertIn("日期", standard_headers)
@@ -522,8 +522,10 @@ class SplitOutputTests(unittest.TestCase):
         ))
         workbook = load_workbook(output / result["output_file"], read_only=True, data_only=False)
         try:
-            index_rows = list(workbook["分组索引"].iter_rows(min_row=2, values_only=True))
-            self.assertTrue(any(row[2] > 1 for row in index_rows))
+            index_rows = list(workbook["分组索引"].iter_rows(values_only=True))
+            index_headers = list(index_rows[0])
+            part_index = index_headers.index("部分")
+            self.assertTrue(any(row[part_index] > 1 for row in index_rows[1:]))
         finally:
             workbook.close()
 
@@ -541,6 +543,370 @@ class SplitOutputTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AccountSheetTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _payload(self, count=201):
+        vouchers = []
+        for index in range(count):
+            code = f"{100000 + index:06d}"
+            name = f"科目{index}"
+            vouchers.append({
+                "voucher_key": f"K{index:05d}",
+                "voucher_id": f"V{index:05d}",
+                "date": "2025-01-01",
+                "period": "2025-01",
+                "entity": "E1",
+                "lines": [{
+                    "voucher_id": f"V{index:05d}",
+                    "sheet_name": "序时账",
+                    "source_row": index + 2,
+                    "internal_line_key": f"3:序时账:{index + 2}",
+                    "line_id": str(index),
+                    "account_code": code,
+                    "account_name": name,
+                    "debit": "1.00",
+                    "credit": "0.00",
+                }],
+            })
+        path = self.root / "accounts.json"
+        path.write_text(json.dumps({"schema_version": 1, "vouchers": vouchers}), encoding="utf-8")
+        return path
+
+    def test_one_sheet_per_full_account_code(self):
+        path = self.root / "full-codes.json"
+        vouchers = []
+        rows = [
+            ("100201", "招商银行", "V001", 1),
+            ("100201", "招商银行", "V002", 2),
+            ("112201", "应收账款", "V003", 3),
+            ("220201", "应付账款", "V004", 4),
+            ("660201", "管理费用", "V005", 5),
+            ("600101", "主营业务收入", "V006", 6),
+            ("", "", "V007", 7),
+        ]
+        for code, name, voucher_id, row in rows:
+            vouchers.append({
+                "voucher_key": f"K{voucher_id}",
+                "voucher_id": voucher_id,
+                "date": "2025-01-01",
+                "period": "2025-01",
+                "entity": "E1",
+                "lines": [{
+                    "voucher_id": voucher_id,
+                    "sheet_name": "序时账",
+                    "source_row": row,
+                    "internal_line_key": f"3:序时账:{row}",
+                    "line_id": str(row),
+                    "account_code": code,
+                    "account_name": name,
+                    "debit": "1.00",
+                    "credit": "0.00",
+                }],
+            })
+        path.write_text(json.dumps({"schema_version": 1, "vouchers": vouchers}), encoding="utf-8")
+        output = self.root / "account-sheets"
+        result = build_split_output(output, request_for(
+            path,
+            group_by="account",
+            output_mode="multi_sheet",
+            columns=["date", "voucher_id", "internal_line_key", "account_code", "account_name"],
+        ))
+        self.assertEqual(result["group_count"], 6)
+        from services.journal_entry.split_export import preview_rows
+        preview = preview_rows(request_for(
+            path, group_by="account", output_mode="multi_sheet",
+        ))
+        workbook = load_workbook(output / result["output_file"], read_only=True, data_only=True)
+        try:
+            data_sheets = [name for name in workbook.sheetnames if name not in ("拆分说明", "分组索引")]
+            self.assertEqual(
+                [group["sheet_name"] for group in preview["groups"]],
+                data_sheets,
+            )
+            self.assertEqual(len(data_sheets), 6)
+            all_keys = []
+            for name in data_sheets:
+                headers = [cell.value for cell in next(workbook[name].iter_rows(max_row=1))]
+                self.assertEqual(
+                    headers,
+                    ["日期", "凭证号", "内部行标识（系统追溯）", "科目编码", "科目名称"],
+                )
+                key_index = headers.index("内部行标识（系统追溯）")
+                all_keys.extend(
+                    row[key_index]
+                    for row in workbook[name].iter_rows(min_row=2, values_only=True)
+                )
+            self.assertEqual(len(all_keys), 7)
+            self.assertEqual(len(set(all_keys)), 7)
+
+            index = list(workbook["分组索引"].iter_rows(values_only=True))
+            index_headers = list(index[0])
+            self.assertEqual(
+                index_headers,
+                ["科目编码", "科目名称", "Sheet 名称", "部分", "行数", "凭证数", "借方合计", "贷方合计"],
+            )
+            code_i = index_headers.index("科目编码")
+            name_i = index_headers.index("科目名称")
+            sheet_i = index_headers.index("Sheet 名称")
+            line_i = index_headers.index("行数")
+            voucher_i = index_headers.index("凭证数")
+            by_code = {str(row[code_i]): row for row in index[1:]}
+            self.assertEqual(len(by_code), 6)
+            self.assertEqual(str(by_code["100201"][line_i]), "2")
+            self.assertEqual(str(by_code["100201"][voucher_i]), "2")
+            self.assertIn("100201", str(by_code["100201"][sheet_i]))
+            self.assertEqual(str(by_code["112201"][line_i]), "1")
+            self.assertEqual(by_code["未指定"][name_i], "未指定科目")
+            self.assertEqual(
+                sum(int(row[line_i]) for row in index[1:]),
+                7,
+            )
+            self.assertEqual(
+                {str(row[sheet_i]).split("_")[0] for row in index[1:]},
+                {str(name).split("_")[0] for name in data_sheets},
+            )
+        finally:
+            workbook.close()
+
+    def test_group_scoped_preview_matches_workbook_sheets(self):
+        from services.journal_entry.split_export import preview_rows
+        path = self.root / "scoped.json"
+        specs = [
+            ("100201", "招商银行", "V001", 1),
+            ("100201", "招商银行", "V002", 2),
+            ("112201", "应收账款", "V003", 3),
+            ("220201", "应付账款", "V004", 4),
+            ("660201", "管理费用", "V005", 5),
+        ]
+        vouchers = []
+        for code, name, voucher_id, row in specs:
+            vouchers.append({
+                "voucher_key": f"K{voucher_id}", "voucher_id": voucher_id,
+                "date": "2025-01-01", "period": "2025-01", "entity": "E1",
+                "lines": [{
+                    "voucher_id": voucher_id, "sheet_name": "序时账",
+                    "source_row": row, "internal_line_key": f"3:序时账:{row}",
+                    "line_id": str(row), "account_code": code, "account_name": name,
+                    "debit": "1.00", "credit": "0.00",
+                }],
+            })
+        path.write_text(json.dumps({"schema_version": 1, "vouchers": vouchers}), encoding="utf-8")
+        request = request_for(
+            path, group_by="account", output_mode="multi_sheet",
+            columns=["internal_line_key", "account_code", "account_name"],
+        )
+        base = preview_rows(request)
+        self.assertEqual(base["group_count"], 4)
+        self.assertEqual(base["data_sheet_count"], 4)
+        self.assertEqual(base["aux_sheet_count"], 2)
+        self.assertEqual(
+            [group["sheet_name"] for group in base["groups"]],
+            [group["sheets"][0]["sheet_name"] for group in base["groups"]],
+        )
+        for group in base["groups"]:
+            self.assertIn("group_ref", group)
+            scoped = preview_rows({
+                **request,
+                "preview_group": group["group_ref"],
+                "page": 1,
+            })
+            self.assertEqual(scoped["active_sheet"]["sheet_name"], group["sheet_name"])
+            self.assertEqual(scoped["scope_line_count"], group["line_count"])
+            self.assertTrue(scoped["rows"])
+            code = group["raw_values"]["account"]
+            self.assertTrue(all(
+                row["values"]["account_code"] == code for row in scoped["rows"]
+            ))
+        with self.assertRaises(SplitExportError):
+            preview_rows({
+                **request,
+                "preview_group": {
+                    "dimensions": [{"dimension": "account", "value": "不存在"}]
+                },
+            })
+        with self.assertRaises(SplitExportError):
+            preview_rows({
+                **request,
+                "preview_group": {
+                    "dimensions": [{"dimension": "month", "value": "2025-01"}]
+                },
+            })
+        output = self.root / "scoped-workbook"
+        result = build_split_output(output, request)
+        workbook = load_workbook(output / result["output_file"], read_only=True)
+        try:
+            data_sheets = [
+                name for name in workbook.sheetnames
+                if name not in ("拆分说明", "分组索引")
+            ]
+            self.assertEqual(
+                data_sheets,
+                [group["sheet_name"] for group in base["groups"]],
+            )
+        finally:
+            workbook.close()
+
+    def test_group_scoped_preview_keeps_excluded_rows_visible(self):
+        from services.journal_entry.split_export import preview_rows
+        path = self.root / "excluded-scope.json"
+        vouchers = []
+        rows = [
+            ("100201", "招商银行", "V001", 1),
+            ("100201", "招商银行", "V002", 2),
+            ("112201", "应收账款", "V003", 3),
+        ]
+        for code, name, voucher_id, row in rows:
+            vouchers.append({
+                "voucher_key": f"K{voucher_id}", "voucher_id": voucher_id,
+                "date": "2025-01-01", "period": "2025-01", "entity": "E1",
+                "lines": [{
+                    "voucher_id": voucher_id, "sheet_name": "序时账",
+                    "source_row": row, "internal_line_key": f"3:序时账:{row}",
+                    "line_id": str(row), "account_code": code, "account_name": name,
+                    "debit": "1.00", "credit": "0.00",
+                }],
+            })
+        path.write_text(json.dumps({"schema_version": 1, "vouchers": vouchers}), encoding="utf-8")
+        request = request_for(
+            path, group_by="account", output_mode="multi_sheet",
+            columns=["internal_line_key", "account_code"],
+        )
+        group = next(
+            item for item in preview_rows(request)["groups"]
+            if item["raw_values"]["account"] == "100201"
+        )
+        excluded_key = "3:序时账:2"
+        scoped = preview_rows({
+            **request,
+            "row_selection_mode": "all_except",
+            "excluded_rows": [{"job_id": "job-1", "internal_line_key": excluded_key}],
+            "preview_group": group["group_ref"],
+        })
+        self.assertEqual(scoped["scope_line_count"], 2)
+        self.assertEqual(scoped["scope_included_line_count"], 1)
+        self.assertEqual(scoped["scope_excluded_line_count"], 1)
+        self.assertEqual(scoped["active_sheet"]["line_count"], 1)
+        rows_by_key = {row["internal_line_key"]: row for row in scoped["rows"]}
+        self.assertIn(excluded_key, rows_by_key)
+        self.assertFalse(rows_by_key[excluded_key]["included"])
+
+    def test_group_scoped_preview_respects_sheet_parts(self):
+        from services.journal_entry.split_export import preview_rows
+        path = self.root / "parts.json"
+        vouchers = []
+        for index in range(3):
+            vouchers.append({
+                "voucher_key": f"K{index}", "voucher_id": f"V{index}",
+                "date": "2025-01-01", "period": "2025-01", "entity": "E1",
+                "lines": [{
+                    "voucher_id": f"V{index}", "sheet_name": "序时账",
+                    "source_row": index + 2, "internal_line_key": f"3:序时账:{index + 2}",
+                    "line_id": str(index), "account_code": "100201", "account_name": "招商银行",
+                    "debit": "1.00", "credit": "0.00",
+                }],
+            })
+        path.write_text(json.dumps({"schema_version": 1, "vouchers": vouchers}), encoding="utf-8")
+        request = request_for(
+            path, group_by="account", output_mode="multi_sheet",
+            limits={"max_groups": 200, "max_rows_per_sheet": 1},
+            columns=["internal_line_key", "account_code"],
+        )
+        base = preview_rows(request)
+        group = base["groups"][0]
+        self.assertEqual(len(group["sheets"]), 3)
+        self.assertEqual(base["data_sheet_count"], 3)
+        second = preview_rows({
+            **request,
+            "preview_group": group["group_ref"],
+            "preview_part": 2,
+        })
+        self.assertEqual(second["active_sheet"]["sheet_name"], group["sheets"][1]["sheet_name"])
+        self.assertEqual(second["scope_line_count"], 1)
+        self.assertEqual(len(second["rows"]), 1)
+        with self.assertRaises(SplitExportError):
+            preview_rows({
+                **request,
+                "preview_group": group["group_ref"],
+                "preview_part": 4,
+            })
+
+    def test_account_sheet_names_are_safe_and_unique(self):
+        path = self.root / "names.json"
+        long_name = "非常长的科目名称" * 8
+        codes = [
+            ("1001", "同名科目"),
+            ("1002", "同名科目"),
+            ("1003", long_name),
+            ("1004", "非法/名称:*?"),
+            ("1005", long_name),
+            ("123456789012345678901234567890123", "超长编码"),
+        ]
+        vouchers = []
+        for index, (code, name) in enumerate(codes):
+            vouchers.append({
+                "voucher_key": f"K{index}",
+                "voucher_id": f"V{index}",
+                "date": "2025-01-01",
+                "period": "2025-01",
+                "entity": "E1",
+                "lines": [{
+                    "voucher_id": f"V{index}",
+                    "sheet_name": "序时账",
+                    "source_row": index + 2,
+                    "internal_line_key": f"3:序时账:{index + 2}",
+                    "line_id": str(index),
+                    "account_code": code,
+                    "account_name": name,
+                    "debit": "1.00",
+                    "credit": "0.00",
+                }],
+            })
+        path.write_text(json.dumps({"schema_version": 1, "vouchers": vouchers}), encoding="utf-8")
+        output = self.root / "safe-names"
+        result = build_split_output(output, request_for(
+            path, group_by="account", output_mode="multi_sheet",
+        ))
+        workbook = load_workbook(output / result["output_file"], read_only=True, data_only=True)
+        try:
+            data_sheets = [name for name in workbook.sheetnames if name not in ("拆分说明", "分组索引")]
+            self.assertEqual(len(data_sheets), 6)
+            self.assertEqual(len(data_sheets), len(set(data_sheets)))
+            self.assertTrue(all(len(name) <= 31 for name in data_sheets))
+            self.assertTrue(all(code in " ".join(sheet for sheet in data_sheets)
+                                for code, _ in codes[:5]))
+            index = list(workbook["分组索引"].iter_rows(values_only=True))
+            headers = list(index[0])
+            sheet_i = headers.index("Sheet 名称")
+            self.assertEqual(
+                {str(row[sheet_i]) for row in index[1:]},
+                set(data_sheets),
+            )
+        finally:
+            workbook.close()
+
+    def test_account_prefix_is_opt_in_and_group_limit_is_enforced(self):
+        path = self._payload(201)
+        base = request_for(path, group_by="account", output_mode="multi_sheet")
+        full = preview_split(base)
+        self.assertEqual(full["group_count"], 201)
+        self.assertTrue(full["limit_exceeded"])
+        with self.assertRaises(SplitExportError):
+            build_split_output(self.root / "too-many", base)
+        prefixed = preview_split({
+            **base,
+            "group_options": {"account_prefix_length": 3},
+            "limits": {"max_groups": 200, "max_rows_per_sheet": 1000},
+        })
+        self.assertEqual(prefixed["group_count"], 1)
+        self.assertEqual(prefixed["groups"][0]["values"]["account"], "100")
 
 
 class RowSelectionPreviewTests(unittest.TestCase):
@@ -910,3 +1276,187 @@ class RowSelectionPaginationAndBatchTests(unittest.TestCase):
         self.assertTrue(back["column_stats"]["original_amount"]["non_empty_count"] > 0)
         self.assertEqual(back["column_stats"]["currency"]["entirely_empty"], False)
         self.assertEqual(back["column_stats"]["original_amount"]["entirely_empty"], False)
+
+
+class SummaryStructureExportTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        from services.journal_entry.summary_structure import infer_summary_structure
+        vouchers = []
+        rows = [
+            ("V001", "224103", "员工垫付", "费用报销_陈威涛", 1),
+            ("V002", "224103", "员工垫付", "费用报销_丁家蕙", 2),
+            ("V003", "100201", "银行存款", "银行手续费_2025.01.07", 3),
+            ("V004", "100201", "银行存款", "银行手续费_-", 4),
+        ]
+        for voucher_id, code, name, description, row in rows:
+            vouchers.append({
+                "voucher_key": f"K{voucher_id}",
+                "voucher_id": voucher_id,
+                "date": "2025-01-01",
+                "period": "2025-01",
+                "entity": "E1",
+                "lines": [{
+                    "voucher_id": voucher_id,
+                    "sheet_name": "序时账",
+                    "source_row": row,
+                    "internal_line_key": f"3:序时账:{row}",
+                    "line_id": str(row),
+                    "account_code": code,
+                    "account_name": name,
+                    "description": description,
+                    "debit": "1.00",
+                    "credit": "0.00",
+                }],
+            })
+        payload = {"schema_version": 1, "vouchers": vouchers}
+        payload["summary_structure"] = infer_summary_structure(vouchers)
+        self.result_path = self.root / "result.json"
+        self.result_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _request(self, **overrides):
+        return request_for(
+            self.result_path,
+            group_by="account",
+            output_mode="multi_sheet",
+            columns=["date", "voucher_id", "description", "account_code", "account_name"],
+            **overrides,
+        )
+
+    def test_preview_and_excel_derived_fields_match(self):
+        from services.journal_entry.split_export import preview_rows
+        request = self._request()
+        base = preview_rows(request)
+        self.assertEqual(base["summary_structure"]["auto_rule_count"], 2)
+        self.assertEqual(base["summary_structure"]["covered_line_count"], 4)
+        group = next(item for item in base["groups"] if item["account_code"] == "224103")
+        scoped = preview_rows({**request, "preview_group": group["group_ref"]})
+        self.assertEqual(
+            [field["label"] for field in scoped["derived_columns"]],
+            ["费用项目", "员工姓名"],
+        )
+        self.assertEqual(scoped["rows"][0]["values"]["summary:auto:224103:part:1"], "陈威涛")
+
+        output = self.root / "derived"
+        result = build_split_output(output, request)
+        workbook = load_workbook(output / result["output_file"], read_only=True, data_only=True)
+        try:
+            sheet = workbook["224103 员工垫付"]
+            headers = [cell.value for cell in next(sheet.iter_rows(max_row=1))]
+            self.assertEqual(
+                headers,
+                ["日期", "凭证号", "摘要", "费用项目", "员工姓名", "科目编码", "科目名称"],
+            )
+            rows = list(sheet.iter_rows(min_row=2, values_only=True))
+            self.assertEqual(rows[0][3], "费用报销")
+            self.assertEqual(rows[0][4], "陈威涛")
+            bank = workbook["100201 银行存款"]
+            bank_headers = [cell.value for cell in next(bank.iter_rows(max_row=1))]
+            self.assertIn("交易日期", bank_headers)
+            bank_rows = list(bank.iter_rows(min_row=2, values_only=True))
+            self.assertIsNotNone(bank_rows[0][bank_headers.index("交易日期")])
+            self.assertIsNone(bank_rows[1][bank_headers.index("交易日期")])
+        finally:
+            workbook.close()
+
+    def test_override_hides_and_renames_derived_field(self):
+        request = self._request()
+        group = next(
+            item for item in preview_split(request)["groups"]
+            if item["values"].get("account", "").startswith("224103")
+        )
+        # preview_split groups do not expose group_ref; use preview_rows.
+        from services.journal_entry.split_export import preview_rows
+        base = preview_rows(request)
+        group = next(item for item in base["groups"] if item["account_code"] == "224103")
+        override = {
+            "224103": {
+                "fields": {
+                    "summary:auto:224103:part:1": {
+                        "selected": False,
+                    }
+                }
+            }
+        }
+        scoped = preview_rows({
+            **request,
+            "preview_group": group["group_ref"],
+            "summary_overrides": override,
+        })
+        self.assertEqual(
+            [field["label"] for field in scoped["derived_columns"]],
+            ["费用项目"],
+        )
+        output = self.root / "override"
+        result = build_split_output(output, {**request, "summary_overrides": override})
+        workbook = load_workbook(output / result["output_file"], read_only=True, data_only=True)
+        try:
+            headers = [cell.value for cell in next(workbook["224103 员工垫付"].iter_rows(max_row=1))]
+            self.assertNotIn("员工姓名", headers)
+            renamed = {
+                "224103": {
+                    "fields": {
+                        "summary:auto:224103:part:1": {
+                            "selected": True,
+                            "label": "报销人",
+                        }
+                    }
+                }
+            }
+        finally:
+            workbook.close()
+        output2 = self.root / "rename"
+        result2 = build_split_output(output2, {**request, "summary_overrides": renamed})
+        workbook = load_workbook(output2 / result2["output_file"], read_only=True, data_only=True)
+        try:
+            headers = [cell.value for cell in next(workbook["224103 员工垫付"].iter_rows(max_row=1))]
+            self.assertIn("报销人", headers)
+            self.assertNotIn("员工姓名", headers)
+        finally:
+            workbook.close()
+
+    def test_manifest_and_formula_safe_derived_fields(self):
+        from services.journal_entry.summary_structure import infer_summary_structure
+        path = self.root / "formula.json"
+        vouchers = []
+        for index, description in enumerate(("=1+1_张三", "=2+2_李四"), start=1):
+            vouchers.append({
+                "voucher_key": f"F{index}", "voucher_id": f"V{index}",
+                "date": "2025-01-01", "period": "2025-01", "entity": "E1",
+                "lines": [{
+                    "voucher_id": f"V{index}", "sheet_name": "序时账",
+                    "source_row": index + 1, "internal_line_key": f"3:序时账:{index + 1}",
+                    "line_id": str(index), "account_code": "999001",
+                    "account_name": "测试科目", "description": description,
+                    "debit": "1.00", "credit": "0.00",
+                }],
+            })
+        payload = {"schema_version": 1, "vouchers": vouchers}
+        payload["summary_structure"] = infer_summary_structure(vouchers)
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        request = request_for(
+            path, group_by="account", output_mode="multi_sheet",
+            columns=["date", "voucher_id", "description", "account_code"],
+        )
+        output = self.root / "formula-out"
+        result = build_split_output(output, request)
+        self.assertTrue(result["manifest"]["groups"][0]["derived_fields"])
+        workbook = load_workbook(output / result["output_file"], read_only=True, data_only=False)
+        try:
+            sheet_name = next(
+                name for name in workbook.sheetnames
+                if name not in ("拆分说明", "分组索引")
+            )
+            headers = [cell.value for cell in next(workbook[sheet_name].iter_rows(max_row=1))]
+            derived_index = headers.index("事项")
+            values = [
+                row[derived_index]
+                for row in workbook[sheet_name].iter_rows(min_row=2, values_only=True)
+            ]
+            self.assertTrue(all(str(value).startswith("'=") for value in values))
+        finally:
+            workbook.close()
