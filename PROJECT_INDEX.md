@@ -67,6 +67,17 @@ Frontend tools are Vanilla HTML/CSS/JS. Do not introduce React/Vue/Tailwind with
 | Shared | `private/shared/excel-viewer/*`, `private/shared/excel-highlight/*`, `private/vendor/fflate/` |
 | Tests | `tests/excel-decimal-check/*` |
 
+## 公司地图地址查询 （company-map-lookup / `/tools/company-map-lookup`）
+
+| Item | Location |
+|---|---|
+| Docs | `docs/agent/company-map-lookup/overview.md` |
+| Node | `server/company-map-lookup/`（providers、service、provider-errors、matching、memory job store、routes） |
+| Frontend | `private/tools/company-map-lookup/`（Excel 模板 / 用户 Key / paste / XLSX / CSV → job → review → export） |
+| Config | `config/tools.json`（`company-map-lookup`，category 数据，v1.1.0） |
+| Tests | `tests/company-map-lookup/*`（backend、template、frontend contract、Chrome E2E） |
+| Persistence | V1 memory only；重启后未完成任务/结果消失 |
+
 ## 流程图转 Excel （flowchart-excel / `/tools/flowchart-excel`）— ARCHIVED / Coming Soon
 
 | Item | Location |

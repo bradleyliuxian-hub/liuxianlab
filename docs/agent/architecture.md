@@ -22,6 +22,8 @@ Read on demand. Keep this current; do not load it for simple tasks.
   - `/api/excel` -> `server/excel-standardizer/routes.js` (`createExcelRouter`)
   - `/api/sales-income` -> `server/sales-income/inspect-routes.js` + `run-routes.js` + `routes.js`
   - `/api/contracts` -> `server/contracts/routes.js` (`createContractRouter`)
+  - `/api/company-map-lookup` -> `server/company-map-lookup/` (`requireAuth` +
+    `sameOriginForStateChange`, owner from session username, memory jobs)
   - `/vendor/pdfjs` -> `node_modules/pdfjs-dist/build` (used by contract review UI)
   - `/tools/contract-review/review` -> `private/tools/contract-review/review.html`
 

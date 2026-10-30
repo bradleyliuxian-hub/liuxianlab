@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Liuxian Lab 公司地图地址查询：批量公司名称，通过高德/百度官方 POI API 返回地图地址与 GCJ-02 经纬度。" />
+  <title>公司地图地址查询 · Liuxian Lab</title>
+  <link rel="stylesheet" href="/design-tokens.css?v=1.1.0" />
+  <link rel="stylesheet" href="/app/app-shell.css?v=1.1.0" />
+  <link rel="stylesheet" href="/app/tools/company-map-lookup/styles.css?v=1.1.0" />
+</head>
+<body>
+  <div class="page-shell">
+    <header class="tool-header">
+      <a class="back-link" href="/" aria-label="返回工作台">←</a>
+      <div class="tool-brand">
+        <span class="tool-mark">MAP</span>
+        <div><strong>公司地图地址查询</strong><small>Liuxian Lab / Company Map Lookup</small></div>
+      </div>
+      <div class="header-actions">
+        <button class="version-chip" id="versionButton" type="button" title="查看版本更新说明">v1.1.0</button>
+        <span class="private-badge"><i></i>私有处理</span>
+        <button class="ghost-button" id="newJobButton" type="button">新建查询</button>
+      </div>
+    </header>
+
+    <main class="tool-main">
+      <section class="intro-section">
+        <p class="eyebrow">COMPANY MAP LOOKUP · OFFICIAL POI API</p>
+        <h1>把公司名单，落到地图上。</h1>
+        <p>批量粘贴公司名称，或导入 XLSX / CSV，通过高德 / 百度官方 POI 搜索返回地图地址、行政区与 GCJ-02 经纬度。模糊结果进入人工确认，不把猜测当答案；这里输出的是地图 POI 地址，不是工商注册地址。</p>
+        <div class="provider-strip" id="providerStrip">
+          <span class="provider-dot"></span>
+          <span id="providerStatus">正在读取地图 Provider 状态…</span>
+          <span class="provider-meta" id="persistenceNote">任务保存在当前 Node 进程内，重启后未完成任务会消失。</span>
+        </div>
+      </section>
+
+      <section class="workspace-card api-card" id="apiPanel">
+        <div class="card-heading">
+          <div><span class="step-no">01</span><div><h2>地图 API</h2><p>选择服务商并输入你自己的 API Key；留空时回退到管理员配置的服务端 Key。</p></div></div>
+          <span class="profile-chip" id="keyModeChip">临时 Key · 不保存</span>
+        </div>
+
+        <div class="api-grid">
+          <label class="field-control" for="providerSelect">
+            <span>地图服务商</span>
+            <select id="providerSelect">
+              <option value="amap">高德地图</option>
+              <option value="baidu">百度地图</option>
+            </select>
+          </label>
+
+          <label class="field-control key-field" for="providerKey">
+            <span id="keyFieldLabel">高德 Web 服务 Key</span>
+            <div class="key-input-row">
+              <input id="providerKey" type="password" autocomplete="off" spellcheck="false" maxlength="300" placeholder="粘贴你的 Key，仅本次查询使用" />
+              <button class="ghost-button small" id="toggleKeyButton" type="button" aria-pressed="false">显示</button>
+            </div>
+          </label>
+
+          <div class="api-actions">
+            <button class="ghost-button" id="validateKeyButton" type="button">验证 API</button>
+            <span class="key-status idle" id="keyStatus">未验证</span>
+          </div>
+        </div>
+
+        <p class="side-note">API Key 仅用于本次地图查询，不会保存到浏览器或 Liuxian Lab 数据库。填写后优先使用你的 Key；浏览器不会直接请求高德/百度。</p>
+        <div class="error-box" id="keyError" hidden></div>
+      </section>
+
+      <section class="workspace-card" id="inputPanel">
+        <div class="card-heading">
+          <div><span class="step-no">02</span><div><h2>准备公司名单</h2><p>最多 500 家；原始输入会保留。文件只在浏览器内解析，不上传、不修改源文件。</p></div></div>
+          <span class="profile-chip" id="inputCountChip">0 家</span>
+        </div>
+
+        <div class="template-row">
+          <div class="template-copy"><strong>标准 Excel 模板</strong><small>公司名单 + 填写说明；只需填写公司名称，城市/地区可选。</small></div>
+          <button class="ghost-button" id="downloadTemplateButton" type="button">下载 Excel 模板 <span>↓</span></button>
+        </div>
+
+        <div class="input-grid">
+          <div class="input-main">
+            <label class="field-control" for="companyText">
+              <span>批量粘贴 <small>每行一家；可用 Tab 或 | 分隔公司名称与城市/地区</small></span>
+              <textarea id="companyText" rows="10" spellcheck="false" placeholder="上海示例科技有限公司&#10;北京示例医疗有限公司 | 北京市&#10;广州示例商贸有限公司&#9;广州市"></textarea>
+            </label>
+            <div class="input-toolbar">
+              <span class="field-hint">示例：<code>公司名称 | 城市</code>；没有地区的行使用右侧默认地区。</span>
+              <button class="ghost-button" id="clearTextButton" type="button">清空</button>
+            </div>
+          </div>
+
+          <aside class="input-side">
+            <label class="field-control"><span>默认城市/地区（可选）</span><input id="defaultRegion" type="text" maxlength="64" placeholder="如：上海市" autocomplete="off" /></label>
+            <label class="check-control"><input id="strictRegion" type="checkbox" /> <span>严格限定地区</span></label>
+            <p class="side-note">严格模式会让高德使用 <code>city_limit</code>，百度使用 <code>region_limit</code>；只给公司名时保持关闭。</p>
+
+            <label class="drop-zone" id="dropZone" for="fileInput">
+              <input id="fileInput" type="file" accept=".xlsx,.xlsm,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden />
+              <span class="drop-icon">↥</span>
+              <strong>拖入 XLSX / CSV，或点击选择</strong>
+              <small>浏览器内解析 · 首行默认表头 · 原文件不会被修改</small>
+            </label>
+
+            <div class="selected-file" id="selectedFile" hidden>
+              <span class="file-icon">XLS</span>
+              <div class="file-copy"><strong id="fileName"></strong><small id="fileMeta"></small></div>
+            </div>
+            <button class="ghost-button" id="resetFileButton" type="button" hidden>移除文件</button>
+          </aside>
+        </div>
+
+        <div class="mapping-panel" id="mappingPanel" hidden>
+          <div class="mapping-head"><strong>确认列映射</strong><small id="mappingMeta">—</small></div>
+          <div class="mapping-grid">
+            <label class="field-control"><span>工作表</span><select id="sheetSelect"></select></label>
+            <label class="field-control"><span>表头行</span><input id="headerRowInput" type="number" min="1" step="1" value="1" inputmode="numeric" /></label>
+            <label class="field-control"><span>公司名称列（必选）</span><select id="companyColumn"></select></label>
+            <label class="field-control"><span>城市/地区列（可选）</span><select id="regionColumn"></select></label>
+            <div class="detect-stat"><span>可导入行数</span><strong id="mappedCount">0</strong></div>
+          </div>
+          <div class="preview-summary" id="previewSummary" hidden>
+            <span>共识别 <b id="previewTotal">0</b> 家</span>
+            <span>有效 <b id="previewValid">0</b></span>
+            <span>无效 <b id="previewInvalid">0</b></span>
+            <span>重复 <b id="previewDuplicate">0</b></span>
+          </div>
+          <div class="sample-block">
+            <div class="sample-head"><strong>数据预览</strong><small>按列映射展示前 8 行</small></div>
+            <div class="table-wrap compact" id="filePreview"></div>
+          </div>
+          <div class="mapping-actions">
+            <p>导入后会追加到查询名单；不会覆盖源文件。完全相同的公司名称 + 城市/地区会合并为一次地图查询，导出时仍逐行对应原始记录。</p>
+            <button class="primary-button small" id="importFileButton" type="button">导入到查询名单 <span>→</span></button>
+          </div>
+          <div class="error-box" id="fileError" hidden></div>
+        </div>
+
+        <div class="error-box" id="inputError" hidden></div>
+
+        <div class="input-summary" id="inputSummary" hidden>
+          <div class="summary-counts">
+            <span><b id="itemCount">0</b> 家待查询</span>
+            <span><b id="regionCount">0</b> 家带地区</span>
+            <span><b id="duplicateCount">0</b> 家重复（合并查询）</span>
+          </div>
+          <button class="primary-button" id="startButton" type="button">开始地图查询 <span>→</span></button>
+        </div>
+        <p class="input-note">查询会消耗所选地图账号的官方 API 配额；实际额度与商业许可以地图平台控制台和账号协议为准。</p>
+      </section>
+
+      <section class="workspace-card process-card" id="progressPanel" hidden>
+        <div class="card-heading">
+          <div><span class="step-no">03</span><div><h2>查询进度</h2><p id="progressMessage">正在准备任务…</p></div></div>
+          <span class="job-status" id="jobStatus">QUEUED</span>
+        </div>
+        <div class="progress-track large"><span id="progressBar"></span></div>
+        <div class="progress-meta"><strong id="progressValue">0 / 0</strong><span id="jobIdLabel"></span></div>
+        <div class="summary-metrics" id="progressMetrics"></div>
+        <div class="process-actions">
+          <p class="process-note">页面统一轮询 Job 状态和分页结果，不会为每一行单独发请求。网络暂时中断时会重试当前 Job，不会自动创建新 Job。</p>
+          <button class="ghost-button danger" id="cancelButton" type="button">取消任务</button>
+        </div>
+        <div class="error-box" id="progressError" hidden></div>
+      </section>
+
+      <section class="workspace-card result-card" id="resultPanel" hidden>
+        <div class="card-heading">
+          <div><span class="step-no">04</span><div><h2>查询结果</h2><p id="resultSubtitle">—</p></div></div>
+          <div class="result-actions">
+            <button class="ghost-button" id="refreshResultsButton" type="button">刷新</button>
+            <button class="ghost-button" id="exportCsvButton" type="button">导出 CSV</button>
+            <button class="primary-button small" id="exportXlsxButton" type="button">导出 XLSX <span>↓</span></button>
+          </div>
+        </div>
+
+        <div class="summary-metrics" id="resultMetrics"></div>
+
+        <div class="result-tabs" id="filterTabs" role="tablist" aria-label="结果状态筛选">
+          <button class="result-tab active" type="button" data-filter="all" role="tab" aria-selected="true">全部</button>
+          <button class="result-tab" type="button" data-filter="matched" role="tab" aria-selected="false">已匹配</button>
+          <button class="result-tab" type="button" data-filter="review" role="tab" aria-selected="false">待确认</button>
+          <button class="result-tab" type="button" data-filter="not_found" role="tab" aria-selected="false">未找到</button>
+          <button class="result-tab" type="button" data-filter="error" role="tab" aria-selected="false">失败</button>
+          <button class="result-tab" type="button" data-filter="cancelled" role="tab" aria-selected="false">已取消</button>
+        </div>
+
+        <div class="table-toolbar">
+          <input class="search-input" id="resultSearch" type="search" placeholder="搜索原始公司名、地图名称、地址或 POI ID…" />
+          <span class="toolbar-note" id="tableMeta">—</span>
+        </div>
+
+        <div class="table-wrap result-table">
+          <table>
+            <thead>
+              <tr>
+                <th>原始公司名称</th>
+                <th>原始地区</th>
+                <th>匹配状态</th>
+                <th>置信度</th>
+                <th>地图匹配名称</th>
+                <th>地图地址</th>
+                <th>省</th>
+                <th>市</th>
+                <th>区</th>
+                <th>经度</th>
+                <th>纬度</th>
+                <th>坐标系</th>
+                <th>Provider</th>
+                <th>POI ID</th>
+                <th>人工确认</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="resultBody"></tbody>
+          </table>
+        </div>
+        <div class="pager">
+          <span id="pagerText">—</span>
+          <div class="pager-actions">
+            <button id="prevPage" type="button">上一页</button>
+            <button id="nextPage" type="button">下一页</button>
+          </div>
+        </div>
+        <p class="result-note">坐标为 <strong>GCJ-02</strong>；review 行必须人工确认，系统不会自动当作 matched。当前任务为内存存储，服务重启后结果不可恢复。</p>
+      </section>
+
+      <section class="workspace-card info-card">
+        <div class="card-heading"><div><span class="step-no">i</span><div><h2>使用说明</h2><p>关于坐标、匹配与导出边界。</p></div></div></div>
+        <div class="info-grid">
+          <div><h3>坐标系统</h3><p>高德 POI 按 GCJ-02 输出；百度请求显式使用 <code>ret_coordtype=gcj02ll</code>。页面不把 GCJ-02 标成 WGS84。</p></div>
+          <div><h3>精度优先</h3><p>公司名不完全一致、存在多个候选，或分公司/办事处含义不一致时进入 review，由人工从服务端候选里选择。</p></div>
+          <div><h3>导出边界</h3><p>导出只生成新文件；原始公司名、地区始终保留。地图地址不是工商注册地址，不能用于登记地址核验。</p></div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="tool-footer"><span>Liuxian Lab</span><button class="footer-version" id="footerVersionButton" type="button">版本更新 v1.1.0</button><span>Company Map Lookup v1.1.0</span></footer>
+  </div>
+
+  <div class="candidate-backdrop" id="candidateBackdrop" hidden></div>
+  <aside class="candidate-drawer" id="candidateDrawer" hidden role="dialog" aria-modal="true" aria-labelledby="candidateTitle">
+    <div class="candidate-head">
+      <div><p class="eyebrow">MANUAL REVIEW</p><h2 id="candidateTitle">确认地图地点</h2><p id="candidateSubtitle">—</p></div>
+      <button class="icon-button" id="closeCandidateButton" type="button" aria-label="关闭候选">×</button>
+    </div>
+    <div class="candidate-body" id="candidateBody"></div>
+    <div class="candidate-footer">
+      <p>确认后只会保存为“人工确认”，不会修改原始输入。</p>
+      <button class="primary-button" id="confirmCandidateButton" type="button" disabled>确认选择 <span>→</span></button>
+    </div>
+  </aside>
+
+  <div class="version-backdrop" id="versionBackdrop" hidden></div>
+  <section class="version-dialog" id="versionDialog" hidden role="dialog" aria-modal="true" aria-labelledby="versionTitle">
+    <div class="version-head">
+      <div><p class="eyebrow">VERSION NOTES</p><h2 id="versionTitle">版本更新</h2><p>当前版本的关键能力与边界。</p></div>
+      <button class="icon-button" id="closeVersionButton" type="button" aria-label="关闭版本说明">×</button>
+    </div>
+    <div class="version-list" id="versionList"></div>
+  </section>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script src="/app/app-shell.js?v=1.1.0"></script>
+  <script src="/app/vendor/xlsx/xlsx.full.min.js?v=0.18.5"></script>
+  <script src="/app/tools/company-map-lookup/template.js?v=1.1.0"></script>
+  <script src="/app/tools/company-map-lookup/script.js?v=1.1.0"></script>
+</body>
+</html>

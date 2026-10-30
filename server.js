@@ -25,6 +25,7 @@ const { createStandardExportRouter } = require('./server/journal-entry/standard-
 const { createPurchaseReconciliationRouter } = require('./server/purchase-reconciliation/routes');
 const { createEquityRouter } = require('./server/equity-structure/routes');
 const { createFlowchartRouter } = require('./server/flowchart-excel/routes');
+const { createCompanyMapLookupModule } = require('./server/company-map-lookup');
 require('dotenv').config();
 
 const app = express();
@@ -131,8 +132,12 @@ app.use(
       && (
         /^\/api\/journal-entry-splits\/(preview|preview-rows)\/?$/i.test(req.path)
         || /^\/api\/journal-entry-splits\/?$/i.test(req.path)
-        || /^\/api\/journal-entry-standard-exports\/(preview|export)\/?$/i.test(req.path)
+        || /^\/api\/journal-entry-standard-exports\/(preview|export|report)\/?$/i.test(req.path)
       );
+
+    const isCompanyMapLookupBody =
+      req.method === 'POST'
+      && /^\/api\/company-map-lookup\/(search|jobs)\/?$/i.test(req.path);
 
 
     if (
@@ -141,6 +146,7 @@ app.use(
       || isEquityPngExport
       || isFlowchartReviewGraphSave
       || isJournalEntryRowSelection
+      || isCompanyMapLookupBody
     ) {
 
       return next();
@@ -218,7 +224,9 @@ function safeToolSlug(value) {
 
 function requireAuth(req, res, next) {
   if (req.session?.auth?.username) return next();
-  const wantsJson = req.path.startsWith('/api/') || req.accepts(['html', 'json']) === 'json';
+  const wantsJson = req.originalUrl.startsWith('/api/')
+    || req.baseUrl.startsWith('/api/')
+    || req.accepts(['html', 'json']) === 'json';
   if (wantsJson) return res.status(401).json({ ok: false, message: '请先登录。' });
   return res.redirect('/login');
 }
@@ -427,6 +435,20 @@ app.use('/api/flowchart-excel', requireAuth, sameOriginForStateChange, createFlo
  * one multi-file snapshot. Same auth + owner scope; private download only.
  */
 app.use('/api/excel-review-control-logs', requireAuth, sameOriginForStateChange, createExcelReviewControlLogRouter({ root: ROOT }));
+
+/*
+ * 公司地图地址查询：批量公司名 -> 地图 POI 地址 / 经纬度。
+ * Provider key 只从服务端环境变量读取；Job 为进程内内存存储，
+ * Node/PM2 重启后未完成任务会消失（UI 不承诺持久恢复）。
+ */
+const companyMapLookupModule = createCompanyMapLookupModule({
+  express,
+  requireAuth,
+  sameOrigin: sameOriginForStateChange,
+  getOwnerId: (req) => req.session?.auth?.username || ''
+});
+app.use('/api/company-map-lookup', requireAuth, sameOriginForStateChange, companyMapLookupModule.router);
+app.use(companyMapLookupModule.errorHandler);
 
 app.use('/app', requireAuth, express.static(PRIVATE_DIR, {
   index: false,

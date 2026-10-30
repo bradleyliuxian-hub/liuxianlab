@@ -35,6 +35,7 @@ const TOOL_IA = {
   'sales-income-analysis': { fileType: 'excel', group: 'template' },
   'journal-entry-analysis': { fileType: 'excel', group: 'analysis' },
   'purchase-reconciliation': { fileType: 'excel', group: 'analysis' },
+  'company-map-lookup': { fileType: 'excel', group: 'analysis' },
   'contract-review': { fileType: 'pdf', group: 'pdf' },
   'equity-structure': { fileType: 'image', group: 'analysis' },
   'flowchart-excel': { fileType: 'excel', group: 'analysis' }

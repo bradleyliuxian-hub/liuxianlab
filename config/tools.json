@@ -188,6 +188,28 @@
     ]
   },
   {
+    "slug": "company-map-lookup",
+    "name": "公司地图地址查询",
+    "description": "批量粘贴公司名称或导入 XLSX/CSV，下载标准 Excel 模板或用自己/服务端的地图 API Key，通过高德/百度官方地图 POI 搜索返回地图地址、行政区、经纬度（GCJ-02）、POI ID 与匹配状态；模糊结果进入人工确认，不冒充工商注册地址。",
+    "category": "数据",
+    "status": "ready",
+    "version": "v1.1.0",
+    "icon": "MAP",
+    "keywords": [
+      "地图",
+      "地址",
+      "公司",
+      "POI",
+      "经纬度",
+      "高德",
+      "百度",
+      "批量",
+      "company",
+      "map",
+      "geocode"
+    ]
+  },
+  {
     "slug": "flowchart-excel",
     "name": "流程图转 Excel",
     "description": "功能暂未开放，当前版本正在封存评估中。此前的导入、人工复核与实验 XLSX 导出仅为实验产物，不代表正式交付能力。",
